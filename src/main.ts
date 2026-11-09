@@ -3,41 +3,11 @@ import { FONTS } from './fonts';
 import { Viewer } from './viewer';
 import { toSTL, to3MF } from './export';
 import type { Params, Part, Style } from './geometry';
+import { DEFAULTS } from './defaults';
 
 // ---------- state ----------
 
-const defaults: Params = {
-  style: 'sign',
-  text: 'MENU',
-  capHeight: 40,
-  tracking: 0.02,
-  lineSpacing: 1.25,
-  depth: 14,
-  base: 'bar',
-  baseHeight: 4,
-  platePadding: 6,
-  letterRelief: 3,
-  qrText: 'https://example.com/menu',
-  qrRelief: 1,
-  wallHeight: 30,
-  wall: 1.6,
-  floor: 2,
-  layers: 6,
-  layerThickness: 3,
-  step: 3,
-  rim: 3.5,
-  topoMode: 'bowl',
-  openCenter: true,
-  wobble: 2.5,
-  seed: 7,
-  facetWall: 14,
-  angle: 45,
-  cap: 0,
-  splitBed: true,
-  bedSize: 256,
-  colorA: '#2b2d2f',
-  colorB: '#f4f1ea',
-};
+const defaults: Params = { ...DEFAULTS };
 
 interface StylePreset {
   label: string;
@@ -76,6 +46,41 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 90, colorA: '#2e8b6e', colorB: '#1f6a53', tracking: 0.04 },
   },
+  keychain: {
+    label: 'Keychain',
+    blurb: 'Name tag with a layered outline and a key-ring hole.',
+    text: 'Olivia',
+    font: 'pacifico',
+    patch: { capHeight: 16, colorA: '#2f6fd6', colorB: '#ffd43b', tracking: 0 },
+  },
+  vase: {
+    label: 'Flower vase',
+    blurb: 'Bold word with stem holes and a script word on top. Prints standing up.',
+    text: 'BIRTHDAY',
+    font: 'fredoka',
+    patch: { capHeight: 36, colorA: '#9fd4b4', colorB: '#7cc49b', tracking: -0.04 },
+  },
+  stack: {
+    label: 'Bold stack',
+    blurb: 'Chunky stacked lines with rounded edges, for walls and shelves.',
+    text: 'RAISE\nYOUR\nGAME',
+    font: 'archivo',
+    patch: { capHeight: 45, colorA: '#2fd13a', tracking: -0.05, lineSpacing: 0.8 },
+  },
+  stepped: {
+    label: 'Stepped',
+    blurb: 'Letters that step down in sharp tiers, like folded paper.',
+    text: 'A',
+    font: 'oswald',
+    patch: { capHeight: 140, colorA: '#d8232a', tracking: 0.02 },
+  },
+  ramp: {
+    label: 'Ramp relief',
+    blurb: 'Letters that rise into slanted wedges off a plate.',
+    text: 'ON SUCH\nA FULL SEA',
+    font: 'oswald',
+    patch: { capHeight: 30, colorA: '#f2c230', colorB: '#f7f5ef', tracking: 0.04, lineSpacing: 1.3, rMax: 10 },
+  },
 };
 
 type Control =
@@ -113,6 +118,46 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'facetWall', label: 'Side wall height', min: 0, max: 60, step: 1, unit: 'mm' },
     { kind: 'range', key: 'angle', label: 'Facet angle', min: 20, max: 65, step: 1, unit: '°', hint: 'Keep ≤ 50° for support-free printing.' },
     { kind: 'range', key: 'cap', label: 'Flat top', min: 0, max: 30, step: 0.5, unit: 'mm', hint: '0 = sharp ridges. Otherwise caps the roof at this height.' },
+  ],
+  keychain: [
+    { kind: 'range', key: 'kcOutline', label: 'Outline width', min: 1, max: 8, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'kcBase', label: 'Base thickness', min: 1, max: 5, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'kcTier', label: 'Outline step', min: 0, max: 3, step: 0.2, unit: 'mm', hint: 'A second, narrower outline layer. 0 = none.' },
+    { kind: 'range', key: 'kcText', label: 'Name height', min: 0.4, max: 4, step: 0.2, unit: 'mm', hint: 'Swap filament where the name starts for two colours.' },
+    { kind: 'range', key: 'ringHole', label: 'Ring hole', min: 3, max: 10, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'ringWall', label: 'Ring wall', min: 1, max: 5, step: 0.25, unit: 'mm' },
+  ],
+  vase: [
+    { kind: 'text', key: 'topText', label: 'Top word', placeholder: 'e.g. Happy (leave empty for none)' },
+    { kind: 'select', key: 'topFont', label: 'Top word font', options: [['dancing', 'Dancing Script'], ['pacifico', 'Pacifico'], ['fredoka', 'Fredoka'], ['righteous', 'Righteous']] },
+    { kind: 'range', key: 'topCap', label: 'Top word height', min: 10, max: 150, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'topThickness', label: 'Top word thickness', min: 2, max: 15, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'vDepth', label: 'Depth', min: 10, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'holeD', label: 'Stem hole size', min: 2, max: 12, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'holeDepth', label: 'Stem hole depth', min: 5, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'holeWall', label: 'Wall around holes', min: 0.8, max: 4, step: 0.2, unit: 'mm' },
+    { kind: 'toggle', key: 'vBar', label: 'Join letters with a base strip' },
+  ],
+  stack: [
+    { kind: 'range', key: 'stDepth', label: 'Depth', min: 4, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'stStep', label: 'Depth change per line', min: 0, max: 30, step: 1, unit: 'mm' },
+    { kind: 'select', key: 'stMode', label: 'Line depths', options: [['alternate', 'Alternate'], ['cascade', 'Cascade']] },
+    { kind: 'range', key: 'stRound', label: 'Edge rounding', min: 0, max: 10, step: 0.5, unit: 'mm' },
+  ],
+  stepped: [
+    { kind: 'range', key: 'spSteps', label: 'Steps', min: 1, max: 12, step: 1 },
+    { kind: 'range', key: 'spHeight', label: 'Step height', min: 0.6, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'spInset', label: 'Step width', min: 0.5, max: 8, step: 0.25, unit: 'mm' },
+    { kind: 'select', key: 'spJoin', label: 'Corners', options: [['Miter', 'Sharp'], ['Round', 'Soft']] },
+  ],
+  ramp: [
+    { kind: 'range', key: 'rMin', label: 'Low end', min: 0.4, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'rMax', label: 'High end', min: 1, max: 60, step: 0.5, unit: 'mm' },
+    { kind: 'select', key: 'rDir', label: 'Rises toward', options: [['right', 'Right'], ['left', 'Left'], ['alternate', 'Alternate']] },
+    { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
+    { kind: 'toggle', key: 'rPlate', label: 'Back plate' },
+    { kind: 'range', key: 'rPlateT', label: 'Plate thickness', min: 1, max: 8, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'rPad', label: 'Plate margin', min: 2, max: 40, step: 1, unit: 'mm' },
   ],
 };
 
@@ -191,8 +236,10 @@ async function run() {
   setBusy(true);
   try {
     await ensureFont(fontKey);
+    const topFontKey = params.style === 'vase' ? params.topFont : undefined;
+    if (topFontKey) await ensureFont(topFontKey);
     const myId = ++latestBuild;
-    const res = await call({ type: 'build', fontKey, params: { ...params } });
+    const res = await call({ type: 'build', fontKey, topFontKey, params: { ...params } });
     if (res.type === 'error') {
       showWarnings([`Something went wrong: ${res.message}`]);
     } else if (myId === latestBuild) {
@@ -290,6 +337,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
+      if (c.key === 'rPlate') renderStyleControls();
       schedule();
     });
     return row;
@@ -317,6 +365,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'ramp' && !params.rPlate) list = list.filter((c) => c.key !== 'rPlateT' && c.key !== 'rPad');
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -361,9 +410,10 @@ function renderStyles() {
     .map(
       (s) => `<button type="button" class="style ${s === params.style ? 'on' : ''}" data-s="${s}">
         <span class="ico ico-${s}" aria-hidden="true">${ICONS[s]}</span>
-        <b>${PRESETS[s].label}</b><small>${PRESETS[s].blurb}</small></button>`,
+        <b>${PRESETS[s].label}</b></button>`,
     )
     .join('');
+  $('#style-blurb').textContent = PRESETS[params.style].blurb;
   host.querySelectorAll<HTMLButtonElement>('button.style').forEach((b) =>
     b.addEventListener('click', () => selectStyle(b.dataset.s as Style)),
   );
@@ -395,14 +445,24 @@ function syncColors() {
     planter: ['Shell', 'Moss preview'],
     topo: ['Top layer', 'Deepest layer'],
     facet: ['Paper', '—'],
+    keychain: ['Base', 'Name'],
+    vase: ['Base word', 'Top word'],
+    stack: ['Colour', '—'],
+    stepped: ['Colour', '—'],
+    ramp: ['Plate', 'Letters'],
   };
   const [a, b] = labels[params.style];
   $('#colorA-label').textContent = a;
   $('#colorB-label').textContent = b;
-  $('#colorB-wrap').style.display = params.style === 'facet' ? 'none' : '';
+  $('#colorB-wrap').style.display = ['facet', 'stack', 'stepped'].includes(params.style) ? 'none' : '';
 }
 
 const ICONS: Record<Style, string> = {
+  keychain: `<svg viewBox="0 0 48 32"><path d="M9 8h30a8 8 0 0 1 0 16H9a8 8 0 0 1 0-16z" fill="currentColor" opacity=".3"/><circle cx="9" cy="16" r="2.6" fill="var(--bg)"/><path d="M17 21c2-7 4-10 6-10s1 5-1 7m5 3c1-4 3-7 5-7 1 0 1 3-1 5m4 2c1-3 2-5 4-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`,
+  vase: `<svg viewBox="0 0 48 32"><path d="M4 18h40v10H4z" fill="currentColor" opacity=".35"/><path d="M8 18v-6M16 18v-9M24 18v-7M32 18v-10M40 18v-6" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="10" r="2.2" fill="currentColor"/><circle cx="16" cy="7" r="2.2" fill="currentColor"/><circle cx="24" cy="9" r="2.2" fill="currentColor"/><circle cx="32" cy="6" r="2.2" fill="currentColor"/><circle cx="40" cy="10" r="2.2" fill="currentColor"/><path d="M9 16c4-3 8-3 12 0s8 3 12 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+  stack: `<svg viewBox="0 0 48 32"><rect x="5" y="3" width="38" height="8" rx="2.5" fill="currentColor"/><rect x="8" y="12" width="32" height="8" rx="2.5" fill="currentColor" opacity=".6"/><rect x="6" y="21" width="36" height="8" rx="2.5" fill="currentColor"/></svg>`,
+  stepped: `<svg viewBox="0 0 48 32"><path d="M10 29L22 3h4l12 26" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 29L24 8l10 21M18 29l6-13 6 13" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><path d="M17 21h14" stroke="currentColor" stroke-width="2"/></svg>`,
+  ramp: `<svg viewBox="0 0 48 32"><rect x="3" y="3" width="42" height="26" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".5"/><path d="M8 9h8M8 9v14M20 9h4l14 3v2l-14-1h-4zM20 19h4l14 3v2l-14-1h-4z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`,
   sign: `<svg viewBox="0 0 48 32"><path d="M4 8h6v14H4zM12 8h6v14h-6zM20 8h6v14h-6z" fill="currentColor"/><rect x="29" y="8" width="15" height="17" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><path d="M32 11h3v3h-3zM38 11h3v3h-3zM32 18h3v3h-3zM37 17h2v2h-2zM39 20h2v2h-2z" fill="currentColor"/><path d="M3 22h42v4H3z" fill="currentColor" opacity=".55"/></svg>`,
   planter: `<svg viewBox="0 0 48 32"><path d="M8 26c-4 0-5-5-1-9 5-5 12-9 15-7 3 2-2 7-6 11-3 3-5 5-8 5z" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M10 22c3-3 6-6 9-8" stroke="#6f9a3a" stroke-width="4" stroke-linecap="round"/><path d="M28 24c3-7 8-14 12-13 3 1 0 8-3 12" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M31 21c2-4 4-7 6-8" stroke="#6f9a3a" stroke-width="3.4" stroke-linecap="round"/></svg>`,
   topo: `<svg viewBox="0 0 48 32"><path d="M10 4h16c8 0 11 4 11 8 0 2-1 4-3 5 3 1 5 3 5 6 0 5-4 7-12 7H10z" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M14 8h11c5 0 7 2 7 4s-2 4-7 4M14 18h12c5 0 8 1 8 4s-3 4-8 4H14z" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".7"/><path d="M18 11h6M18 21h7" stroke="currentColor" stroke-width="1.4" opacity=".45"/></svg>`,

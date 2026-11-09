@@ -6,7 +6,7 @@ import { layoutText, type Vec2 } from './text';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'vase' | 'stack' | 'stepped' | 'ramp';
 
 export interface Params {
   style: Style;
@@ -44,6 +44,41 @@ export interface Params {
   bedSize: number;
   colorA: string;
   colorB: string;
+  // keychain
+  kcOutline: number;
+  kcBase: number;
+  kcTier: number;
+  kcText: number;
+  ringHole: number;
+  ringWall: number;
+  // vase (flower stand)
+  topText: string;
+  topFont: string;
+  topCap: number;
+  topThickness: number;
+  vDepth: number;
+  holeD: number;
+  holeDepth: number;
+  holeWall: number;
+  vBar: boolean;
+  // bold stack
+  stDepth: number;
+  stStep: number;
+  stMode: 'cascade' | 'alternate';
+  stRound: number;
+  // stepped
+  spSteps: number;
+  spHeight: number;
+  spInset: number;
+  spJoin: 'Miter' | 'Round';
+  // ramp relief
+  rMin: number;
+  rMax: number;
+  rDir: 'right' | 'left' | 'alternate';
+  rSpan: 'letter' | 'line';
+  rPlate: boolean;
+  rPlateT: number;
+  rPad: number;
 }
 
 export interface Part {
@@ -70,6 +105,9 @@ interface WorkPart {
 }
 
 type Deletable = { delete(): void };
+
+/** Stacked slabs overlap by this much so unions fuse into one solid. */
+const OVERLAP = 0.01;
 
 export class Builder {
   private bin: Deletable[] = [];
@@ -105,7 +143,7 @@ export class Builder {
     this.kept = [];
   }
 
-  build(font: Font, p: Params): BuildResult {
+  build(font: Font, p: Params, topFont?: Font): BuildResult {
     this.releaseKept();
     const warnings: string[] = [];
     let parts: WorkPart[] = [];
@@ -131,6 +169,21 @@ export class Builder {
           break;
         case 'facet':
           parts = this.facet(cs, p, warnings);
+          break;
+        case 'keychain':
+          parts = this.keychain(cs, p, warnings);
+          break;
+        case 'vase':
+          parts = this.vase(cs, layout.lastBaseline, p, warnings, topFont ?? font);
+          break;
+        case 'stack':
+          parts = this.stack(layout.lines, p, warnings);
+          break;
+        case 'stepped':
+          parts = this.stepped(cs, p, warnings);
+          break;
+        case 'ramp':
+          parts = this.ramp(cs, layout.lines, p, warnings);
           break;
       }
       if (p.splitBed) parts = this.splitToBed(parts, p.bedSize, warnings);
@@ -428,6 +481,221 @@ export class Builder {
       }
     });
     if (failed) warnings.push(`${failed} shape(s) could not be faceted and were extruded flat instead.`);
+    return parts;
+  }
+
+
+  private cs(contours: Vec2[][]): CrossSection {
+    return this.k(new this.wasm.CrossSection(contours as MVec2[][], 'NonZero'));
+  }
+
+  private circle(x: number, y: number, r: number): CrossSection {
+    return this.k(this.wasm.CrossSection.circle(r, 48).translate([x, y]));
+  }
+
+  private keychain(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const o = p.kcOutline;
+    let base = this.k(cs.offset(o, 'Round'));
+    const bb = base.bounds();
+    const midY = (bb.min[1] + bb.max[1]) / 2;
+    const ringR = p.ringHole / 2 + p.ringWall;
+    const cx = bb.min[0] + ringR * 0.25;
+    const ring = this.circle(cx, midY, ringR);
+    const bridge = this.rect(cx, midY - ringR * 0.75, cx + ringR + o * 2.5, midY + ringR * 0.75);
+    base = this.k(this.wasm.CrossSection.union([base, ring, bridge]));
+    // close small notches for a smooth silhouette
+    const close = Math.max(0.5, o * 0.6);
+    base = this.k(this.k(base.offset(close, 'Round')).offset(-close, 'Round'));
+    const hole = this.circle(cx, midY, p.ringHole / 2);
+    base = this.k(base.subtract(hole));
+    const parts: WorkPart[] = [{ name: 'Base', color: p.colorA, m: this.extrude(base, p.kcBase) }];
+    let z = p.kcBase;
+    if (p.kcTier > 0) {
+      const tier = this.k(this.k(cs.offset(o * 0.45, 'Round')).subtract(hole));
+      parts.push({ name: 'Outline step', color: p.colorA, m: this.extrude(tier, p.kcTier, z) });
+      z += p.kcTier;
+    }
+    parts.push({ name: 'Name', color: p.colorB, m: this.extrude(cs, p.kcText, z) });
+    if (p.ringWall < 1.5) warnings.push('A ring wall under 1.5 mm may snap. Make it thicker.');
+    const comps = base.decompose();
+    comps.forEach((c) => this.k(c));
+    if (comps.length > 1) warnings.push('The outline is in several pieces. Increase the outline width or tighten letter spacing.');
+    return parts;
+  }
+
+  private vase(cs: CrossSection, baseline: number, p: Params, warnings: string[], topFont: Font): WorkPart[] {
+    const D = p.vDepth;
+    const t = Math.min(p.topThickness, D * 0.6);
+    let body = cs;
+    const bb = cs.bounds();
+    if (p.vBar) {
+      const bar = this.rect(bb.min[0], Math.min(bb.min[1], baseline), bb.max[0], Math.min(bb.min[1], baseline) + Math.max(2, p.capHeight * 0.08));
+      body = this.k(this.wasm.CrossSection.union([cs, bar]));
+    }
+    const top = bb.max[1];
+    // stem holes
+    const r = p.holeD / 2;
+    const w = p.holeWall;
+    const half = r + w;
+    const holes: { x: number; top: number }[] = [];
+    if (D < t + 2 * half) {
+      warnings.push(`Make the depth at least ${(t + 2 * half).toFixed(1)} mm to fit stem holes behind the top word.`);
+    } else {
+      const comps = cs.decompose();
+      comps.forEach((c) => this.k(c));
+      for (const c of comps) {
+        const cb = c.bounds();
+        const cands: { x: number; top: number; score: number }[] = [];
+        for (let x = cb.min[0] + half; x <= cb.max[0] - half; x += Math.max(0.5, r / 2)) {
+          const strip = this.rect(x - half, cb.min[1] - 1, x + half, cb.max[1] + 1);
+          const col = this.k(c.intersect(strip));
+          if (col.isEmpty()) continue;
+          const pieces = col.decompose();
+          pieces.forEach((pc) => this.k(pc));
+          pieces.sort((a, b) => b.bounds().max[1] - a.bounds().max[1]);
+          const tp = pieces[0];
+          const ptop = tp.bounds().max[1];
+          const need = Math.min(p.holeDepth, ptop - cb.min[1] - w);
+          if (need < p.holeDepth * 0.6) continue;
+          const box = this.rect(x - half, ptop - need, x + half, ptop);
+          const fill = this.k(tp.intersect(box)).area() / (2 * half * need);
+          if (fill > 0.9) cands.push({ x, top: ptop, score: fill - Math.abs(x - (cb.min[0] + cb.max[0]) / 2) / 1000 });
+        }
+        cands.sort((a, b) => b.score - a.score);
+        const chosen: typeof cands = [];
+        for (const cand of cands) {
+          if (chosen.length >= 2) break;
+          if (chosen.every((h) => Math.abs(h.x - cand.x) > half * 2 + w * 2)) chosen.push(cand);
+        }
+        holes.push(...chosen);
+      }
+      if (!holes.length) warnings.push('No letter is wide enough for a stem hole. Use a bolder font or smaller holes.');
+    }
+
+    // top word, sitting into the top of the bold word
+    let topCs: CrossSection | null = null;
+    if (p.topText.trim()) {
+      const lay = layoutText(topFont, p.topText, { capHeight: p.topCap, tracking: 0, lineSpacing: 1.2 });
+      if (lay.contours.length) {
+        const sink = p.topCap * 0.28;
+        topCs = this.k(this.cs(lay.contours).translate([(bb.min[0] + bb.max[0]) / 2, top - sink]));
+        const tb = topCs.bounds();
+        topCs = this.k(topCs.translate([-(tb.min[0] + tb.max[0]) / 2 + (bb.min[0] + bb.max[0]) / 2, 0]));
+      }
+    }
+
+    // build in print orientation: letter plane = XZ, depth along -Y
+    const toStand = (m: Manifold) => this.k(m.rotate([90, 0, 0]));
+    let main = toStand(this.extrude(body, D));
+    for (const h of holes) {
+      const cyl = this.k(
+        this.wasm.Manifold.cylinder(p.holeDepth + 50, r, r, 32).translate([h.x, -(t + D) / 2, h.top - p.holeDepth]),
+      );
+      main = this.k(main.subtract(cyl));
+    }
+    const parts: WorkPart[] = [{ name: 'Base word', color: p.colorA, m: main }];
+    if (topCs) parts.push({ name: 'Top word', color: p.colorB, m: toStand(this.extrude(topCs, t)) });
+    const zmin = Math.min(...parts.map((x) => x.m!.boundingBox().min[2]));
+    for (const x of parts) x.m = this.k(x.m!.translate([0, 0, -zmin]));
+    if (holes.length) warnings.push(`${holes.length} stem holes, ${p.holeD} mm wide and ${p.holeDepth} mm deep. Print standing up.`);
+    return parts;
+  }
+
+  private rounded(cs: CrossSection, depth: number, R: number): Manifold {
+    const r = Math.min(R, depth * 0.9);
+    if (r < 0.2) return this.extrude(cs, depth);
+    const n = Math.max(3, Math.min(5, Math.round(r * 1.2)));
+    const slabs: Manifold[] = [this.extrude(cs, depth - r)];
+    for (let i = 0; i < n; i++) {
+      const z0 = depth - r + (r * i) / n;
+      const zTop = depth - r + (r * (i + 1)) / n;
+      const h = zTop - (depth - r);
+      const inset = r - Math.sqrt(Math.max(0, r * r - h * h));
+      const s = this.k(cs.offset(-inset, 'Round', 2, 24));
+      if (s.isEmpty()) break;
+      slabs.push(this.extrude(s, zTop - z0 + OVERLAP, z0 - OVERLAP));
+    }
+    return this.k(this.wasm.Manifold.union(slabs));
+  }
+
+  private stack(lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
+    const ms: Manifold[] = [];
+    lines.forEach((lc, i) => {
+      const extra = p.stMode === 'cascade' ? i * p.stStep : (i % 2) * p.stStep;
+      const d = Math.max(1, p.stDepth + extra);
+      // one solid per line; letters on a line are fused by a slight outward offset
+      const line = this.k(this.k(this.k(this.cs(lc).offset(0.6, 'Round')).offset(-0.3, 'Round')).simplify(0.05));
+      ms.push(this.rounded(line, d, p.stRound));
+    });
+    if (!ms.length) return [];
+    const flat = this.cs(lines.flat());
+    if (flat.decompose().map((c) => this.k(c)).length > 1) {
+      // Fuse loose letters with a thin backing cut from the closed silhouette.
+      const g = p.capHeight * 0.12;
+      const backer = this.k(this.k(flat.offset(g, 'Round')).offset(-g * 0.85, 'Round'));
+      ms.push(this.extrude(backer, Math.min(2, p.stDepth * 0.5)));
+      warnings.push('Added a 2 mm backing so the separate letters print as one piece.');
+    }
+    const body = this.k(this.wasm.Manifold.union(ms));
+    return [{ name: 'Block', color: p.colorA, m: body }];
+  }
+
+  private stepped(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const N = Math.max(1, Math.round(p.spSteps));
+    const slabs: Manifold[] = [];
+    for (let k = 0; k < N; k++) {
+      const grow = (N - 1 - k) * p.spInset;
+      const s = grow > 0 ? this.k(cs.offset(grow, p.spJoin, 4)) : cs;
+      slabs.push(this.extrude(s, p.spHeight + (k ? OVERLAP : 0), k * p.spHeight - (k ? OVERLAP : 0)));
+    }
+    if (p.spInset * (N - 1) > p.capHeight * 0.25) warnings.push('Wide steps start to merge the letters together.');
+    return [{ name: 'Letters', color: p.colorA, m: this.k(this.wasm.Manifold.union(slabs)) }];
+  }
+
+  private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
+    const z0 = p.rPlate ? p.rPlateT : 0;
+    const parts: WorkPart[] = [];
+    const lo = Math.max(0.4, p.rMin);
+    const hi = Math.max(lo, p.rMax);
+    const pieces: { c: CrossSection; x0: number; x1: number; idx: number }[] = [];
+    let idx = 0;
+    for (const lc of lines) {
+      const lcs = this.cs(lc);
+      const lb = lcs.bounds();
+      const comps = lcs.decompose();
+      comps.forEach((c) => this.k(c));
+      comps.sort((a, b) => a.bounds().min[0] - b.bounds().min[0]);
+      for (const c of comps) {
+        const b = c.bounds();
+        if (p.rSpan === 'line') pieces.push({ c, x0: lb.min[0], x1: lb.max[0], idx: idx++ });
+        else pieces.push({ c, x0: b.min[0], x1: b.max[0], idx: idx++ });
+      }
+    }
+    const ms: Manifold[] = [];
+    for (const pc of pieces) {
+      const rising = p.rDir === 'right' || (p.rDir === 'alternate' && pc.idx % 2 === 0);
+      const span = Math.max(1e-3, pc.x1 - pc.x0);
+      const m = this.k(
+        this.k(pc.c.extrude(1)).warp((v) => {
+          let t = (v[0] - pc.x0) / span;
+          t = Math.min(1, Math.max(0, t));
+          if (!rising) t = 1 - t;
+          v[2] = v[2] * (lo + (hi - lo) * t) + z0;
+        }),
+      );
+      ms.push(m);
+    }
+    if (ms.length) parts.push({ name: 'Letters', color: p.colorB, m: this.k(this.wasm.Manifold.union(ms)) });
+    if (p.rPlate) {
+      const b = cs.bounds();
+      const pad = p.rPad;
+      let plate = this.rect(b.min[0] - pad, b.min[1] - pad, b.max[0] + pad, b.max[1] + pad);
+      plate = this.k(this.k(plate.offset(-2, 'Round')).offset(2, 'Round'));
+      parts.unshift({ name: 'Plate', color: p.colorA, m: this.extrude(plate, p.rPlateT) });
+    }
+    if (hi - lo > (cs.bounds().max[0] - cs.bounds().min[0]) && p.rSpan === 'letter') {
+      warnings.push('Very steep ramps may need supports.');
+    }
     return parts;
   }
 

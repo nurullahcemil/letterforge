@@ -80,16 +80,17 @@ textarea:focus, input[type='text']:focus, input[type='number']:focus { outline: 
 .upload input { display: none; }
 .upload:hover { text-decoration: underline; }
 
-.styles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.blurb { margin: 8px 2px 4px; color: var(--ink-3); font-size: 12px; line-height: 1.35; }
 .style {
   text-align: left; border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius);
-  padding: 10px; cursor: pointer; display: grid; gap: 2px; transition: border-color .15s, background .15s;
+  padding: 8px 6px 7px; cursor: pointer; display: grid; justify-items: center; text-align: center; gap: 2px; transition: border-color .15s, background .15s;
 }
 .style:hover { border-color: var(--line-2); }
 .style.on { border-color: var(--accent); background: var(--accent-soft); }
-.style .ico { color: var(--accent); height: 30px; display: block; margin-bottom: 4px; }
+.style .ico { color: var(--accent); height: 26px; display: block; margin-bottom: 3px; }
 .style .ico svg { height: 100%; width: auto; }
-.style b { font-size: 13.5px; font-weight: 600; }
+.style b { font-size: 12px; font-weight: 600; line-height: 1.2; }
 .style small { color: var(--ink-3); font-size: 11.5px; line-height: 1.3; }
 
 .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; margin-bottom: 12px; }

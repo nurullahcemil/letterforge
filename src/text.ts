@@ -9,6 +9,8 @@ export type Vec2 = [number, number];
 export interface TextLayout {
   /** All closed contours of every glyph, in mm, y up. Fill rule: NonZero. */
   contours: Vec2[][];
+  /** Contours grouped per text line (empty lines omitted). */
+  lines: Vec2[][][];
   /** Baseline y (mm) of the last line. */
   lastBaseline: number;
   /** Cap height actually used, in mm. */
@@ -112,11 +114,18 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
   const lineHeight = opts.capHeight * opts.lineSpacing;
   const lines = text.replace(/\r/g, '').split('\n');
   const contours: Vec2[][] = [];
+  const lineGroups: Vec2[][][] = [];
   let lastBaseline = 0;
   const tol = Math.max(0.25, opts.capHeight / 120);
 
   lines.forEach((line, li) => {
-    const glyphs = font.stringToGlyphs(line);
+    let glyphs: ReturnType<Font['stringToGlyphs']>;
+    try {
+      glyphs = font.stringToGlyphs(line);
+    } catch {
+      // Some fonts use OpenType features opentype.js can't apply; fall back to plain mapping.
+      glyphs = Array.from(line).map((ch) => font.charToGlyph(ch));
+    }
     const baseY = li * lineHeight; // opentype y-down
     const placed: { g: (typeof glyphs)[number]; x: number }[] = [];
     let x = 0;
@@ -130,12 +139,15 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       }
     }
     const shift = -x / 2;
+    const lineContours: Vec2[][] = [];
     for (const p of placed) {
       const path = p.g.getPath(p.x + shift, baseY, fontSize);
-      contours.push(...flatten(path.commands, tol));
+      lineContours.push(...flatten(path.commands, tol));
     }
+    contours.push(...lineContours);
+    if (lineContours.length) lineGroups.push(lineContours);
     if (line.trim().length) lastBaseline = -baseY;
   });
 
-  return { contours, lastBaseline, capHeight: opts.capHeight };
+  return { contours, lines: lineGroups, lastBaseline, capHeight: opts.capHeight };
 }

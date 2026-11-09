@@ -6,7 +6,7 @@ import { parseFont } from './text';
 
 type Req =
   | { type: 'font'; key: string; buffer: ArrayBuffer }
-  | { type: 'build'; id: number; fontKey: string; params: Params }
+  | { type: 'build'; id: number; fontKey: string; topFontKey?: string; params: Params }
   | { type: 'merged'; id: number };
 
 const fonts = new Map<string, Font>();
@@ -30,7 +30,7 @@ self.onmessage = async (e: MessageEvent<Req>) => {
       const font = fonts.get(msg.fontKey);
       if (!font) throw new Error('Font not loaded');
       const t = performance.now();
-      const res = builder.build(font, msg.params);
+      const res = builder.build(font, msg.params, msg.topFontKey ? fonts.get(msg.topFontKey) : undefined);
       self.postMessage({ type: 'result', id: msg.id, ...res, ms: performance.now() - t });
     } else if (msg.type === 'merged') {
       const mesh = builder.mergedMesh();
