@@ -6,7 +6,7 @@ import { layoutText, type Vec2 } from './text';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'vase' | 'stack' | 'stepped' | 'ramp';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book';
 
 export interface Params {
   style: Style;
@@ -61,6 +61,9 @@ export interface Params {
   holeDepth: number;
   holeWall: number;
   vBar: boolean;
+  vHoles: boolean;
+  topDx: number;
+  topDy: number;
   // bold stack
   stDepth: number;
   stStep: number;
@@ -79,6 +82,24 @@ export interface Params {
   rPlate: boolean;
   rPlateT: number;
   rPad: number;
+  // book sleeve
+  bookW: number;
+  bookH: number;
+  bookT: number;
+  bookClear: number;
+  bookWall: number;
+  bookCover: number;
+  bookEffect: 'flat' | 'ramp';
+  bookRelief: number;
+  bookOrient: 'lying' | 'standing';
+  textDx: number;
+  textDy: number;
+}
+
+/** A part the user can drag in the viewer. axes = model axes the 2D offset maps to. */
+export interface DragInfo {
+  key: 'top' | 'main' | 'text';
+  axes: [number, number];
 }
 
 export interface Part {
@@ -88,6 +109,7 @@ export interface Part {
   indices: Uint32Array;
   /** Shown in the viewer only (e.g. moss fill); never exported. */
   previewOnly?: boolean;
+  drag?: DragInfo;
 }
 
 export interface BuildResult {
@@ -102,6 +124,7 @@ interface WorkPart {
   m?: Manifold;
   raw?: { positions: Float32Array; indices: Uint32Array };
   previewOnly?: boolean;
+  drag?: DragInfo;
 }
 
 type Deletable = { delete(): void };
@@ -152,6 +175,8 @@ export class Builder {
         capHeight: p.capHeight,
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
+        // stepped tiers grow outward, so keep letters far enough apart that they never fuse
+        gap: p.style === 'stepped' ? 2 * (Math.max(1, Math.round(p.spSteps)) - 1) * p.spInset + 0.8 : 0,
       });
       const cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
       if (cs.isEmpty()) {
@@ -173,8 +198,11 @@ export class Builder {
         case 'keychain':
           parts = this.keychain(cs, p, warnings);
           break;
-        case 'vase':
-          parts = this.vase(cs, layout.lastBaseline, p, warnings, topFont ?? font);
+        case 'duo':
+          parts = this.duo(cs, layout.lastBaseline, p, warnings, topFont ?? font);
+          break;
+        case 'book':
+          parts = this.book(layout.lines, p, warnings);
           break;
         case 'stack':
           parts = this.stack(layout.lines, p, warnings);
@@ -226,7 +254,7 @@ export class Builder {
             if (v > hi[a]) hi[a] = v;
           }
         }
-        out.push({ name: wp.name, color: wp.color, positions, indices });
+        out.push({ name: wp.name, color: wp.color, positions, indices, drag: wp.drag });
       }
       const size: [number, number, number] = out.length
         ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
@@ -523,7 +551,7 @@ export class Builder {
     return parts;
   }
 
-  private vase(cs: CrossSection, baseline: number, p: Params, warnings: string[], topFont: Font): WorkPart[] {
+  private duo(cs: CrossSection, baseline: number, p: Params, warnings: string[], topFont: Font): WorkPart[] {
     const D = p.vDepth;
     const t = Math.min(p.topThickness, D * 0.6);
     let body = cs;
@@ -538,8 +566,10 @@ export class Builder {
     const w = p.holeWall;
     const half = r + w;
     const holes: { x: number; top: number }[] = [];
-    if (D < t + 2 * half) {
-      warnings.push(`Make the depth at least ${(t + 2 * half).toFixed(1)} mm to fit stem holes behind the top word.`);
+    if (!p.vHoles) {
+      // no stem holes
+    } else if (D < t + 2 * half) {
+      warnings.push(`Make the depth at least ${(t + 2 * half).toFixed(1)} mm to fit stem holes behind the accent text.`);
     } else {
       const comps = cs.decompose();
       comps.forEach((c) => this.k(c));
@@ -580,7 +610,7 @@ export class Builder {
         const sink = p.topCap * 0.28;
         topCs = this.k(this.cs(lay.contours).translate([(bb.min[0] + bb.max[0]) / 2, top - sink]));
         const tb = topCs.bounds();
-        topCs = this.k(topCs.translate([-(tb.min[0] + tb.max[0]) / 2 + (bb.min[0] + bb.max[0]) / 2, 0]));
+        topCs = this.k(topCs.translate([-(tb.min[0] + tb.max[0]) / 2 + (bb.min[0] + bb.max[0]) / 2 + p.topDx, p.topDy]));
       }
     }
 
@@ -593,11 +623,16 @@ export class Builder {
       );
       main = this.k(main.subtract(cyl));
     }
-    const parts: WorkPart[] = [{ name: 'Base word', color: p.colorA, m: main }];
-    if (topCs) parts.push({ name: 'Top word', color: p.colorB, m: toStand(this.extrude(topCs, t)) });
+    const parts: WorkPart[] = [{ name: 'Main text', color: p.colorA, m: main, drag: { key: 'main', axes: [0, 2] } }];
+    if (topCs) {
+      // keep the accent attached: it must overlap the main text or the base strip
+      const touching = !this.k(topCs.intersect(body)).isEmpty();
+      if (!touching) warnings.push('The accent text is not touching the main text, so it will print as a loose piece. Drag it back onto the main text.');
+      parts.push({ name: 'Accent text', color: p.colorB, m: toStand(this.extrude(topCs, t)), drag: { key: 'top', axes: [0, 2] } });
+    }
     const zmin = Math.min(...parts.map((x) => x.m!.boundingBox().min[2]));
     for (const x of parts) x.m = this.k(x.m!.translate([0, 0, -zmin]));
-    if (holes.length) warnings.push(`${holes.length} stem holes, ${p.holeD} mm wide and ${p.holeDepth} mm deep. Print standing up.`);
+    if (holes.length) warnings.push(`${holes.length} stem holes, ${p.holeD} mm wide and ${p.holeDepth} mm deep.`);
     return parts;
   }
 
@@ -652,15 +687,14 @@ export class Builder {
     return [{ name: 'Letters', color: p.colorA, m: this.k(this.wasm.Manifold.union(slabs)) }];
   }
 
-  private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
-    const z0 = p.rPlate ? p.rPlateT : 0;
-    const parts: WorkPart[] = [];
+  /** Letters extruded into wedges that rise across each letter or each line. */
+  private rampSolids(lineSections: CrossSection[], p: Params, z0: number): Manifold[] {
     const lo = Math.max(0.4, p.rMin);
     const hi = Math.max(lo, p.rMax);
     const pieces: { c: CrossSection; x0: number; x1: number; idx: number }[] = [];
     let idx = 0;
-    for (const lc of lines) {
-      const lcs = this.cs(lc);
+    for (const lcs of lineSections) {
+      if (lcs.isEmpty()) continue;
       const lb = lcs.bounds();
       const comps = lcs.decompose();
       comps.forEach((c) => this.k(c));
@@ -671,11 +705,10 @@ export class Builder {
         else pieces.push({ c, x0: b.min[0], x1: b.max[0], idx: idx++ });
       }
     }
-    const ms: Manifold[] = [];
-    for (const pc of pieces) {
+    return pieces.map((pc) => {
       const rising = p.rDir === 'right' || (p.rDir === 'alternate' && pc.idx % 2 === 0);
       const span = Math.max(1e-3, pc.x1 - pc.x0);
-      const m = this.k(
+      return this.k(
         this.k(pc.c.extrude(1)).warp((v) => {
           let t = (v[0] - pc.x0) / span;
           t = Math.min(1, Math.max(0, t));
@@ -683,8 +716,13 @@ export class Builder {
           v[2] = v[2] * (lo + (hi - lo) * t) + z0;
         }),
       );
-      ms.push(m);
-    }
+    });
+  }
+
+  private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
+    const z0 = p.rPlate ? p.rPlateT : 0;
+    const parts: WorkPart[] = [];
+    const ms = this.rampSolids(lines.map((lc) => this.cs(lc)), p, z0);
     if (ms.length) parts.push({ name: 'Letters', color: p.colorB, m: this.k(this.wasm.Manifold.union(ms)) });
     if (p.rPlate) {
       const b = cs.bounds();
@@ -693,56 +731,120 @@ export class Builder {
       plate = this.k(this.k(plate.offset(-2, 'Round')).offset(2, 'Round'));
       parts.unshift({ name: 'Plate', color: p.colorA, m: this.extrude(plate, p.rPlateT) });
     }
-    if (hi - lo > (cs.bounds().max[0] - cs.bounds().min[0]) && p.rSpan === 'letter') {
-      warnings.push('Very steep ramps may need supports.');
-    }
+    if (p.rMax - p.rMin > 20 && p.rSpan === 'letter') warnings.push('Very steep ramps may need supports.');
     return parts;
   }
+
+  /** A slipcase for a book: open on the spine side, letters on the front. */
+  private book(lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
+    const cl = p.bookClear;
+    const wall = p.bookWall;
+    const cover = Math.min(1, Math.max(0.2, p.bookCover / 100));
+    const innerW = cover * (p.bookW + cl);
+    const innerH = p.bookH + 2 * cl;
+    const innerT = p.bookT + 2 * cl;
+    const outW = innerW + wall;
+    const outH = innerH + 2 * wall;
+    const outT = innerT + 2 * wall;
+    const outer = this.k(this.wasm.Manifold.cube([outW, outH, outT]));
+    const cavity = this.k(this.wasm.Manifold.cube([innerW + 1, innerH, innerT]).translate([-1, wall, wall]));
+    const shell = this.k(outer.subtract(cavity));
+
+    // Text, centred on the front face plus the user's offset, clipped to the face.
+    const face = this.rect(0, 0, outW, outH);
+    const all = this.cs(lines.flat());
+    let letters: Manifold | null = null;
+    if (!all.isEmpty()) {
+      const b = all.bounds();
+      const dx = outW / 2 - (b.min[0] + b.max[0]) / 2 + p.textDx;
+      const dy = outH / 2 - (b.min[1] + b.max[1]) / 2 + p.textDy;
+      const placed = lines.map((lc) => this.k(this.k(this.cs(lc).translate([dx, dy])).intersect(face)));
+      const clipped = placed.some((c, i) => Math.abs(c.area() - this.cs(lines[i]).area()) > 1);
+      if (clipped) warnings.push('Part of the text runs off the front and is cut at the edge. Drag it or make it smaller.');
+      if (p.bookEffect === 'ramp') {
+        const ms = this.rampSolids(placed, p, outT - OVERLAP);
+        if (ms.length) letters = this.k(this.wasm.Manifold.union(ms));
+      } else {
+        const u = this.k(this.wasm.CrossSection.union(placed));
+        if (!u.isEmpty()) letters = this.extrude(u, p.bookRelief + OVERLAP, outT - OVERLAP);
+      }
+    }
+    const parts: WorkPart[] = [{ name: 'Case', color: p.colorA, m: shell }];
+    if (letters && !letters.isEmpty()) parts.push({ name: 'Letters', color: p.colorB, m: letters, drag: { key: 'text', axes: [0, 1] } });
+
+    if (p.bookOrient === 'standing') {
+      warnings.push('Shown with the front up so you can place the text. The download is turned to stand on its open end, which needs no supports inside.');
+    } else {
+      warnings.push('Prints lying on its back: the front bridges over the inside, so turn on supports (or choose "Standing").');
+    }
+    if (wall < 1.2) warnings.push('Walls under 1.2 mm will be flimsy.');
+    return parts;
+  }
+
 
   private splitToBed(parts: WorkPart[], bed: number, warnings: string[]): WorkPart[] {
     const out: WorkPart[] = [];
     const usable = Math.max(20, bed - 10);
-    let splitCount = 0;
+    const fits = (m: Manifold) => {
+      const b = m.boundingBox();
+      return b.max[0] - b.min[0] <= usable && b.max[1] - b.min[1] <= usable;
+    };
+    let cutLetters = 0;
+    let separated = 0;
     for (const part of parts) {
-      if (!part.m || part.previewOnly) {
+      if (!part.m || part.previewOnly || fits(part.m)) {
         out.push(part);
         continue;
       }
-      const bb = part.m.boundingBox();
-      const w = bb.max[0] - bb.min[0];
-      const h = bb.max[1] - bb.min[1];
-      if (w <= usable && h <= usable) {
-        out.push(part);
-        continue;
-      }
-      const nx = Math.ceil(w / usable);
-      const ny = Math.ceil(h / usable);
-      const cw = w / nx;
-      const ch = h / ny;
+      // First try to keep whole letters: separate the part into its loose pieces.
+      const comps = part.m.decompose();
+      comps.forEach((c) => this.k(c));
+      comps.sort((a, b) => a.boundingBox().min[0] - b.boundingBox().min[0]);
+      if (comps.length > 1) separated++;
       let idx = 0;
-      for (let ix = 0; ix < nx; ix++) {
-        for (let iy = 0; iy < ny; iy++) {
-          const box = this.k(
-            this.wasm.Manifold.cube([cw + (ix === nx - 1 ? 2 : 0), ch + (iy === ny - 1 ? 2 : 0), bb.max[2] - bb.min[2] + 2]).translate([
-              bb.min[0] + ix * cw - (ix === 0 ? 1 : 0),
-              bb.min[1] + iy * ch - (iy === 0 ? 1 : 0),
-              bb.min[2] - 1,
-            ]),
-          );
-          const piece = this.k(part.m.intersect(box));
-          if (piece.isEmpty()) continue;
-          for (const sub of piece.decompose()) {
-            this.k(sub);
-            idx++;
-            out.push({ name: `${part.name} · piece ${idx}`, color: part.color, m: sub });
+      for (const comp of comps) {
+        if (fits(comp)) {
+          idx++;
+          out.push({ ...part, name: comps.length > 1 ? `${part.name} · ${idx}` : part.name, m: comp });
+          continue;
+        }
+        // A single piece is still too big: cut it on a grid.
+        cutLetters++;
+        const bb = comp.boundingBox();
+        const w = bb.max[0] - bb.min[0];
+        const h = bb.max[1] - bb.min[1];
+        const nx = Math.ceil(w / usable);
+        const ny = Math.ceil(h / usable);
+        const cw = w / nx;
+        const ch = h / ny;
+        for (let ix = 0; ix < nx; ix++) {
+          for (let iy = 0; iy < ny; iy++) {
+            const box = this.k(
+              this.wasm.Manifold.cube([cw + (ix === nx - 1 ? 2 : 0), ch + (iy === ny - 1 ? 2 : 0), bb.max[2] - bb.min[2] + 2]).translate([
+                bb.min[0] + ix * cw - (ix === 0 ? 1 : 0),
+                bb.min[1] + iy * ch - (iy === 0 ? 1 : 0),
+                bb.min[2] - 1,
+              ]),
+            );
+            const piece = this.k(comp.intersect(box));
+            if (piece.isEmpty()) continue;
+            for (const sub of piece.decompose()) {
+              this.k(sub);
+              idx++;
+              out.push({ ...part, name: `${part.name} · piece ${idx}`, m: sub });
+            }
           }
         }
       }
-      splitCount++;
     }
-    if (splitCount) warnings.push(`${splitCount} part(s) were split to fit a ${bed} mm bed. Glue the pieces after printing.`);
+    if (cutLetters) {
+      warnings.push(`${cutLetters} piece(s) were bigger than your ${bed} mm bed and were cut. Glue them after printing.`);
+    } else if (separated) {
+      warnings.push(`Too big for a ${bed} mm bed in one go, so the letters are exported as separate pieces.`);
+    }
     return out;
   }
+
 }
 
 // ---------- faceted roof ----------

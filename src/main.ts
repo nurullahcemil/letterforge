@@ -1,7 +1,7 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
-import { toSTL, to3MF } from './export';
+import { toSTL, to3MF, standOnOpenEnd } from './export';
 import type { Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 
@@ -53,12 +53,12 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'pacifico',
     patch: { capHeight: 16, colorA: '#2f6fd6', colorB: '#ffd43b', tracking: 0 },
   },
-  vase: {
-    label: 'Flower vase',
-    blurb: 'Bold word with stem holes and a script word on top. Prints standing up.',
+  duo: {
+    label: 'Two-text sign',
+    blurb: 'A bold main text with an accent text on top, in two fonts. Drag either text to place it. Prints standing up; add stem holes to use it as a vase.',
     text: 'BIRTHDAY',
     font: 'fredoka',
-    patch: { capHeight: 36, colorA: '#9fd4b4', colorB: '#7cc49b', tracking: -0.04 },
+    patch: { capHeight: 36, colorA: '#9fd4b4', colorB: '#7cc49b', tracking: -0.04, topDx: 0, topDy: 0 },
   },
   stack: {
     label: 'Bold stack',
@@ -80,6 +80,13 @@ const PRESETS: Record<Style, StylePreset> = {
     text: 'ON SUCH\nA FULL SEA',
     font: 'oswald',
     patch: { capHeight: 30, colorA: '#f2c230', colorB: '#f7f5ef', tracking: 0.04, lineSpacing: 1.3, rMax: 10 },
+  },
+  book: {
+    label: 'Book sleeve',
+    blurb: 'A slipcase sized to your book, open on the spine side, with raised or ramped letters on the front. Drag the text to place it.',
+    text: 'ON SUCH\nA FULL SEA',
+    font: 'oswald',
+    patch: { capHeight: 11, colorA: '#f2efe8', colorB: '#e4ddcb', tracking: 0.04, lineSpacing: 1.35, rMin: 0.6, rMax: 8, textDx: 0, textDy: 0 },
   },
 };
 
@@ -127,16 +134,15 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'ringHole', label: 'Ring hole', min: 3, max: 10, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'ringWall', label: 'Ring wall', min: 1, max: 5, step: 0.25, unit: 'mm' },
   ],
-  vase: [
-    { kind: 'text', key: 'topText', label: 'Top word', placeholder: 'e.g. Happy (leave empty for none)' },
-    { kind: 'select', key: 'topFont', label: 'Top word font', options: [['dancing', 'Dancing Script'], ['pacifico', 'Pacifico'], ['fredoka', 'Fredoka'], ['righteous', 'Righteous']] },
-    { kind: 'range', key: 'topCap', label: 'Top word height', min: 10, max: 150, step: 1, unit: 'mm' },
-    { kind: 'range', key: 'topThickness', label: 'Top word thickness', min: 2, max: 15, step: 0.5, unit: 'mm' },
-    { kind: 'range', key: 'vDepth', label: 'Depth', min: 10, max: 60, step: 1, unit: 'mm' },
+  duo: [
+    { kind: 'range', key: 'topCap', label: 'Accent text height', min: 10, max: 150, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'topThickness', label: 'Accent text thickness', min: 2, max: 15, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'vDepth', label: 'Main text depth', min: 6, max: 60, step: 1, unit: 'mm' },
+    { kind: 'toggle', key: 'vBar', label: 'Join letters with a base strip' },
+    { kind: 'toggle', key: 'vHoles', label: 'Stem holes for flowers' },
     { kind: 'range', key: 'holeD', label: 'Stem hole size', min: 2, max: 12, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'holeDepth', label: 'Stem hole depth', min: 5, max: 60, step: 1, unit: 'mm' },
     { kind: 'range', key: 'holeWall', label: 'Wall around holes', min: 0.8, max: 4, step: 0.2, unit: 'mm' },
-    { kind: 'toggle', key: 'vBar', label: 'Join letters with a base strip' },
   ],
   stack: [
     { kind: 'range', key: 'stDepth', label: 'Depth', min: 4, max: 60, step: 1, unit: 'mm' },
@@ -158,6 +164,21 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'toggle', key: 'rPlate', label: 'Back plate' },
     { kind: 'range', key: 'rPlateT', label: 'Plate thickness', min: 1, max: 8, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'rPad', label: 'Plate margin', min: 2, max: 40, step: 1, unit: 'mm' },
+  ],
+  book: [
+    { kind: 'range', key: 'bookW', label: 'Book width', min: 60, max: 320, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'bookH', label: 'Book height', min: 80, max: 420, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'bookT', label: 'Book thickness (spine)', min: 4, max: 120, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'bookCover', label: 'Front coverage', min: 20, max: 100, step: 1, unit: '%', hint: 'How much of the cover the sleeve hides. 100% = full slipcase.' },
+    { kind: 'range', key: 'bookWall', label: 'Wall thickness', min: 1, max: 5, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'bookClear', label: 'Fit clearance', min: 0, max: 4, step: 0.1, unit: 'mm', hint: 'Extra room on each side so the book slides in.' },
+    { kind: 'select', key: 'bookEffect', label: 'Letters', options: [['ramp', 'Ramps'], ['flat', 'Raised']] },
+    { kind: 'range', key: 'bookRelief', label: 'Letter height', min: 0.4, max: 8, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'rMin', label: 'Ramp low end', min: 0.4, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'rMax', label: 'Ramp high end', min: 1, max: 40, step: 0.5, unit: 'mm' },
+    { kind: 'select', key: 'rDir', label: 'Rises toward', options: [['right', 'Right'], ['left', 'Left'], ['alternate', 'Alternate']] },
+    { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
+    { kind: 'select', key: 'bookOrient', label: 'Print orientation', options: [['standing', 'Standing'], ['lying', 'Lying flat']] },
   ],
 };
 
@@ -205,6 +226,7 @@ function call(msg: any): Promise<any> {
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const viewer = new Viewer($('#viewport'));
+(window as any).__letterforge = { viewer, params };
 viewer.setBed(params.bedSize);
 
 const statusEl = $('#status');
@@ -236,7 +258,7 @@ async function run() {
   setBusy(true);
   try {
     await ensureFont(fontKey);
-    const topFontKey = params.style === 'vase' ? params.topFont : undefined;
+    const topFontKey = params.style === 'duo' ? params.topFont : undefined;
     if (topFontKey) await ensureFont(topFontKey);
     const myId = ++latestBuild;
     const res = await call({ type: 'build', fontKey, topFontKey, params: { ...params } });
@@ -254,6 +276,7 @@ async function run() {
         : '';
       showWarnings(res.warnings);
       renderParts(printable);
+      $('#drag-hint').hidden = !printable.some((p: Part) => p.drag);
     }
   } finally {
     building = false;
@@ -337,7 +360,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate') renderStyleControls();
+      if (c.key === 'rPlate' || c.key === 'vHoles') renderStyleControls();
       schedule();
     });
     return row;
@@ -366,6 +389,11 @@ function renderStyleControls() {
     });
   }
   if (params.style === 'ramp' && !params.rPlate) list = list.filter((c) => c.key !== 'rPlateT' && c.key !== 'rPad');
+  if (params.style === 'duo' && !params.vHoles) list = list.filter((c) => !['holeD', 'holeDepth', 'holeWall'].includes(c.key));
+  if (params.style === 'book') {
+    const rampKeys = ['rMin', 'rMax', 'rDir', 'rSpan'];
+    list = list.filter((c) => (params.bookEffect === 'ramp' ? c.key !== 'bookRelief' : !rampKeys.includes(c.key)));
+  }
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -429,6 +457,7 @@ function selectStyle(s: Style) {
     ($('#text') as HTMLTextAreaElement).value = pr.text;
   }
   if (!fontTouched) fontKey = pr.font;
+  syncText2();
   syncColors();
   renderStyles();
   renderFonts();
@@ -446,7 +475,8 @@ function syncColors() {
     topo: ['Top layer', 'Deepest layer'],
     facet: ['Paper', '—'],
     keychain: ['Base', 'Name'],
-    vase: ['Base word', 'Top word'],
+    duo: ['Main text', 'Accent text'],
+    book: ['Case', 'Letters'],
     stack: ['Colour', '—'],
     stepped: ['Colour', '—'],
     ramp: ['Plate', 'Letters'],
@@ -459,7 +489,8 @@ function syncColors() {
 
 const ICONS: Record<Style, string> = {
   keychain: `<svg viewBox="0 0 48 32"><path d="M9 8h30a8 8 0 0 1 0 16H9a8 8 0 0 1 0-16z" fill="currentColor" opacity=".3"/><circle cx="9" cy="16" r="2.6" fill="var(--bg)"/><path d="M17 21c2-7 4-10 6-10s1 5-1 7m5 3c1-4 3-7 5-7 1 0 1 3-1 5m4 2c1-3 2-5 4-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`,
-  vase: `<svg viewBox="0 0 48 32"><path d="M4 18h40v10H4z" fill="currentColor" opacity=".35"/><path d="M8 18v-6M16 18v-9M24 18v-7M32 18v-10M40 18v-6" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="10" r="2.2" fill="currentColor"/><circle cx="16" cy="7" r="2.2" fill="currentColor"/><circle cx="24" cy="9" r="2.2" fill="currentColor"/><circle cx="32" cy="6" r="2.2" fill="currentColor"/><circle cx="40" cy="10" r="2.2" fill="currentColor"/><path d="M9 16c4-3 8-3 12 0s8 3 12 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+  duo: `<svg viewBox="0 0 48 32"><path d="M4 18h40v10H4z" fill="currentColor" opacity=".4"/><path d="M8 17c3-9 6-12 8-10s-2 7-4 9m8 1c2-6 4-9 6-8 2 2-1 6-3 8m7 0c2-5 5-8 7-7 1 2-1 5-3 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M38 5l3 3-3 3M41 8h-6" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/></svg>`,
+  book: `<svg viewBox="0 0 48 32"><rect x="6" y="3" width="16" height="26" rx="1" fill="currentColor" opacity=".3"/><rect x="18" y="2" width="24" height="28" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 9h6l10 2v2l-10-1h-6zM22 18h4l12 2v2l-12-1h-4z" fill="currentColor"/></svg>`,
   stack: `<svg viewBox="0 0 48 32"><rect x="5" y="3" width="38" height="8" rx="2.5" fill="currentColor"/><rect x="8" y="12" width="32" height="8" rx="2.5" fill="currentColor" opacity=".6"/><rect x="6" y="21" width="36" height="8" rx="2.5" fill="currentColor"/></svg>`,
   stepped: `<svg viewBox="0 0 48 32"><path d="M10 29L22 3h4l12 26" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 29L24 8l10 21M18 29l6-13 6 13" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".6"/><path d="M17 21h14" stroke="currentColor" stroke-width="2"/></svg>`,
   ramp: `<svg viewBox="0 0 48 32"><rect x="3" y="3" width="42" height="26" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".5"/><path d="M8 9h8M8 9v14M20 9h4l14 3v2l-14-1h-4zM20 19h4l14 3v2l-14-1h-4z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>`,
@@ -508,11 +539,17 @@ $('#font-upload').addEventListener('change', async (e) => {
   sentFonts.delete(key);
   fontKey = key;
   fontTouched = true;
+  syncText2();
   renderFonts();
   schedule(true);
 });
 
 $('#fit').addEventListener('click', () => viewer.fit());
+
+/** The preview shows the book sleeve front-up; the file is turned to print standing. */
+function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
+  return params.style === 'book' && params.bookOrient === 'standing' ? standOnOpenEnd(meshes) : meshes;
+}
 
 function baseName() {
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
@@ -530,15 +567,54 @@ function download(blob: Blob, name: string) {
 $('#dl-3mf').addEventListener('click', () => {
   const printable = lastParts.filter((p) => !p.previewOnly);
   if (!printable.length) return;
-  download(to3MF(printable, params.text.trim() || 'Letterforge'), baseName() + '.3mf');
+  download(to3MF(forExport(printable), params.text.trim() || 'Letterforge'), baseName() + '.3mf');
 });
 
 $('#dl-stl').addEventListener('click', async () => {
   setBusy(true);
   const res = await call({ type: 'merged' });
   setBusy(false);
-  if (res.type === 'merged' && res.mesh.indices.length) download(toSTL(res.mesh), baseName() + '.stl');
+  if (res.type === 'merged' && res.mesh.indices.length) download(toSTL(forExport([res.mesh])[0]), baseName() + '.stl');
 });
+
+// ---------- accent text (two-text sign) ----------
+
+const text2El = $('#text2') as HTMLInputElement;
+const font2El = $('#font2') as HTMLSelectElement;
+
+function syncText2() {
+  const on = params.style === 'duo';
+  $('#text2-wrap').hidden = !on;
+  $('#text-label').hidden = !on;
+  text2El.value = params.topText;
+  const opts = [...FONTS.map((f) => [f.key, f.label.replace(' (script)', '')]), ...[...customFonts.keys()].map((k) => [k, k.replace(/^custom:/, '')])];
+  font2El.innerHTML = opts.map(([k, l]) => `<option value="${escapeHtml(k)}" ${k === params.topFont ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('');
+}
+text2El.addEventListener('input', () => {
+  params.topText = text2El.value;
+  schedule();
+});
+font2El.addEventListener('change', () => {
+  params.topFont = font2El.value;
+  schedule();
+});
+
+// ---------- drag to move text ----------
+
+viewer.onDragEnd = (key, a, b) => {
+  if (key === 'top') {
+    params.topDx += a;
+    params.topDy += b;
+  } else if (key === 'main') {
+    // moving the main text = moving the accent the other way
+    params.topDx -= a;
+    params.topDy -= b;
+  } else if (key === 'text') {
+    params.textDx += a;
+    params.textDy += b;
+  }
+  schedule();
+};
 
 // Load font previews for the picker.
 for (const f of FONTS) {
@@ -546,6 +622,7 @@ for (const f of FONTS) {
   ff.load().then((x) => document.fonts.add(x)).catch(() => {});
 }
 
+syncText2();
 syncColors();
 renderStyles();
 renderFonts();

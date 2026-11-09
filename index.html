@@ -24,9 +24,16 @@
 
         <section>
           <h2>Text</h2>
+          <label class="sub" id="text-label" for="text" hidden>Main text</label>
           <textarea id="text" rows="2" spellcheck="false" aria-label="Text to make"></textarea>
           <div id="fonts" class="fonts"></div>
           <label class="upload"><input id="font-upload" type="file" accept=".ttf,.otf,.woff,.woff2" />Upload your own font (TTF, OTF, WOFF)</label>
+          <div id="text2-wrap" class="text2" hidden>
+            <label class="sub" for="text2">Accent text</label>
+            <input id="text2" type="text" spellcheck="false" placeholder="e.g. Happy (leave empty for none)" />
+            <label class="sub" for="font2">Accent font</label>
+            <select id="font2"></select>
+          </div>
         </section>
 
         <section>
@@ -69,6 +76,7 @@
           <div id="status" class="status"><span></span>Building…</div>
         </div>
         <div id="warnings" class="warnings"></div>
+        <div id="drag-hint" class="drag-hint" hidden>Drag the text to move it</div>
         <ul id="parts" class="parts"></ul>
         <div class="actions">
           <button id="fit" class="ghost" type="button" title="Reset the camera">Fit view</button>

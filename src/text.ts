@@ -20,6 +20,8 @@ export interface TextLayout {
 export interface LayoutOptions {
   capHeight: number; // mm
   tracking: number; // fraction of em
+  /** Extra space between letters, in mm. */
+  gap?: number;
   lineSpacing: number; // multiple of cap height
 }
 
@@ -135,7 +137,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       x += (g.advanceWidth ?? 0) * scale;
       if (i < glyphs.length - 1) {
         x += font.getKerningValue(g, glyphs[i + 1]) * scale;
-        x += opts.tracking * fontSize;
+        x += opts.tracking * fontSize + (opts.gap ?? 0);
       }
     }
     const shift = -x / 2;

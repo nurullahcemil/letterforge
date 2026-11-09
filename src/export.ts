@@ -82,3 +82,31 @@ ${objects}<object id="${baseId}" name="${esc(title)}" type="model"><components>$
   };
   return new Blob([zipSync(files, { level: 6 })], { type: 'model/3mf' });
 }
+
+/**
+ * Rotate meshes so the model's -X end rests on the bed (x,y,z) -> (-z, y, x),
+ * then shift everything so it sits at the origin. Used for the book sleeve,
+ * which is edited lying down but printed standing on its open end.
+ */
+export function standOnOpenEnd<T extends { positions: Float32Array }>(meshes: T[]): T[] {
+  let minX = Infinity;
+  let minZ = Infinity;
+  const out = meshes.map((m) => {
+    const p = new Float32Array(m.positions.length);
+    for (let i = 0; i < p.length; i += 3) {
+      p[i] = -m.positions[i + 2];
+      p[i + 1] = m.positions[i + 1];
+      p[i + 2] = m.positions[i];
+      if (p[i] < minX) minX = p[i];
+      if (p[i + 2] < minZ) minZ = p[i + 2];
+    }
+    return { ...m, positions: p };
+  });
+  for (const m of out) {
+    for (let i = 0; i < m.positions.length; i += 3) {
+      m.positions[i] -= minX;
+      m.positions[i + 2] -= minZ;
+    }
+  }
+  return out;
+}
