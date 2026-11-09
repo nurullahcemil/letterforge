@@ -86,7 +86,7 @@ const PRESETS: Record<Style, StylePreset> = {
     blurb: 'A slipcase sized to your book, open on the spine side, with raised or ramped letters on the front. Drag the text to place it.',
     text: 'ON SUCH\nA FULL SEA',
     font: 'oswald',
-    patch: { capHeight: 11, colorA: '#f2efe8', colorB: '#e4ddcb', tracking: 0.04, lineSpacing: 1.35, rMin: 0.6, rMax: 8, textDx: 0, textDy: 0 },
+    patch: { capHeight: 16, colorA: '#f2efe8', colorB: '#cdbf98', tracking: 0.03, lineSpacing: 1.35, rMin: 0.4, rMax: 10, rLean: 60, rSpan: 'letter', rDir: 'right', textDx: 0, textDy: 0 },
   },
 };
 
@@ -161,6 +161,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'rMax', label: 'High end', min: 1, max: 60, step: 0.5, unit: 'mm' },
     { kind: 'select', key: 'rDir', label: 'Rises toward', options: [['right', 'Right'], ['left', 'Left'], ['alternate', 'Alternate']] },
     { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
+    { kind: 'range', key: 'rLean', label: 'Sweep angle', min: 0, max: 70, step: 1, unit: '°', hint: 'Letters slide sideways as they rise. 0 = straight up.' },
     { kind: 'toggle', key: 'rPlate', label: 'Back plate' },
     { kind: 'range', key: 'rPlateT', label: 'Plate thickness', min: 1, max: 8, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'rPad', label: 'Plate margin', min: 2, max: 40, step: 1, unit: 'mm' },
@@ -172,10 +173,14 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'bookCover', label: 'Front coverage', min: 20, max: 100, step: 1, unit: '%', hint: 'How much of the cover the sleeve hides. 100% = full slipcase.' },
     { kind: 'range', key: 'bookWall', label: 'Wall thickness', min: 1, max: 5, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'bookClear', label: 'Fit clearance', min: 0, max: 4, step: 0.1, unit: 'mm', hint: 'Extra room on each side so the book slides in.' },
-    { kind: 'select', key: 'bookEffect', label: 'Letters', options: [['ramp', 'Ramps'], ['flat', 'Raised']] },
+    { kind: 'toggle', key: 'bookFit', label: 'Fit text to the front', hint: 'Wraps the text and picks the letter size so it fills the front.' },
+    { kind: 'range', key: 'bookMargin', label: 'Margin', min: 0, max: 40, step: 1, unit: 'mm' },
+    { kind: 'select', key: 'bookAlign', label: 'Align', options: [['left', 'Left'], ['center', 'Centre']] },
+    { kind: 'select', key: 'bookEffect', label: 'Letters', options: [['sweep', 'Swept'], ['ramp', 'Ramps'], ['flat', 'Raised']] },
+    { kind: 'range', key: 'rLean', label: 'Sweep angle', min: 0, max: 70, step: 1, unit: '°', hint: 'How far the letters slide sideways as they rise off the cover.' },
     { kind: 'range', key: 'bookRelief', label: 'Letter height', min: 0.4, max: 8, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'rMin', label: 'Ramp low end', min: 0.4, max: 10, step: 0.2, unit: 'mm' },
-    { kind: 'range', key: 'rMax', label: 'Ramp high end', min: 1, max: 40, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'rMax', label: 'Ramp high end', min: 1, max: 40, step: 0.5, unit: 'mm', hint: 'How far the tallest edge stands off the cover.' },
     { kind: 'select', key: 'rDir', label: 'Rises toward', options: [['right', 'Right'], ['left', 'Left'], ['alternate', 'Alternate']] },
     { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
     { kind: 'select', key: 'bookOrient', label: 'Print orientation', options: [['standing', 'Standing'], ['lying', 'Lying flat']] },
@@ -208,9 +213,13 @@ worker.onmessage = (e) => {
 
 async function ensureFont(key: string) {
   if (sentFonts.has(key)) return;
-  const url = customFonts.get(key) ?? FONTS.find((f) => f.key === key)!.url;
-  const buf = await (await fetch(url)).arrayBuffer();
-  worker.postMessage({ type: 'font', key, buffer: buf }, [buf]);
+  const def = FONTS.find((f) => f.key === key);
+  const url = customFonts.get(key) ?? def!.url;
+  const [buf, ext] = await Promise.all([
+    fetch(url).then((r) => r.arrayBuffer()),
+    def?.extUrl ? fetch(def.extUrl).then((r) => r.arrayBuffer()).catch(() => undefined) : Promise.resolve(undefined),
+  ]);
+  worker.postMessage({ type: 'font', key, buffer: buf, ext }, ext ? [buf, ext] : [buf]);
   sentFonts.add(key);
 }
 
@@ -360,7 +369,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles') renderStyleControls();
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit') { renderStyleControls(); renderGeneral(); }
       schedule();
     });
     return row;
@@ -391,8 +400,13 @@ function renderStyleControls() {
   if (params.style === 'ramp' && !params.rPlate) list = list.filter((c) => c.key !== 'rPlateT' && c.key !== 'rPad');
   if (params.style === 'duo' && !params.vHoles) list = list.filter((c) => !['holeD', 'holeDepth', 'holeWall'].includes(c.key));
   if (params.style === 'book') {
-    const rampKeys = ['rMin', 'rMax', 'rDir', 'rSpan'];
-    list = list.filter((c) => (params.bookEffect === 'ramp' ? c.key !== 'bookRelief' : !rampKeys.includes(c.key)));
+    const rampKeys = ['rMin', 'rMax', 'rDir', 'rSpan', 'rLean'];
+    list = list.filter((c) => {
+      if (params.bookEffect === 'flat') return !rampKeys.includes(c.key);
+      if (c.key === 'bookRelief') return false;
+      if (c.key === 'rLean') return params.bookEffect === 'sweep';
+      return true;
+    });
   }
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
@@ -401,11 +415,13 @@ function renderStyleControls() {
 function renderGeneral() {
   const host = $('#general-controls');
   host.innerHTML = '';
-  const controls: Control[] = [
-    { kind: 'range', key: 'capHeight', label: 'Letter height', min: 10, max: 400, step: 1, unit: 'mm', hint: 'Height of a capital letter.' },
-    { kind: 'range', key: 'tracking', label: 'Letter spacing', min: -0.1, max: 0.4, step: 0.01 },
-  ];
-  if (params.text.includes('\n')) controls.push({ kind: 'range', key: 'lineSpacing', label: 'Line spacing', min: 0.9, max: 2.5, step: 0.05 });
+  const book = params.style === 'book';
+  const controls: Control[] = [];
+  if (!(book && params.bookFit)) {
+    controls.push({ kind: 'range', key: 'capHeight', label: 'Letter height', min: book ? 3 : 10, max: 400, step: book ? 0.5 : 1, unit: 'mm', hint: 'Height of a capital letter.' });
+  }
+  controls.push({ kind: 'range', key: 'tracking', label: 'Letter spacing', min: -0.1, max: 0.4, step: 0.01 });
+  if (book || params.text.includes('\n')) controls.push({ kind: 'range', key: 'lineSpacing', label: 'Line spacing', min: 0.9, max: 2.5, step: 0.05 });
   controls.forEach((c) => host.appendChild(controlEl(c)));
 }
 

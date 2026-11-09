@@ -89,7 +89,11 @@ export interface Params {
   bookClear: number;
   bookWall: number;
   bookCover: number;
-  bookEffect: 'flat' | 'ramp';
+  bookEffect: 'flat' | 'ramp' | 'sweep';
+  bookFit: boolean;
+  bookMargin: number;
+  bookAlign: 'left' | 'center';
+  rLean: number;
   bookRelief: number;
   bookOrient: 'lying' | 'standing';
   textDx: number;
@@ -202,7 +206,7 @@ export class Builder {
           parts = this.duo(cs, layout.lastBaseline, p, warnings, topFont ?? font);
           break;
         case 'book':
-          parts = this.book(layout.lines, p, warnings);
+          parts = this.book(font, p, warnings);
           break;
         case 'stack':
           parts = this.stack(layout.lines, p, warnings);
@@ -688,7 +692,8 @@ export class Builder {
   }
 
   /** Letters extruded into wedges that rise across each letter or each line. */
-  private rampSolids(lineSections: CrossSection[], p: Params, z0: number): Manifold[] {
+  private rampSolids(lineSections: CrossSection[], p: Params, z0: number, leanDeg = 0): Manifold[] {
+    const lean = Math.tan((Math.min(75, Math.max(0, leanDeg)) * Math.PI) / 180);
     const lo = Math.max(0.4, p.rMin);
     const hi = Math.max(lo, p.rMax);
     const pieces: { c: CrossSection; x0: number; x1: number; idx: number }[] = [];
@@ -713,7 +718,10 @@ export class Builder {
           let t = (v[0] - pc.x0) / span;
           t = Math.min(1, Math.max(0, t));
           if (!rising) t = 1 - t;
-          v[2] = v[2] * (lo + (hi - lo) * t) + z0;
+          const h = v[2] * (lo + (hi - lo) * t);
+          // lean: the shape slides sideways (toward the high end) as it rises off the surface
+          v[0] += h * lean * (rising ? 1 : -1);
+          v[2] = h + z0;
         }),
       );
     });
@@ -722,7 +730,7 @@ export class Builder {
   private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
     const z0 = p.rPlate ? p.rPlateT : 0;
     const parts: WorkPart[] = [];
-    const ms = this.rampSolids(lines.map((lc) => this.cs(lc)), p, z0);
+    const ms = this.rampSolids(lines.map((lc) => this.cs(lc)), p, z0, p.rLean);
     if (ms.length) parts.push({ name: 'Letters', color: p.colorB, m: this.k(this.wasm.Manifold.union(ms)) });
     if (p.rPlate) {
       const b = cs.bounds();
@@ -736,7 +744,7 @@ export class Builder {
   }
 
   /** A slipcase for a book: open on the spine side, letters on the front. */
-  private book(lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
+  private book(font: Font, p: Params, warnings: string[]): WorkPart[] {
     const cl = p.bookClear;
     const wall = p.bookWall;
     const cover = Math.min(1, Math.max(0.2, p.bookCover / 100));
@@ -750,7 +758,36 @@ export class Builder {
     const cavity = this.k(this.wasm.Manifold.cube([innerW + 1, innerH, innerT]).translate([-1, wall, wall]));
     const shell = this.k(outer.subtract(cavity));
 
-    // Text, centred on the front face plus the user's offset, clipped to the face.
+    // Text: wrapped to the front (minus margins), optionally sized to fill it,
+    // centred on the face plus the user's drag offset, clipped to the face.
+    const margin = Math.max(0, p.bookMargin);
+    const maxW = Math.max(10, outW - 2 * margin);
+    const maxH = Math.max(10, outH - 2 * margin);
+    const lay = (cap: number) =>
+      layoutText(font, p.text || ' ', {
+        capHeight: cap,
+        tracking: p.tracking,
+        lineSpacing: p.lineSpacing,
+        maxWidth: maxW,
+        align: p.bookAlign,
+      });
+    const blockH = (l: ReturnType<typeof lay>) => (l.lineCount - 1) * l.capHeight * p.lineSpacing + l.capHeight * 1.3;
+    let layout = lay(p.capHeight);
+    if (p.bookFit) {
+      let lo = 2;
+      let hi = Math.max(4, Math.min(maxH, maxW));
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2;
+        const l = lay(mid);
+        // also make sure no single word is wider than the face
+        const tooWide = this.cs(l.contours).bounds();
+        if (blockH(l) <= maxH && tooWide.max[0] - tooWide.min[0] <= maxW + 0.5) lo = mid;
+        else hi = mid;
+      }
+      layout = lay(lo);
+      warnings.push(`Text sized to fit the front: ${lo.toFixed(1)} mm letters, ${layout.lineCount} line${layout.lineCount > 1 ? 's' : ''}.`);
+    }
+    const lines = layout.lines;
     const face = this.rect(0, 0, outW, outH);
     const all = this.cs(lines.flat());
     let letters: Manifold | null = null;
@@ -760,10 +797,14 @@ export class Builder {
       const dy = outH / 2 - (b.min[1] + b.max[1]) / 2 + p.textDy;
       const placed = lines.map((lc) => this.k(this.k(this.cs(lc).translate([dx, dy])).intersect(face)));
       const clipped = placed.some((c, i) => Math.abs(c.area() - this.cs(lines[i]).area()) > 1);
-      if (clipped) warnings.push('Part of the text runs off the front and is cut at the edge. Drag it or make it smaller.');
-      if (p.bookEffect === 'ramp') {
-        const ms = this.rampSolids(placed, p, outT - OVERLAP);
-        if (ms.length) letters = this.k(this.wasm.Manifold.union(ms));
+      if (clipped) warnings.push('Part of the text runs off the front and is cut at the edge. Drag it, make it smaller, or turn on "Fit text to the front".');
+      if (p.bookEffect === 'ramp' || p.bookEffect === 'sweep') {
+        const ms = this.rampSolids(placed, p, outT - OVERLAP, p.bookEffect === 'sweep' ? p.rLean : 0);
+        if (ms.length) {
+          // keep swept tips inside the outline of the case
+          const keep = this.k(this.wasm.Manifold.cube([outW, outH, outT + p.rMax + 5]));
+          letters = this.k(this.k(this.wasm.Manifold.union(ms)).intersect(keep));
+        }
       } else {
         const u = this.k(this.wasm.CrossSection.union(placed));
         if (!u.isEmpty()) letters = this.extrude(u, p.bookRelief + OVERLAP, outT - OVERLAP);

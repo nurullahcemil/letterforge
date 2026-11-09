@@ -15,6 +15,8 @@ export interface TextLayout {
   lastBaseline: number;
   /** Cap height actually used, in mm. */
   capHeight: number;
+  /** Number of laid-out lines (after wrapping). */
+  lineCount: number;
 }
 
 export interface LayoutOptions {
@@ -23,6 +25,9 @@ export interface LayoutOptions {
   /** Extra space between letters, in mm. */
   gap?: number;
   lineSpacing: number; // multiple of cap height
+  /** Wrap lines to this width in mm. */
+  maxWidth?: number;
+  align?: 'left' | 'center' | 'right';
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
@@ -109,47 +114,104 @@ function flatten(commands: PathCommand[], tol: number): Vec2[][] {
   return out;
 }
 
-export function layoutText(font: Font, text: string, opts: LayoutOptions): TextLayout {
-  const cu = capUnits(font);
-  const fontSize = (opts.capHeight * font.unitsPerEm) / cu;
-  const scale = fontSize / font.unitsPerEm;
-  const lineHeight = opts.capHeight * opts.lineSpacing;
-  const lines = text.replace(/\r/g, '').split('\n');
-  const contours: Vec2[][] = [];
-  const lineGroups: Vec2[][][] = [];
-  let lastBaseline = 0;
-  const tol = Math.max(0.25, opts.capHeight / 120);
+/** Extra fonts (e.g. the latin-ext half of a split webfont) used for characters the main font lacks. */
+export function setFallbacks(font: Font, fallbacks: Font[]) {
+  (font as any).__fallbacks = fallbacks;
+}
 
-  lines.forEach((line, li) => {
+interface Placed {
+  glyph: ReturnType<Font['charToGlyph']>;
+  font: Font;
+  x: number;
+}
+
+/** Lay out one line of text: glyphs with x positions (mm) and total width. */
+function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: number): { items: Placed[]; width: number } {
+  const fallbacks: Font[] = (font as any).__fallbacks ?? [];
+  const chars = Array.from(line);
+  const has = (f: Font, ch: string) => ch.trim() === '' || f.charToGlyphIndex(ch) > 0;
+  const allInMain = chars.every((ch) => has(font, ch));
+
+  // Each run is a glyph plus the font it comes from.
+  let run: { glyph: ReturnType<Font['charToGlyph']>; font: Font }[];
+  if (allInMain) {
     let glyphs: ReturnType<Font['stringToGlyphs']>;
     try {
       glyphs = font.stringToGlyphs(line);
     } catch {
       // Some fonts use OpenType features opentype.js can't apply; fall back to plain mapping.
-      glyphs = Array.from(line).map((ch) => font.charToGlyph(ch));
+      glyphs = chars.map((ch) => font.charToGlyph(ch));
     }
+    run = glyphs.map((glyph) => ({ glyph, font }));
+  } else {
+    run = chars.map((ch) => {
+      const f = has(font, ch) ? font : (fallbacks.find((fb) => has(fb, ch)) ?? font);
+      return { glyph: f.charToGlyph(ch), font: f };
+    });
+  }
+
+  const items: Placed[] = [];
+  let x = 0;
+  for (let i = 0; i < run.length; i++) {
+    const { glyph, font: f } = run[i];
+    const scale = fontSize / f.unitsPerEm;
+    items.push({ glyph, font: f, x });
+    x += (glyph.advanceWidth ?? 0) * scale;
+    if (i < run.length - 1) {
+      if (run[i + 1].font === f) x += f.getKerningValue(glyph, run[i + 1].glyph) * scale;
+      x += opts.tracking * fontSize + (opts.gap ?? 0);
+    }
+  }
+  return { items, width: x };
+}
+
+/** Split a paragraph into lines no wider than maxWidth (greedy, on spaces). */
+function wrapParagraph(font: Font, para: string, opts: LayoutOptions, fontSize: number, maxWidth: number): string[] {
+  const words = para.split(/ +/).filter((w) => w.length);
+  if (!words.length) return [''];
+  const out: string[] = [];
+  let cur = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const next = cur + ' ' + words[i];
+    if (shapeLine(font, next, opts, fontSize).width <= maxWidth) cur = next;
+    else {
+      out.push(cur);
+      cur = words[i];
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+export function layoutText(font: Font, text: string, opts: LayoutOptions): TextLayout {
+  const cu = capUnits(font);
+  const fontSize = (opts.capHeight * font.unitsPerEm) / cu;
+  const lineHeight = opts.capHeight * opts.lineSpacing;
+  const paragraphs = text.replace(/\r/g, '').split('\n');
+  const lines = opts.maxWidth
+    ? paragraphs.flatMap((p) => wrapParagraph(font, p, opts, fontSize, opts.maxWidth!))
+    : paragraphs;
+  const contours: Vec2[][] = [];
+  const lineGroups: Vec2[][][] = [];
+  let lastBaseline = 0;
+  let widest = 0;
+  const tol = Math.max(0.25, opts.capHeight / 120);
+  const shaped = lines.map((line) => shapeLine(font, line, opts, fontSize));
+  for (const s of shaped) widest = Math.max(widest, s.width);
+
+  shaped.forEach(({ items, width }, li) => {
     const baseY = li * lineHeight; // opentype y-down
-    const placed: { g: (typeof glyphs)[number]; x: number }[] = [];
-    let x = 0;
-    for (let i = 0; i < glyphs.length; i++) {
-      const g = glyphs[i];
-      placed.push({ g, x });
-      x += (g.advanceWidth ?? 0) * scale;
-      if (i < glyphs.length - 1) {
-        x += font.getKerningValue(g, glyphs[i + 1]) * scale;
-        x += opts.tracking * fontSize + (opts.gap ?? 0);
-      }
-    }
-    const shift = -x / 2;
+    const align = opts.align ?? 'center';
+    const shift = align === 'left' ? -widest / 2 : align === 'right' ? widest / 2 - width : -width / 2;
     const lineContours: Vec2[][] = [];
-    for (const p of placed) {
-      const path = p.g.getPath(p.x + shift, baseY, fontSize);
+    for (const p of items) {
+      const path = p.glyph.getPath(p.x + shift, baseY, fontSize);
       lineContours.push(...flatten(path.commands, tol));
     }
     contours.push(...lineContours);
     if (lineContours.length) lineGroups.push(lineContours);
-    if (line.trim().length) lastBaseline = -baseY;
+    if (lines[li].trim().length) lastBaseline = -baseY;
   });
 
-  return { contours, lines: lineGroups, lastBaseline, capHeight: opts.capHeight };
+  return { contours, lines: lineGroups, lastBaseline, capHeight: opts.capHeight, lineCount: lines.length };
 }

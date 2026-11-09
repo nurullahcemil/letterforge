@@ -2,10 +2,10 @@ import Module from 'manifold-3d';
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import type { Font } from 'opentype.js';
 import { Builder, type Params } from './geometry';
-import { parseFont } from './text';
+import { parseFont, setFallbacks } from './text';
 
 type Req =
-  | { type: 'font'; key: string; buffer: ArrayBuffer }
+  | { type: 'font'; key: string; buffer: ArrayBuffer; ext?: ArrayBuffer }
   | { type: 'build'; id: number; fontKey: string; topFontKey?: string; params: Params }
   | { type: 'merged'; id: number };
 
@@ -22,7 +22,15 @@ self.onmessage = async (e: MessageEvent<Req>) => {
   const msg = e.data;
   try {
     if (msg.type === 'font') {
-      fonts.set(msg.key, parseFont(msg.buffer));
+      const main = parseFont(msg.buffer);
+      if (msg.ext) {
+        try {
+          setFallbacks(main, [parseFont(msg.ext)]);
+        } catch {
+          /* extra glyphs are optional */
+        }
+      }
+      fonts.set(msg.key, main);
       return;
     }
     const builder = await ready;

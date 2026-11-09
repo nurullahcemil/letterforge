@@ -17,7 +17,9 @@ const fonts = {
   fredoka: 'node_modules/@fontsource/fredoka/files/fredoka-latin-700-normal.woff',
   oswald: 'node_modules/@fontsource/oswald/files/oswald-latin-700-normal.woff',
 };
-const load = (f: string) => { const x = fs.readFileSync(f); return parseFont(x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength)); };
+const { setFallbacks } = await import('../src/text');
+const raw = (f: string) => { const x = fs.readFileSync(f); return parseFont(x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength)); };
+const load = (f: string) => { const font = raw(f); const ext = f.replace('-latin-', '-latin-ext-'); if (fs.existsSync(ext)) setFallbacks(font, [raw(ext)]); return font; };
 const cases: [string, Partial<Params>, string][] = [
   ['sign-bar', {}, 'archivo'],
   ['sign-plate', { base: 'plate' }, 'archivo'],
@@ -32,6 +34,7 @@ const cases: [string, Partial<Params>, string][] = [
   ['duo-moved', { style: 'duo', text: 'BIRTHDAY', capHeight: 36, tracking: -0.04, topDx: 300 }, 'fredoka'],
   ['book-standing', { style: 'book', text: 'ON SUCH\nA FULL SEA', capHeight: 11, lineSpacing: 1.35 }, 'oswald'],
   ['book-lying-flat', { style: 'book', text: 'ON SUCH\nA FULL SEA', capHeight: 11, lineSpacing: 1.35, bookOrient: 'lying', bookEffect: 'flat' }, 'oswald'],
+  ['book-turkish', { style: 'book', text: "Nasıl ki bir ağacın bütün aksamı, yaprakları, çiçekleri ve meyveleri arasında bir münasebet ve bir irtibat vardır. Ve o ağacın her bir cüz'ü, o ağacın umumuna bir cihetle bakar ve bir münasebetle bağlıdır.", rLean: 55, rMin: 0.4, rMax: 7, lineSpacing: 1.35 }, 'oswald'],
   ['stepped-word', { style: 'stepped', text: 'BES', capHeight: 140 }, 'oswald'],
   ['stack', { style: 'stack', text: 'RAISE\nYOUR\nGAME', capHeight: 45, lineSpacing: 0.8, tracking: -0.05 }, 'archivo'],
   ['stepped', { style: 'stepped', text: 'A', capHeight: 140 }, 'oswald'],
