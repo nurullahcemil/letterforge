@@ -120,6 +120,12 @@ export function shadeOutline(p: LampParams): { pts: Pt[]; lip: number; top: numb
       }
       z += H;
     }
+    // No part of the wall may lean more than 45° from upright: that is the steepest a single print
+    // line climbs (0.2 mm layers, 0.42 mm line), so every layer stays one line and needs no support.
+    // Raising the valleys with 45° flanks turns each waist into a V, like the original lamp.
+    const m = 1; // tan(45°)
+    for (let i = 1; i < right.length; i++) right[i][0] = Math.max(right[i][0], right[i - 1][0] - m * (right[i][1] - right[i - 1][1]));
+    for (let i = right.length - 2; i >= 0; i--) right[i][0] = Math.max(right[i][0], right[i + 1][0] - m * (right[i + 1][1] - right[i][1]));
     const lip = right[0][0];
     const top = z;
     const topR = right[right.length - 1][0];

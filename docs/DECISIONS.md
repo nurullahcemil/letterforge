@@ -68,3 +68,5 @@
     are hit), wall 0.42 measured flat (one line; widened only where too steep), separate 3MF objects.
 20. Seam wandered with the twist (Bambu picks the sharpest concave corner). Added a seam notch per
     band at the back, inside a wave valley, so the seam is a straight hidden line.
+21. Thick walls at waists/shelves (arcs went nearly flat, so walls were widened to print): bulges
+    now never lean past 45° (V waists, matching the original) → one line per layer everywhere.
