@@ -1028,13 +1028,12 @@ export class Builder {
         const ch = h / ny;
         for (let ix = 0; ix < nx; ix++) {
           for (let iy = 0; iy < ny; iy++) {
-            const box = this.k(
-              this.wasm.Manifold.cube([cw + (ix === nx - 1 ? 2 : 0), ch + (iy === ny - 1 ? 2 : 0), bb.max[2] - bb.min[2] + 2]).translate([
-                bb.min[0] + ix * cw - (ix === 0 ? 1 : 0),
-                bb.min[1] + iy * ch - (iy === 0 ? 1 : 0),
-                bb.min[2] - 1,
-              ]),
-            );
+            // Cells meet exactly at the cut lines; only the outer edges get 1 mm of slack.
+            const x0 = ix === 0 ? bb.min[0] - 1 : bb.min[0] + ix * cw;
+            const x1 = ix === nx - 1 ? bb.max[0] + 1 : bb.min[0] + (ix + 1) * cw;
+            const y0 = iy === 0 ? bb.min[1] - 1 : bb.min[1] + iy * ch;
+            const y1 = iy === ny - 1 ? bb.max[1] + 1 : bb.min[1] + (iy + 1) * ch;
+            const box = this.k(this.wasm.Manifold.cube([x1 - x0, y1 - y0, bb.max[2] - bb.min[2] + 2]).translate([x0, y0, bb.min[2] - 1]));
             const piece = this.k(comp.intersect(box));
             if (piece.isEmpty()) continue;
             for (const sub of piece.decompose()) {
