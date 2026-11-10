@@ -23,6 +23,8 @@ export interface TextLayout {
   stretch: [number, number];
   /** Centre of each letter (key = index among non-space characters), y up, mm. */
   letterCenters: { i: number; x: number; y: number }[];
+  /** Contours of each glyph on its own (same point arrays as `contours`, so already stretched/moved). */
+  glyphs: Vec2[][][];
 }
 
 export interface LayoutOptions {
@@ -223,6 +225,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
   for (const s of shaped) widest = Math.max(widest, s.width);
 
   const centers: { i: number; x: number; y: number }[] = [];
+  const glyphs: Vec2[][][] = [];
   const useWidths = !!opts.widths && Object.keys(opts.widths).length > 0;
   let letterNo = 0; // running index of non-space characters
   shaped.forEach(({ items, width }, li) => {
@@ -244,6 +247,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       const cs = flatten(path.commands, tol);
       const x0 = p.x + shift;
       if (w !== 1 || offset !== 0) for (const c of cs) for (const pt of c) pt[0] = x0 + offset + (pt[0] - x0) * w;
+      if (cs.length) glyphs.push(cs);
       if (isLetter && cs.length) owned.push({ i: myNo, from: lineContours.length, to: lineContours.length + cs.length });
       lineContours.push(...cs);
       const next = k < items.length - 1 ? items[k + 1].x : width;
@@ -305,6 +309,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     lineTexts: lines,
     stretch: [stretchLo === Infinity ? 1 : stretchLo, stretchHi === -Infinity ? 1 : stretchHi],
     letterCenters: centers,
+    glyphs,
   };
 }
 

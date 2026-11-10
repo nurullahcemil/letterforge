@@ -151,6 +151,8 @@ interface WorkPart {
 type Deletable = { delete(): void };
 
 /** Stacked slabs overlap by this much so unions fuse into one solid. */
+/** Styles built from the plain letter outline, where loose letter pieces would print apart. */
+const JOIN_STYLES = new Set(['sign', 'planter', 'topo', 'facet', 'keychain', 'duo', 'stepped']);
 const OVERLAP = 0.01;
 
 export class Builder {
@@ -202,7 +204,8 @@ export class Builder {
         widths: p.letterW,
         moves: p.style === 'stepped' || Object.keys(p.letterMove ?? {}).length ? (p.letterMove ?? {}) : undefined,
       });
-      const cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
+      let cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
+      if (JOIN_STYLES.has(p.style)) cs = this.joinLetterPieces(cs, layout.glyphs, p, warnings);
       if (cs.isEmpty()) {
         return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
@@ -787,6 +790,64 @@ export class Builder {
       warnings.push('The letters print as separate pieces. Turn on "Base" to join them.');
     }
     return parts;
+  }
+
+  /**
+   * Some fonts (pixel and blocky fonts especially) build a letter from pieces that only
+   * touch at a corner or sit a hair apart, so the letter would print as loose parts.
+   * For each such letter, close the tiny gaps (grow, then shrink back by the same amount
+   * with square corners). Letters that are already one piece are left exactly as they are,
+   * and a letter is only changed when that actually joins some of its pieces.
+   */
+  private joinLetterPieces(all: CrossSection, glyphs: Vec2[][][], p: Params, warnings: string[]): CrossSection {
+    // planter: the bridge must be wide enough to hold a channel between two walls
+    const r = p.style === 'planter' ? Math.max(1.2, p.wall * 2) : Math.max(0.6, Math.min(2, p.capHeight * 0.012));
+    let joined = 0;
+    const out: CrossSection[] = [];
+    for (const g of glyphs) {
+      const c = this.cs(g);
+      if (c.isEmpty()) continue;
+      const parts = c.decompose();
+      parts.forEach((x) => this.k(x));
+      if (parts.length < 2) {
+        out.push(c);
+        continue;
+      }
+      // Bridge every pair of pieces that touch or nearly touch: the area within r of both
+      // pieces, kept inside the pair's bounding box. Pieces further apart (the dot of an i
+      // or j) are left alone.
+      const bridges: CrossSection[] = [];
+      for (let a = 0; a < parts.length; a++) {
+        const grownA = this.k(parts[a].offset(r, 'Miter', 2));
+        const nearA = this.k(parts[a].offset(0.3, 'Miter', 2));
+        for (let b = a + 1; b < parts.length; b++) {
+          if (this.k(nearA.intersect(parts[b])).isEmpty()) continue;
+          const ba = parts[a].bounds();
+          const bb = parts[b].bounds();
+          const box = this.rect(
+            Math.min(ba.min[0], bb.min[0]),
+            Math.min(ba.min[1], bb.min[1]),
+            Math.max(ba.max[0], bb.max[0]),
+            Math.max(ba.max[1], bb.max[1]),
+          );
+          bridges.push(this.k(this.k(grownA.intersect(this.k(parts[b].offset(r, 'Miter', 2)))).intersect(box)));
+        }
+      }
+      if (!bridges.length) {
+        out.push(c);
+        continue;
+      }
+      const merged = this.k(this.wasm.CrossSection.union([c, ...bridges]));
+      const after = merged.decompose();
+      after.forEach((x) => this.k(x));
+      if (after.length < parts.length) {
+        out.push(merged);
+        joined++;
+      } else out.push(c);
+    }
+    if (!joined) return all;
+    warnings.push(`Joined the touching pieces of ${joined} letter${joined > 1 ? 's' : ''} so ${joined > 1 ? 'they print' : 'it prints'} as one part.`);
+    return this.k(this.wasm.CrossSection.union(out));
   }
 
   /** Thin outline of the letters (the "line" look). Leaves the shape alone when off. */
