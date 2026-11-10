@@ -1,7 +1,7 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
-import { toSTL, to3MF, standOnOpenEnd } from './export';
+import { toSTL, toSTLZip, to3MF, standOnOpenEnd } from './export';
 import type { Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
@@ -164,6 +164,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'select', key: 'rDir', label: 'Rises toward', options: [['right', 'Right'], ['left', 'Left'], ['alternate', 'Alternate']] },
     { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
     { kind: 'range', key: 'rLean', label: 'Sweep angle', min: 0, max: 70, step: 1, unit: '°', hint: 'Letters slide sideways as they rise. 0 = straight up.' },
+    { kind: 'toggle', key: 'lineMode', label: 'Line letters (outline only)', hint: 'Only a thin line around each letter, like the On Such a Full Sea cover. Works with every letter effect.' },
+    { kind: 'range', key: 'lineW', label: 'Line width', min: 0.4, max: 6, step: 0.1, unit: 'mm' },
     { kind: 'toggle', key: 'rPlate', label: 'Back plate' },
     { kind: 'range', key: 'rPlateT', label: 'Plate thickness', min: 1, max: 8, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'rPad', label: 'Plate margin', min: 2, max: 40, step: 1, unit: 'mm' },
@@ -180,6 +182,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'bookMargin', label: 'Margin', min: 0, max: 40, step: 1, unit: 'mm' },
     { kind: 'select', key: 'bookAlign', label: 'Align', options: [['left', 'Left'], ['center', 'Centre']] },
     { kind: 'select', key: 'bookEffect', label: 'Letters', options: [['sweep', 'Swept'], ['ramp', 'Ramps'], ['flat', 'Raised']] },
+    { kind: 'toggle', key: 'lineMode', label: 'Line letters (outline only)', hint: 'Only a thin line around each letter, like the On Such a Full Sea cover. Works with every letter effect.' },
+    { kind: 'range', key: 'lineW', label: 'Line width', min: 0.4, max: 6, step: 0.1, unit: 'mm' },
     { kind: 'range', key: 'rLean', label: 'Sweep angle', min: 0, max: 70, step: 1, unit: '°', hint: 'How far the letters slide sideways as they rise off the cover.' },
     { kind: 'range', key: 'bookRelief', label: 'Letter height', min: 0.4, max: 8, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'rMin', label: 'Ramp low end', min: 0.4, max: 10, step: 0.2, unit: 'mm' },
@@ -216,11 +220,16 @@ worker.onmessage = (e) => {
 
 async function ensureFont(key: string) {
   if (sentFonts.has(key)) return;
-  const def = FONTS.find((f) => f.key === key);
+  const def = FONTS.find((f) => f.key === key) ?? (key.startsWith('gf:') ? googleFont(key) : undefined);
   const url = customFonts.get(key) ?? def!.url;
   const [buf, ext] = await Promise.all([
-    fetch(url).then((r) => r.arrayBuffer()),
-    def?.extUrl ? fetch(def.extUrl).then((r) => r.arrayBuffer()).catch(() => undefined) : Promise.resolve(undefined),
+    fetch(url).then((r) => {
+      if (!r.ok) throw new Error(`Could not download the font (${r.status}).`);
+      return r.arrayBuffer();
+    }),
+    def?.extUrl
+      ? fetch(def.extUrl).then((r) => (r.ok ? r.arrayBuffer() : undefined)).catch(() => undefined)
+      : Promise.resolve(undefined),
   ]);
   worker.postMessage({ type: 'font', key, buffer: buf, ext }, ext ? [buf, ext] : [buf]);
   sentFonts.add(key);
@@ -372,7 +381,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch') { renderStyleControls(); renderGeneral(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode') { renderStyleControls(); renderGeneral(); }
       schedule();
     });
     return row;
@@ -412,6 +421,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (!params.lineMode) list = list.filter((c) => c.key !== 'lineW');
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -438,7 +448,7 @@ function renderPrinter() {
 
 function renderFonts() {
   const host = $('#fonts');
-  const all = [...FONTS.map((f) => ({ key: f.key, label: f.label, css: f.css })), ...[...customFonts.keys()].map((k) => ({ key: k, label: k.replace(/^custom:/, ''), css: 'custom-' + k }))];
+  const all = [...FONTS.map((f) => ({ key: f.key, label: f.label, css: f.css })), ...[...googleFonts.values()], ...[...customFonts.keys()].map((k) => ({ key: k, label: k.replace(/^custom:/, ''), css: 'custom-' + k }))];
   host.innerHTML = all
     .map((f) => `<button type="button" class="font ${f.key === fontKey ? 'on' : ''}" data-k="${f.key}" title="${escapeHtml(f.label)}"><span style="font-family:'${f.css}'">Ag</span><small>${escapeHtml(f.label.replace(' (script)', ''))}</small></button>`)
     .join('');
@@ -565,6 +575,116 @@ async function addCustomFont(key: string, data: ArrayBuffer) {
   }
 }
 
+// ---------- Google Fonts (through the Fontsource CDN, which serves WOFF files we can read) ----------
+
+interface GFont { key: string; label: string; css: string; url: string; extUrl?: string }
+interface GFMeta { id: string; family: string; weights: number[]; styles: string[]; subsets: string[]; category: string }
+const googleFonts = new Map<string, GFont>();
+let gfCatalog: GFMeta[] | null = null;
+const GF_CDN = 'https://cdn.jsdelivr.net/fontsource/fonts';
+
+/** Font definition from a key like "gf:poppins:700"; the key alone is enough to restore it. */
+function googleFont(key: string, meta?: GFMeta): GFont {
+  const known = googleFonts.get(key);
+  if (known) return known;
+  const [, id, w] = key.split(':');
+  meta ??= gfCatalog?.find((m) => m.id === id);
+  const family = meta?.family ?? id.replace(/(^|-)(\w)/g, (_, d, c) => (d ? ' ' : '') + c.toUpperCase());
+  const main = meta && !meta.subsets.includes('latin') ? meta.subsets[0] : 'latin';
+  const g: GFont = {
+    key,
+    label: `${family}${w !== '400' ? ' ' + w : ''}`,
+    css: `gf-${id}-${w}`,
+    url: `${GF_CDN}/${id}@latest/${main}-${w}-normal.woff`,
+    extUrl: !meta || meta.subsets.includes('latin-ext') ? `${GF_CDN}/${id}@latest/latin-ext-${w}-normal.woff` : undefined,
+  };
+  googleFonts.set(key, g);
+  new FontFace(g.css, `url(${g.url})`).load().then((f) => document.fonts.add(f)).catch(() => {});
+  return g;
+}
+
+const gfSearch = $('#gf-search') as HTMLInputElement;
+const gfWeight = $('#gf-weight') as HTMLSelectElement;
+const gfNote = $('#gf-note');
+
+async function loadCatalog(): Promise<GFMeta[]> {
+  if (gfCatalog) return gfCatalog;
+  gfNote.textContent = 'Loading the Google Fonts list…';
+  try {
+    const r = await fetch('https://api.fontsource.org/v1/fonts?type=google');
+    if (!r.ok) throw new Error(String(r.status));
+    const all = (await r.json()) as GFMeta[];
+    gfCatalog = all.filter((f) => f.styles.includes('normal')).sort((a, b) => a.family.localeCompare(b.family));
+    $('#gf-list').innerHTML = gfCatalog.map((f) => `<option value="${escapeHtml(f.family)}">${escapeHtml(f.category)}</option>`).join('');
+    gfNote.textContent = `${gfCatalog.length.toLocaleString()} fonts. Type a name, e.g. Poppins, Bebas Neue, Josefin Sans.`;
+  } catch {
+    gfNote.textContent = 'Could not reach Google Fonts. Check your connection and try again.';
+    gfCatalog = null;
+    return [];
+  }
+  return gfCatalog;
+}
+
+function pickedFamily(): GFMeta | undefined {
+  const v = gfSearch.value.trim().toLowerCase();
+  return gfCatalog?.find((f) => f.family.toLowerCase() === v);
+}
+
+gfSearch.addEventListener('focus', () => void loadCatalog());
+gfSearch.addEventListener('input', () => {
+  const f = pickedFamily();
+  gfWeight.disabled = !f;
+  ($('#gf-use') as HTMLButtonElement).disabled = !f;
+  if (!f) {
+    gfWeight.innerHTML = '';
+    return;
+  }
+  const ws = [...f.weights].sort((a, b) => a - b);
+  // bold reads best as a 3D print; take 700 or the closest weight
+  const best = ws.reduce((a, b) => (Math.abs(b - 700) < Math.abs(a - 700) ? b : a), ws[0]);
+  const names: Record<number, string> = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
+  gfWeight.innerHTML = ws.map((w) => `<option value="${w}" ${w === best ? 'selected' : ''}>${names[w] ?? w}</option>`).join('');
+  gfNote.textContent = f.subsets.includes('latin-ext') ? `${f.family}: ${f.category}.` : `${f.family}: ${f.category}. No extended Latin, so letters such as ğ ş ı may be missing.`;
+});
+
+async function useGoogleFont() {
+  const f = pickedFamily();
+  if (!f) return;
+  const key = `gf:${f.id}:${gfWeight.value}`;
+  googleFont(key, f);
+  rememberGoogleFont(key);
+  sentFonts.delete(key);
+  fontKey = key;
+  fontTouched = true;
+  gfSearch.value = '';
+  gfSearch.dispatchEvent(new Event('input'));
+  syncText2();
+  renderFonts();
+  schedule(true);
+}
+$('#gf-use').addEventListener('click', () => void useGoogleFont());
+gfSearch.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    void useGoogleFont();
+  }
+});
+
+/** Recently used Google Fonts stay in the font grid on this device. */
+function rememberGoogleFont(key: string) {
+  try {
+    const list = JSON.parse(localStorage.getItem('lf-gfonts') ?? '[]') as string[];
+    localStorage.setItem('lf-gfonts', JSON.stringify([key, ...list.filter((k) => k !== key)].slice(0, 12)));
+  } catch {
+    /* storage may be off */
+  }
+}
+try {
+  for (const k of (JSON.parse(localStorage.getItem('lf-gfonts') ?? '[]') as string[]).reverse()) googleFont(k);
+} catch {
+  /* ignore */
+}
+
 $('#font-upload').addEventListener('change', async (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -608,10 +728,19 @@ $('#dl-3mf').addEventListener('click', () => {
 });
 
 $('#dl-stl').addEventListener('click', async () => {
+  const printable = lastParts.filter((p) => !p.previewOnly);
+  const twoColour = new Set(printable.map((p) => p.color.toLowerCase())).size > 1;
   setBusy(true);
-  const res = await call({ type: 'merged' });
+  const res = await call({ type: 'merged', byColor: twoColour });
   setBusy(false);
-  if (res.type === 'merged' && res.mesh.indices.length) download(toSTL(forExport([res.mesh])[0]), baseName() + '.stl');
+  if (res.type !== 'merged') return;
+  type M = { color: string; positions: Float32Array; indices: Uint32Array };
+  const meshes = (res.meshes as M[]).filter((m) => m.indices.length);
+  if (!meshes.length) return;
+  const placed = forExport(meshes);
+  // STL has no colour, so a multi-colour model comes as one STL per colour in a zip.
+  if (twoColour) download(toSTLZip(placed, baseName()), baseName() + '-stl-per-colour.zip');
+  else download(toSTL(placed[0]), baseName() + '.stl');
 });
 
 // ---------- accent text (two-text sign) ----------
@@ -624,7 +753,7 @@ function syncText2() {
   $('#text2-wrap').hidden = !on;
   $('#text-label').hidden = !on;
   text2El.value = params.topText;
-  const opts = [...FONTS.map((f) => [f.key, f.label.replace(' (script)', '')]), ...[...customFonts.keys()].map((k) => [k, k.replace(/^custom:/, '')])];
+  const opts = [...FONTS.map((f) => [f.key, f.label.replace(' (script)', '')]), ...[...googleFonts.values()].map((g) => [g.key, g.label]), ...[...customFonts.keys()].map((k) => [k, k.replace(/^custom:/, '')])];
   font2El.innerHTML = opts.map(([k, l]) => `<option value="${escapeHtml(k)}" ${k === params.topFont ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('');
 }
 text2El.addEventListener('input', () => {
@@ -775,6 +904,7 @@ async function openDesign(id: string) {
     return;
   }
   for (const f of d.fonts ?? []) await addCustomFont(f.key, f.data);
+  for (const k of [d.fontKey, d.params.topFont]) if (k?.startsWith('gf:')) googleFont(k);
   currentId = d.id;
   currentCreated = d.created;
   textTouched = true;

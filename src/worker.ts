@@ -7,7 +7,7 @@ import { parseFont, setFallbacks } from './text';
 type Req =
   | { type: 'font'; key: string; buffer: ArrayBuffer; ext?: ArrayBuffer }
   | { type: 'build'; id: number; fontKey: string; topFontKey?: string; params: Params }
-  | { type: 'merged'; id: number };
+  | { type: 'merged'; id: number; byColor?: boolean };
 
 const fonts = new Map<string, Font>();
 const ready = (async () => {
@@ -41,8 +41,11 @@ self.onmessage = async (e: MessageEvent<Req>) => {
       const res = builder.build(font, msg.params, msg.topFontKey ? fonts.get(msg.topFontKey) : undefined);
       self.postMessage({ type: 'result', id: msg.id, ...res, ms: performance.now() - t });
     } else if (msg.type === 'merged') {
-      const mesh = builder.mergedMesh();
-      self.postMessage({ type: 'merged', id: msg.id, mesh }, [mesh.positions.buffer, mesh.indices.buffer] as any);
+      const meshes = builder.mergedByColor(!!msg.byColor);
+      self.postMessage(
+        { type: 'merged', id: msg.id, meshes },
+        meshes.flatMap((m) => [m.positions.buffer, m.indices.buffer]) as any,
+      );
     }
   } catch (err) {
     self.postMessage({ type: 'error', id: (msg as any).id, message: String((err as Error)?.message ?? err) });

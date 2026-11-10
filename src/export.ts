@@ -8,6 +8,10 @@ export interface MeshData {
 }
 
 export function toSTL(mesh: { positions: Float32Array; indices: Uint32Array }): Blob {
+  return new Blob([stlBytes(mesh)], { type: 'model/stl' });
+}
+
+function stlBytes(mesh: { positions: Float32Array; indices: Uint32Array }): ArrayBuffer {
   const { positions: p, indices: ix } = mesh;
   const nTri = ix.length / 3;
   const buf = new ArrayBuffer(84 + nTri * 50);
@@ -33,7 +37,16 @@ export function toSTL(mesh: { positions: Float32Array; indices: Uint32Array }): 
     dv.setUint16(o, 0, true);
     o += 2;
   }
-  return new Blob([buf], { type: 'model/stl' });
+  return buf;
+}
+
+/** One STL per colour, zipped. Select them all in the slicer and load them as one object with several parts. */
+export function toSTLZip(meshes: { color: string; positions: Float32Array; indices: Uint32Array }[], base: string): Blob {
+  const files: Record<string, Uint8Array> = {};
+  meshes.forEach((m, i) => {
+    files[`${base}-colour${i + 1}-${m.color.replace('#', '')}.stl`] = new Uint8Array(stlBytes(m));
+  });
+  return new Blob([zipSync(files, { level: 6 })], { type: 'application/zip' });
 }
 
 const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]!);
@@ -45,9 +58,13 @@ const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt
  */
 export function to3MF(parts: MeshData[], title: string): Blob {
   const n = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
+  // One material (and one filament slot) per distinct colour, in order of first use.
+  const palette: string[] = [];
+  for (const p of parts) if (!palette.includes(p.color.toLowerCase())) palette.push(p.color.toLowerCase());
+  const slot = (p: MeshData) => palette.indexOf(p.color.toLowerCase());
   let objects = '';
-  const colors = parts.map((p) => p.color.toUpperCase() + 'FF');
   const baseId = parts.length + 1;
+  const matId = baseId + 1;
   parts.forEach((part, i) => {
     const id = i + 1;
     const vs: string[] = [];
@@ -58,7 +75,7 @@ export function to3MF(parts: MeshData[], title: string): Blob {
     for (let j = 0; j < part.indices.length; j += 3) {
       ts.push(`<triangle v1="${part.indices[j]}" v2="${part.indices[j + 1]}" v3="${part.indices[j + 2]}"/>`);
     }
-    objects += `<object id="${id}" name="${esc(part.name)}" type="model" pid="${baseId + 1}" pindex="${i}"><mesh><vertices>${vs.join('')}</vertices><triangles>${ts.join('')}</triangles></mesh></object>\n`;
+    objects += `<object id="${id}" name="${esc(part.name)}" type="model" pid="${matId}" pindex="${slot(part)}"><mesh><vertices>${vs.join('')}</vertices><triangles>${ts.join('')}</triangles></mesh></object>\n`;
   });
   const components = parts.map((_, i) => `<component objectid="${i + 1}"/>`).join('');
   const model = `<?xml version="1.0" encoding="UTF-8"?>
@@ -66,11 +83,29 @@ export function to3MF(parts: MeshData[], title: string): Blob {
 <metadata name="Title">${esc(title)}</metadata>
 <metadata name="Application">Letterforge</metadata>
 <resources>
-<basematerials id="${baseId + 1}">${colors.map((c, i) => `<base name="${esc(parts[i].name)}" displaycolor="#${c.slice(1)}"/>`).join('')}</basematerials>
+<basematerials id="${matId}">${palette.map((c, i) => `<base name="Colour ${i + 1}" displaycolor="${c.toUpperCase()}FF"/>`).join('')}</basematerials>
 ${objects}<object id="${baseId}" name="${esc(title)}" type="model"><components>${components}</components></object>
 </resources>
 <build><item objectid="${baseId}"/></build>
 </model>`;
+  // Bambu Studio / Orca Slicer read this file even from other apps: it names every part
+  // and gives it a filament slot, so a two-colour model opens with two filaments set.
+  const settings = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+  <object id="${baseId}">
+    <metadata key="name" value="${esc(title)}"/>
+    <metadata key="extruder" value="1"/>
+${parts
+  .map(
+    (p, i) => `    <part id="${i + 1}" subtype="normal_part">
+      <metadata key="name" value="${esc(p.name)}"/>
+      <metadata key="extruder" value="${slot(p) + 1}"/>
+    </part>`,
+  )
+  .join('\n')}
+  </object>
+</config>
+`;
   const files = {
     '[Content_Types].xml': strToU8(
       `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`,
@@ -79,6 +114,7 @@ ${objects}<object id="${baseId}" name="${esc(title)}" type="model"><components>$
       `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`,
     ),
     '3D/3dmodel.model': strToU8(model),
+    'Metadata/model_settings.config': strToU8(settings),
   };
   return new Blob([zipSync(files, { level: 6 })], { type: 'model/3mf' });
 }

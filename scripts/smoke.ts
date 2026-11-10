@@ -36,6 +36,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['book-lying-flat', { style: 'book', text: 'ON SUCH\nA FULL SEA', capHeight: 11, lineSpacing: 1.35, bookOrient: 'lying', bookEffect: 'flat' }, 'oswald'],
   ['book-turkish', { style: 'book', text: "Nasıl ki bir ağacın bütün aksamı, yaprakları, çiçekleri ve meyveleri arasında bir münasebet ve bir irtibat vardır. Ve o ağacın her bir cüz'ü, o ağacın umumuna bir cihetle bakar ve bir münasebetle bağlıdır.", rLean: 55, rMin: 0.4, rMax: 7, lineSpacing: 1.35 }, 'oswald'],
   ['book-fill', { style: 'book', text: 'Bismillah\nher\nhayrın\nbaşıdır.', bookStretch: true, rLean: 55, rMin: 0.4, rMax: 7, lineSpacing: 1.1 }, 'oswald'],
+  ['book-line', { style: 'book', text: 'ON SUCH\nA FULL SEA', lineMode: true, lineW: 1.2, bookStretch: true, rLean: 55, rMin: 0.4, rMax: 9 }, 'oswald'],
+  ['ramp-line', { style: 'ramp', text: 'LINE', capHeight: 30, lineMode: true, lineW: 1.2 }, 'oswald'],
   ['stepped-word', { style: 'stepped', text: 'BES', capHeight: 140 }, 'oswald'],
   ['stack', { style: 'stack', text: 'RAISE\nYOUR\nGAME', capHeight: 45, lineSpacing: 0.8, tracking: -0.05 }, 'archivo'],
   ['stepped', { style: 'stepped', text: 'A', capHeight: 140 }, 'oswald'],

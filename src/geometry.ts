@@ -100,6 +100,9 @@ export interface Params {
   bookOrient: 'lying' | 'standing';
   textDx: number;
   textDy: number;
+  /** Line letters: only a thin outline of each letter instead of the solid shape. */
+  lineMode: boolean;
+  lineW: number;
 }
 
 /** A part the user can drag in the viewer. axes = model axes the 2D offset maps to. */
@@ -288,10 +291,17 @@ export class Builder {
     }
   }
 
-  /** Union of all kept parts, for single-body STL export. */
-  mergedMesh(): { positions: Float32Array; indices: Uint32Array } {
-    const ms = this.kept.filter((p) => p.m).map((p) => p.m!) as Manifold[];
-    const raws = this.kept.filter((p) => p.raw).map((p) => p.raw!);
+  /** Union of kept parts per colour (one group when byColor is off), for STL export. */
+  mergedByColor(byColor: boolean): { color: string; positions: Float32Array; indices: Uint32Array }[] {
+    const colors = byColor ? [...new Set(this.kept.map((p) => p.color.toLowerCase()))] : [''];
+    return colors.map((c) => ({ color: c, ...this.mergedMesh(c) }));
+  }
+
+  /** Union of all kept parts (or only those of one colour), for STL export. */
+  mergedMesh(color = ''): { positions: Float32Array; indices: Uint32Array } {
+    const kept = color ? this.kept.filter((p) => p.color.toLowerCase() === color) : this.kept;
+    const ms = kept.filter((p) => p.m).map((p) => p.m!) as Manifold[];
+    const raws = kept.filter((p) => p.raw).map((p) => p.raw!);
     const chunks: { positions: Float32Array; indices: Uint32Array }[] = [...raws];
     if (ms.length) {
       const u = this.wasm.Manifold.union(ms);
@@ -705,6 +715,13 @@ export class Builder {
     return [{ name: 'Letters', color: p.colorA, m: this.k(this.wasm.Manifold.union(slabs)) }];
   }
 
+  /** Thin outline of the letters (the "line" look). Leaves the shape alone when off. */
+  private outline(c: CrossSection, p: Params): CrossSection {
+    if (!p.lineMode || c.isEmpty()) return c;
+    const inner = this.k(c.offset(-Math.max(0.3, p.lineW), 'Miter', 3));
+    return this.k(c.subtract(inner));
+  }
+
   /** Letters extruded into wedges that rise across each letter or each line. */
   private rampSolids(lineSections: CrossSection[], p: Params, z0: number, leanDeg = 0): Manifold[] {
     const lean = Math.tan((Math.min(75, Math.max(0, leanDeg)) * Math.PI) / 180);
@@ -744,7 +761,7 @@ export class Builder {
   private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
     const z0 = p.rPlate ? p.rPlateT : 0;
     const parts: WorkPart[] = [];
-    const ms = this.rampSolids(lines.map((lc) => this.cs(lc)), p, z0, p.rLean);
+    const ms = this.rampSolids(lines.map((lc) => this.outline(this.cs(lc), p)), p, z0, p.rLean);
     if (ms.length) parts.push({ name: 'Letters', color: p.colorB, m: this.k(this.wasm.Manifold.union(ms)) });
     if (p.rPlate) {
       const b = cs.bounds();
@@ -837,6 +854,8 @@ export class Builder {
       const placed = lines.map((lc) => this.k(this.k(this.cs(lc).translate([dx, dy])).intersect(face)));
       const clipped = placed.some((c, i) => Math.abs(c.area() - this.cs(lines[i]).area()) > 1);
       if (clipped) warnings.push('Part of the text runs off the front and is cut at the edge. Drag it, make it smaller, or turn on "Fit text to the front".');
+      for (let i = 0; i < placed.length; i++) placed[i] = this.outline(placed[i], p);
+      if (p.lineMode && p.lineW < 0.8) warnings.push('Lines thinner than 0.8 mm may not print well with a 0.4 mm nozzle.');
       if (p.bookEffect === 'ramp' || p.bookEffect === 'sweep') {
         const ms = this.rampSolids(placed, p, outT - OVERLAP, p.bookEffect === 'sweep' ? p.rLean : 0);
         if (ms.length) {

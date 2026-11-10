@@ -245,3 +245,9 @@ textarea:focus, input[type='text']:focus, input[type='number']:focus { outline: 
 .empty { grid-column: 1 / -1; display: grid; gap: 6px; padding: 32px; border: 1px dashed var(--line-2); border-radius: 12px; color: var(--ink-2); text-align: center; }
 .home-note { color: var(--ink-3); font-size: 12px; margin-top: 18px; }
 .home[hidden], .app[hidden] { display: none; }
+.gfonts { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-top: 10px; }
+.gfonts input, .gfonts select { min-width: 0; font: inherit; font-size: 13px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--card, #fff); color: inherit; }
+.gfonts select { max-width: 110px; }
+.gfonts button { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+.gfonts button:disabled, .gfonts select:disabled { opacity: .45; cursor: default; }
+.gf-note { display: block; margin-top: 4px; }

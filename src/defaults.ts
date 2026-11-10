@@ -81,4 +81,6 @@ export const DEFAULTS: Params = {
   bookOrient: 'standing',
   textDx: 0,
   textDy: 0,
+  lineMode: false,
+  lineW: 1.2,
 };

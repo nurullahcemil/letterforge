@@ -57,6 +57,13 @@
           <label class="sub" id="text-label" for="text" hidden>Main text</label>
           <textarea id="text" rows="2" spellcheck="false" aria-label="Text to make"></textarea>
           <div id="fonts" class="fonts"></div>
+          <div class="gfonts">
+            <input id="gf-search" list="gf-list" type="search" placeholder="Search Google Fonts…" autocomplete="off" aria-label="Search Google Fonts" />
+            <select id="gf-weight" disabled aria-label="Weight"></select>
+            <button id="gf-use" type="button" disabled>Use</button>
+            <datalist id="gf-list"></datalist>
+          </div>
+          <small id="gf-note" class="note gf-note">Any Google Font: search by name, pick a weight.</small>
           <label class="upload"><input id="font-upload" type="file" accept=".ttf,.otf,.woff,.woff2" />Upload your own font (TTF, OTF, WOFF)</label>
           <div id="text2-wrap" class="text2" hidden>
             <label class="sub" for="text2">Accent text</label>
@@ -88,7 +95,7 @@
             <label><input id="colorA" type="color" /><span id="colorA-label">A</span></label>
             <label id="colorB-wrap"><input id="colorB" type="color" /><span id="colorB-label">B</span></label>
           </div>
-          <small class="note">The 3MF keeps every part separate, so your slicer can give each one its own filament.</small>
+          <small class="note">For two colours, download the <b>3MF</b>: Bambu Studio and Orca open it with each colour on its own filament (1 and 2), ready to swap colours. STL can't hold colours, so the STL button gives one file per colour; load them together and choose "single object with multiple parts".</small>
         </section>
 
         <section>
