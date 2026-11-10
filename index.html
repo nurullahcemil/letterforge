@@ -12,14 +12,44 @@
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div class="app">
-      <aside class="panel">
-        <header class="brand">
+    <div id="home" class="home" hidden>
+      <header class="home-head">
+        <div class="home-brand">
           <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 4h8v18h12v6H6z" fill="#1f7a5c"/><path d="M6 4l4 4v14l-4 6M14 4l-4 4M26 22l-4 3M26 28l-4-3H10M10 22h12" fill="none" stroke="#f4f1ea" stroke-width="1.4" stroke-linejoin="round"/></svg>
           <div>
             <h1>Letterforge</h1>
             <p>Words → 3D-printable objects</p>
           </div>
+        </div>
+        <div class="home-actions">
+          <button id="import-btn" class="ghost-btn" type="button">Import</button>
+          <button id="export-btn" class="ghost-btn" type="button">Export all</button>
+          <a id="new-btn" class="primary-btn" href="#/new/sign">New design</a>
+          <input id="import-file" type="file" accept=".json,application/json" hidden />
+        </div>
+      </header>
+      <main class="home-main">
+        <section class="home-section">
+          <h2>Start something new</h2>
+          <div id="home-styles" class="home-styles"></div>
+        </section>
+        <section class="home-section">
+          <h2>My designs <span id="design-count"></span></h2>
+          <div id="gallery" class="gallery"></div>
+          <p class="home-note">Designs are saved in this browser. Use <b>Export all</b> to back them up or move them to another computer.</p>
+        </section>
+      </main>
+    </div>
+
+    <div class="app" id="editor" hidden>
+      <aside class="panel">
+        <header class="topbar">
+          <a href="#/" class="back" id="back"><svg class="logo-sm" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 4h8v18h12v6H6z" fill="#1f7a5c"/><path d="M6 4l4 4v14l-4 6M14 4l-4 4M26 22l-4 3M26 28l-4-3H10M10 22h12" fill="none" stroke="#f4f1ea" stroke-width="1.4" stroke-linejoin="round"/></svg>My designs</a>
+          <div class="title-row">
+            <input id="design-name" type="text" value="Untitled design" aria-label="Design name" spellcheck="false" />
+            <button id="save" class="save" type="button" title="Save (Ctrl/Cmd + S)">Save</button>
+          </div>
+          <small id="save-state" class="save-state">Not saved yet</small>
         </header>
 
         <section>

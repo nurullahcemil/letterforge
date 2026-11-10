@@ -4,6 +4,7 @@ import { Viewer } from './viewer';
 import { toSTL, to3MF, standOnOpenEnd } from './export';
 import type { Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
+import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
 
@@ -149,6 +150,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'stStep', label: 'Depth change per line', min: 0, max: 30, step: 1, unit: 'mm' },
     { kind: 'select', key: 'stMode', label: 'Line depths', options: [['alternate', 'Alternate'], ['cascade', 'Cascade']] },
     { kind: 'range', key: 'stRound', label: 'Edge rounding', min: 0, max: 10, step: 0.5, unit: 'mm' },
+    { kind: 'toggle', key: 'stStretch', label: 'Stretch every line to the same width', hint: 'Condenses long lines and widens short ones, like a variable-width font.' },
   ],
   stepped: [
     { kind: 'range', key: 'spSteps', label: 'Steps', min: 1, max: 12, step: 1 },
@@ -174,6 +176,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'bookWall', label: 'Wall thickness', min: 1, max: 5, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'bookClear', label: 'Fit clearance', min: 0, max: 4, step: 0.1, unit: 'mm', hint: 'Extra room on each side so the book slides in.' },
     { kind: 'toggle', key: 'bookFit', label: 'Fit text to the front', hint: 'Wraps the text and picks the letter size so it fills the front.' },
+    { kind: 'toggle', key: 'bookStretch', label: 'Stretch lines to fill the page', hint: 'Like a variable-width font: each line is condensed or expanded to the full width. Use Enter to choose the line breaks.' },
     { kind: 'range', key: 'bookMargin', label: 'Margin', min: 0, max: 40, step: 1, unit: 'mm' },
     { kind: 'select', key: 'bookAlign', label: 'Align', options: [['left', 'Left'], ['center', 'Centre']] },
     { kind: 'select', key: 'bookEffect', label: 'Letters', options: [['sweep', 'Swept'], ['ramp', 'Ramps'], ['flat', 'Raised']] },
@@ -369,7 +372,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit') { renderStyleControls(); renderGeneral(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch') { renderStyleControls(); renderGeneral(); }
       schedule();
     });
     return row;
@@ -402,6 +405,7 @@ function renderStyleControls() {
   if (params.style === 'book') {
     const rampKeys = ['rMin', 'rMax', 'rDir', 'rSpan', 'rLean'];
     list = list.filter((c) => {
+      if (c.key === 'bookAlign' && params.bookStretch) return false;
       if (params.bookEffect === 'flat') return !rampKeys.includes(c.key);
       if (c.key === 'bookRelief') return false;
       if (c.key === 'rLean') return params.bookEffect === 'sweep';
@@ -463,23 +467,32 @@ function renderStyles() {
   );
 }
 
-function selectStyle(s: Style) {
-  if (s === params.style) return;
+function applyPreset(s: Style) {
   params.style = s;
   const pr = PRESETS[s];
   Object.assign(params, pr.patch);
-  if (!textTouched) {
-    params.text = pr.text;
-    ($('#text') as HTMLTextAreaElement).value = pr.text;
-  }
+  if (!textTouched) params.text = pr.text;
   if (!fontTouched) fontKey = pr.font;
+}
+
+function selectStyle(s: Style) {
+  if (s === params.style) return;
+  applyPreset(s);
+  refreshUI();
+  schedule(true);
+}
+
+/** Re-render every control from the current params. */
+function refreshUI() {
+  ($('#text') as HTMLTextAreaElement).value = params.text;
   syncText2();
   syncColors();
   renderStyles();
   renderFonts();
   renderGeneral();
   renderStyleControls();
-  schedule(true);
+  renderPrinter();
+  updateSaveState();
 }
 
 function syncColors() {
@@ -535,24 +548,32 @@ for (const id of ['colorA', 'colorB'] as const) {
   });
 }
 
-$('#font-upload').addEventListener('change', async (e) => {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  const key = 'custom:' + file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
-  const url = URL.createObjectURL(file);
-  if (/\.woff2$/i.test(file.name)) {
-    showWarnings(['WOFF2 fonts are not supported yet. Please upload a TTF, OTF or WOFF file.']);
-    return;
-  }
+/** Uploaded font bytes, kept so saved designs can carry their fonts. */
+const customFontData = new Map<string, ArrayBuffer>();
+
+async function addCustomFont(key: string, data: ArrayBuffer) {
+  customFontData.set(key, data);
+  const url = URL.createObjectURL(new Blob([data]));
   customFonts.set(key, url);
+  sentFonts.delete(key);
   try {
-    const ff = new FontFace('custom-' + key, `url(${url})`);
+    const ff = new FontFace('custom-' + key, data);
     await ff.load();
     document.fonts.add(ff);
   } catch {
     /* preview only */
   }
-  sentFonts.delete(key);
+}
+
+$('#font-upload').addEventListener('change', async (e) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  if (/\.woff2$/i.test(file.name)) {
+    showWarnings(['WOFF2 fonts are not supported yet. Please upload a TTF, OTF or WOFF file.']);
+    return;
+  }
+  const key = 'custom:' + file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
+  await addCustomFont(key, await file.arrayBuffer());
   fontKey = key;
   fontTouched = true;
   syncText2();
@@ -638,11 +659,238 @@ for (const f of FONTS) {
   ff.load().then((x) => document.fonts.add(x)).catch(() => {});
 }
 
-syncText2();
-syncColors();
-renderStyles();
-renderFonts();
-renderGeneral();
-renderStyleControls();
-renderPrinter();
-schedule(true);
+// ---------- saving, home page, routing ----------
+
+let currentId: string | null = null;
+let currentCreated = 0;
+let lastSaved = '';
+const nameEl = $('#design-name') as HTMLInputElement;
+const stateKey = () => JSON.stringify({ params, fontKey, name: nameEl.value });
+const isDirty = () => stateKey() !== lastSaved;
+
+function updateSaveState() {
+  const el = $('#save-state');
+  const btn = $('#save') as HTMLButtonElement;
+  if (!currentId) {
+    el.textContent = 'Not saved yet';
+    btn.textContent = 'Save';
+    btn.classList.add('attn');
+  } else if (isDirty()) {
+    el.textContent = 'Unsaved changes';
+    btn.textContent = 'Save';
+    btn.classList.add('attn');
+  } else {
+    el.textContent = 'All changes saved';
+    btn.textContent = 'Saved';
+    btn.classList.remove('attn');
+  }
+}
+nameEl.addEventListener('input', updateSaveState);
+document.addEventListener('input', () => setTimeout(updateSaveState, 0), true);
+document.addEventListener('click', () => setTimeout(updateSaveState, 0), true);
+
+/** Downscale the viewer's picture into a small JPEG for the gallery. */
+function makeThumb(): Promise<string> {
+  return new Promise((resolve) => {
+    const src = new Image();
+    src.onload = () => {
+      const w = 480;
+      const h = Math.round((src.height / src.width) * w);
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#ebe7dd';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(src, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', 0.82));
+    };
+    src.onerror = () => resolve('');
+    src.src = viewer.snapshotFitted();
+  });
+}
+
+async function saveDesign() {
+  await idle();
+  const thumb = await makeThumb();
+  const id = currentId ?? newId();
+  const usedFonts = [fontKey, params.style === 'duo' ? params.topFont : '']
+    .filter((k) => k.startsWith('custom:') && customFontData.has(k))
+    .map((k) => ({ key: k, data: customFontData.get(k)! }));
+  const now = Date.now();
+  const name = nameEl.value.trim() || 'Untitled design';
+  nameEl.value = name;
+  await putDesign({
+    id,
+    name,
+    params: { ...params },
+    fontKey,
+    fonts: usedFonts.length ? usedFonts : undefined,
+    thumb,
+    created: currentId ? currentCreated || now : now,
+    updated: now,
+  });
+  if (!currentId) {
+    currentId = id;
+    currentCreated = now;
+    history.replaceState(null, '', '#/d/' + id);
+  }
+  lastSaved = stateKey();
+  updateSaveState();
+}
+
+/** Wait until the current build has finished so the thumbnail matches. */
+function idle(): Promise<void> {
+  return new Promise((resolve) => {
+    const check = () => (building || queued ? setTimeout(check, 50) : resolve());
+    check();
+  });
+}
+
+$('#save').addEventListener('click', () => void saveDesign());
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && !$('#editor').hidden) {
+    e.preventDefault();
+    void saveDesign();
+  }
+});
+
+function newDesign(style: Style) {
+  currentId = null;
+  currentCreated = 0;
+  textTouched = false;
+  fontTouched = false;
+  Object.assign(params, DEFAULTS);
+  applyPreset(style);
+  nameEl.value = 'Untitled design';
+  lastSaved = '';
+  refreshUI();
+  schedule(true);
+}
+
+async function openDesign(id: string) {
+  const d = await getDesign(id);
+  if (!d) {
+    location.hash = '#/';
+    return;
+  }
+  for (const f of d.fonts ?? []) await addCustomFont(f.key, f.data);
+  currentId = d.id;
+  currentCreated = d.created;
+  textTouched = true;
+  fontTouched = true;
+  Object.assign(params, DEFAULTS, d.params);
+  fontKey = d.fontKey;
+  nameEl.value = d.name;
+  lastSaved = stateKey();
+  refreshUI();
+  schedule(true);
+}
+
+const STYLE_ORDER = Object.keys(PRESETS) as Style[];
+
+async function renderHome() {
+  $('#home-styles').innerHTML = STYLE_ORDER.map(
+    (s) => `<a class="start" href="#/new/${s}"><span class="ico" aria-hidden="true">${ICONS[s]}</span><b>${PRESETS[s].label}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></a>`,
+  ).join('');
+  const designs = await listDesigns();
+  $('#design-count').textContent = designs.length ? `(${designs.length})` : '';
+  const gallery = $('#gallery');
+  if (!designs.length) {
+    gallery.innerHTML = `<div class="empty"><b>No saved designs yet.</b><span>Pick a style above, then press <b>Save</b> in the editor. Your designs will appear here.</span></div>`;
+    return;
+  }
+  const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  gallery.innerHTML = designs
+    .map(
+      (d) => `<article class="card" data-id="${d.id}">
+        <a class="thumb" href="#/d/${d.id}">${d.thumb ? `<img src="${d.thumb}" alt="" loading="lazy" />` : `<span class="ico">${ICONS[d.params.style] ?? ''}</span>`}</a>
+        <div class="meta"><a href="#/d/${d.id}" class="name">${escapeHtml(d.name)}</a><small>${escapeHtml(PRESETS[d.params.style]?.label ?? d.params.style)} · ${fmtDate(d.updated)}</small></div>
+        <div class="card-actions"><button type="button" data-act="dup">Duplicate</button><button type="button" data-act="del">Delete</button></div>
+      </article>`,
+    )
+    .join('');
+  gallery.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const id = b.closest<HTMLElement>('.card')!.dataset.id!;
+      if (b.dataset.act === 'dup') {
+        const d = await getDesign(id);
+        if (d) await putDesign({ ...d, id: newId(), name: d.name + ' copy', created: Date.now(), updated: Date.now() });
+        renderHome();
+      } else if (b.dataset.confirm) {
+        await deleteDesign(id);
+        renderHome();
+      } else {
+        // two-step delete instead of a blocking dialog
+        b.dataset.confirm = '1';
+        b.textContent = 'Really delete?';
+        b.classList.add('danger');
+        setTimeout(() => {
+          delete b.dataset.confirm;
+          b.textContent = 'Delete';
+          b.classList.remove('danger');
+        }, 3000);
+      }
+    }),
+  );
+}
+
+$('#export-btn').addEventListener('click', async () => {
+  download(await exportAll(), `letterforge-designs-${new Date().toISOString().slice(0, 10)}.json`);
+});
+$('#import-btn').addEventListener('click', () => ($('#import-file') as HTMLInputElement).click());
+$('#import-file').addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const n = await importAll(file);
+    await renderHome();
+    $('#design-count').textContent += ` · imported ${n}`;
+  } catch (err) {
+    alert(String((err as Error).message ?? err));
+  }
+});
+
+let routing = false;
+async function route() {
+  if (routing) return;
+  routing = true;
+  try {
+    const h = location.hash.replace(/^#/, '');
+    const m = h.match(/^\/(new|d)\/([\w-]+)/);
+    const showEditor = !!m;
+    $('#home').hidden = showEditor;
+    $('#editor').hidden = !showEditor;
+    document.title = showEditor ? `${nameEl.value} — Letterforge` : 'Letterforge — 3D printable letters';
+    if (!m) {
+      await renderHome();
+    } else if (m[1] === 'new') {
+      newDesign((STYLE_ORDER.includes(m[2] as Style) ? m[2] : 'sign') as Style);
+    } else if (m[2] !== currentId) {
+      await openDesign(m[2]);
+    }
+  } finally {
+    routing = false;
+  }
+}
+
+let lastHash = location.hash;
+window.addEventListener('hashchange', (e) => {
+  // leaving the editor with unsaved work
+  const leaving = /^#\/(new|d)\//.test(lastHash) && !/^#\/(new|d)\//.test(location.hash);
+  if (leaving && isDirty() && !confirm('You have unsaved changes. Leave without saving?')) {
+    history.replaceState(null, '', lastHash);
+    e.preventDefault();
+    return;
+  }
+  lastHash = location.hash;
+  void route();
+});
+window.addEventListener('beforeunload', (e) => {
+  if (!$('#editor').hidden && currentId && isDirty()) e.preventDefault();
+});
+
+refreshUI();
+void route();

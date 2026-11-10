@@ -262,6 +262,25 @@ export class Viewer {
     return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
   }
 
+  /** Picture of the whole model from the default angle, leaving the user's camera as it was. */
+  snapshotFitted(): string {
+    const pos = this.camera.position.clone();
+    const target = this.controls.target.clone();
+    const near = this.camera.near;
+    const far = this.camera.far;
+    this.fit();
+    this.renderer.render(this.scene, this.camera);
+    const url = this.renderer.domElement.toDataURL('image/png');
+    this.camera.position.copy(pos);
+    this.controls.target.copy(target);
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.needsRender = true;
+    return url;
+  }
+
   snapshot(): string {
     this.renderer.render(this.scene, this.camera);
     return this.renderer.domElement.toDataURL('image/png');

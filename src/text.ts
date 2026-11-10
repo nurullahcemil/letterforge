@@ -17,6 +17,10 @@ export interface TextLayout {
   capHeight: number;
   /** Number of laid-out lines (after wrapping). */
   lineCount: number;
+  /** The text of each laid-out line (after wrapping). */
+  lineTexts: string[];
+  /** Smallest and largest horizontal stretch applied (1 = none). */
+  stretch: [number, number];
 }
 
 export interface LayoutOptions {
@@ -28,6 +32,8 @@ export interface LayoutOptions {
   /** Wrap lines to this width in mm. */
   maxWidth?: number;
   align?: 'left' | 'center' | 'right';
+  /** Stretch or squeeze every line horizontally so its ink spans exactly this width (mm). */
+  stretchTo?: number;
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
@@ -197,6 +203,8 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
   let widest = 0;
   const tol = Math.max(0.25, opts.capHeight / 120);
   const shaped = lines.map((line) => shapeLine(font, line, opts, fontSize));
+  let stretchLo = Infinity;
+  let stretchHi = -Infinity;
   for (const s of shaped) widest = Math.max(widest, s.width);
 
   shaped.forEach(({ items, width }, li) => {
@@ -208,10 +216,32 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       const path = p.glyph.getPath(p.x + shift, baseY, fontSize);
       lineContours.push(...flatten(path.commands, tol));
     }
+    if (opts.stretchTo && lineContours.length) {
+      // Like a variable font's width axis: scale the line's outlines horizontally to fill the width.
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const c of lineContours) for (const [x] of c) {
+        if (x < lo) lo = x;
+        if (x > hi) hi = x;
+      }
+      const sx = opts.stretchTo / Math.max(1e-6, hi - lo);
+      const left = -opts.stretchTo / 2;
+      for (const c of lineContours) for (const pt of c) pt[0] = left + (pt[0] - lo) * sx;
+      stretchLo = Math.min(stretchLo, sx);
+      stretchHi = Math.max(stretchHi, sx);
+    }
     contours.push(...lineContours);
     if (lineContours.length) lineGroups.push(lineContours);
     if (lines[li].trim().length) lastBaseline = -baseY;
   });
 
-  return { contours, lines: lineGroups, lastBaseline, capHeight: opts.capHeight, lineCount: lines.length };
+  return {
+    contours,
+    lines: lineGroups,
+    lastBaseline,
+    capHeight: opts.capHeight,
+    lineCount: lines.length,
+    lineTexts: lines,
+    stretch: [stretchLo === Infinity ? 1 : stretchLo, stretchHi === -Infinity ? 1 : stretchHi],
+  };
 }

@@ -69,6 +69,7 @@ export interface Params {
   stStep: number;
   stMode: 'cascade' | 'alternate';
   stRound: number;
+  stStretch: boolean;
   // stepped
   spSteps: number;
   spHeight: number;
@@ -91,6 +92,7 @@ export interface Params {
   bookCover: number;
   bookEffect: 'flat' | 'ramp' | 'sweep';
   bookFit: boolean;
+  bookStretch: boolean;
   bookMargin: number;
   bookAlign: 'left' | 'center';
   rLean: number;
@@ -208,9 +210,21 @@ export class Builder {
         case 'book':
           parts = this.book(font, p, warnings);
           break;
-        case 'stack':
-          parts = this.stack(layout.lines, p, warnings);
+        case 'stack': {
+          let lines = layout.lines;
+          if (p.stStretch && layout.lineCount > 1) {
+            // every line the same width, like a block set in a variable-width font
+            const b = cs.bounds();
+            lines = layoutText(font, p.text, {
+              capHeight: p.capHeight,
+              tracking: p.tracking,
+              lineSpacing: p.lineSpacing,
+              stretchTo: b.max[0] - b.min[0],
+            }).lines;
+          }
+          parts = this.stack(lines, p, warnings);
           break;
+        }
         case 'stepped':
           parts = this.stepped(cs, p, warnings);
           break;
@@ -786,6 +800,24 @@ export class Builder {
       }
       layout = lay(lo);
       warnings.push(`Text sized to fit the front: ${lo.toFixed(1)} mm letters, ${layout.lineCount} line${layout.lineCount > 1 ? 's' : ''}.`);
+    }
+    if (p.bookStretch) {
+      // Fill the page: keep the line breaks, stretch every line to the full width and,
+      // when fitting, size the lines so the block fills the height too.
+      const n = Math.max(1, layout.lineCount);
+      const cap = p.bookFit ? maxH / ((n - 1) * p.lineSpacing + 1.2) : layout.capHeight;
+      layout = layoutText(font, layout.lineTexts.join('\n'), {
+        capHeight: cap,
+        tracking: p.tracking,
+        lineSpacing: p.lineSpacing,
+        stretchTo: maxW,
+      });
+      const [lo, hi] = layout.stretch;
+      if (p.bookFit) warnings.pop(); // replace the plain "sized to fit" note
+      warnings.push(
+        `Lines stretched to fill the front: ${cap.toFixed(1)} mm tall, widths ${Math.round(lo * 100)}–${Math.round(hi * 100)}% of normal.`,
+      );
+      if (hi > 3) warnings.push('Some short lines are stretched a lot. Join short words onto one line for a more even look.');
     }
     const lines = layout.lines;
     const face = this.rect(0, 0, outW, outH);
