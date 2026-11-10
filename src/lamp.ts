@@ -416,6 +416,12 @@ function perimeterMap(S: (a: number) => number) {
   return {
     /** length of the outline at unit size */
     length: L,
+    /** fraction of the way round (0..1) at shape angle a — the inverse of angle() */
+    fraction(a: number) {
+      const x = ((((a / (2 * Math.PI)) % 1) + 1) % 1) * N;
+      const i = Math.floor(x);
+      return (cum[i] + (cum[Math.min(N, i + 1)] - cum[i]) * (x - i)) / L;
+    },
     angle(c: number) {
       const x = (((c % 1) + 1) % 1) * N;
       const j = Math.floor(x);
@@ -534,7 +540,7 @@ function wovenBands(
   wasm: ManifoldToplevel,
   k: Keep,
   curve: Pt[],
-  o: { S: (a: number) => number; twistPerMm: number; count: number; amp: number; rRef: number; w: number; hB: number; ppw: number },
+  o: { S: (a: number) => number; twistPerMm: number; count: number; amp: number; rRef: number; w: number; hB: number; ppw: number; seamAngle?: number },
 ): { bands: Manifold[]; z: [number, number][]; ring: (r: number, phase: number) => Pt[] } {
   const PM = perimeterMap(o.S);
   const M = Math.max(12, Math.round(o.count * o.ppw));
@@ -560,6 +566,37 @@ function wovenBands(
       return [r * b[0] + wv * Nn[j][0], r * b[1] + wv * Nn[j][1]];
     });
   };
+  /**
+   * Seam notch: one small sharp inward V per band, at the bottom of the wave valley nearest to
+   * `seamAngle` (world angle, so the line stays put whatever the twist). It is the sharpest inward
+   * corner of the layer, so the slicer starts every loop there and the seam hides in the weave.
+   * The whole wall dents in (inside skin follows), so it stays one line thick.
+   */
+  const NOTCH_W = 0.4; // half width
+  const NOTCH_D = 0.4;
+  const notched = (pts: Pt[], phase: number, z: number): Pt[] => {
+    if (o.seamAngle === undefined) return pts;
+    const aShape = o.seamAngle - o.twistPerMm * z;
+    const u0 = PM.fraction(aShape);
+    // valleys sit where cos(2π·count·u + phase) = -1
+    const off = phase / (2 * Math.PI);
+    const kk = Math.round(u0 * o.count + off - 0.5);
+    const uT = (kk + 0.5 - off) / o.count;
+    const j = ((Math.round(uT * M) % M) + M) % M;
+    const P = pts[j];
+    const A0 = pts[(j - 1 + M) % M];
+    const B0 = pts[(j + 1) % M];
+    let tx = B0[0] - A0[0];
+    let ty = B0[1] - A0[1];
+    const tl = Math.hypot(tx, ty) || 1;
+    tx /= tl;
+    ty /= tl;
+    const nx = ty; // outward normal
+    const ny = -tx;
+    const out = pts.slice(0, j);
+    out.push([P[0] - tx * NOTCH_W, P[1] - ty * NOTCH_W], [P[0] - nx * NOTCH_D, P[1] - ny * NOTCH_D], [P[0] + tx * NOTCH_W, P[1] + ty * NOTCH_W]);
+    return out.concat(pts.slice(j + 1));
+  };
   const pts = resample(curve, o.hB);
   const bands: Manifold[] = [];
   const zr: [number, number][] = [];
@@ -573,7 +610,8 @@ function wovenBands(
     // every layer still sits half on the one below (otherwise it prints in mid-air)
     const lean = Math.abs(rb - ra) / h;
     const wPlan = Math.max(o.w, Math.min(3, 2 * 0.2 * lean));
-    const outer = k(new wasm.CrossSection([ring(ra, (i % 2) * Math.PI)], 'Positive'));
+    const ph = (i % 2) * Math.PI;
+    const outer = k(new wasm.CrossSection([notched(ring(ra, ph), ph, za)], 'Positive'));
     const band2d = k(outer.subtract(k(outer.offset(-wPlan, 'Miter', 2))));
     const rot = k(band2d.rotate((o.twistPerMm * za * 180) / Math.PI));
     const sc = rb / ra;
@@ -614,7 +652,7 @@ function wovenShade(
   const count = Math.max(12, Math.round((perimeterMap(S).length * rRef) / wave));
   const { bands, z: zr, ring } = wovenBands(wasm, k, curve, {
     S, twistPerMm, count, amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef, w,
-    hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6,
+    hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6, seamAngle: Math.PI / 2,
   });
   // hub: a plate under the first band, spokes, and the collar with the lock slots
   const hubT = 3;
@@ -822,7 +860,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
       }
       const { bands, z: bz } = wovenBands(wasm, k, curve, {
         S: () => 1, twistPerMm: 0, count: Math.max(12, Math.round((2 * Math.PI * Rb) / Math.max(2, p.lampTexSize))),
-        amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6,
+        amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6, seamAngle: Math.PI / 2,
       });
       // merge only where parts overlap: the top bands with the neck, the bottom bands with the feet cuts
       wovenTop = bands.filter((_, i) => bz[i][1] > bodyTop - 12);

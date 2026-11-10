@@ -66,3 +66,5 @@
     exactly that way (`wovenBands`), no texture sampling. Unmerged on purpose (speed).
 19. Bambu warned >1M triangles and showed white gap fill: 16 → 6 points per wave (cos so crests
     are hit), wall 0.42 measured flat (one line; widened only where too steep), separate 3MF objects.
+20. Seam wandered with the twist (Bambu picks the sharpest concave corner). Added a seam notch per
+    band at the back, inside a wave valley, so the seam is a straight hidden line.
