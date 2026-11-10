@@ -25,8 +25,9 @@ export interface LampParams {
   shCorner: number; // % corner rounding (100 = round)
   shTwist: number; // degrees per tier
   lampWall: number;
-  lampTex: 'none' | 'dots' | 'ribs' | 'rings';
-  lampTexSize: number;
+  lampTex: 'none' | 'basket' | 'dots' | 'ribs' | 'rings';
+  lampTexSize: number; // pattern width (around)
+  lampTexH: number; // pattern height (along the surface)
   lampTexDepth: number;
   socketD: number;
   jointD: number; // outside diameter of the base neck that the shade locks onto
@@ -340,6 +341,13 @@ export function planShape(p: LampParams): (a: number) => number {
 function pattern(p: LampParams): ((u: number, v: number) => number) | null {
   const tau = 2 * Math.PI;
   switch (p.lampTex) {
+    case 'basket': {
+      // basket weave: a checkerboard of raised blocks with crisp edges. Grid points fall exactly
+      // on block edges (value ½ there) and every point inside a block is fully up or down.
+      const g = 1 / Math.sin(Math.PI / perDot(p));
+      const sq = (x: number) => clamp(Math.sin(Math.PI * x) * g, -1, 1);
+      return (u, v) => 0.5 + 0.5 * sq(u) * sq(v);
+    }
     case 'dots': // staggered round bumps (knurl)
       return (u, v) => ((1 + Math.cos(tau * u) * Math.cos(tau * v)) / 2) ** 1.5;
     case 'ribs':
@@ -353,7 +361,7 @@ function pattern(p: LampParams): ((u: number, v: number) => number) | null {
 
 /** Points per dot: 4 while editing, 6 in downloads (fewer for very small dots). */
 function perDot(p: LampParams): number {
-  const size = Math.max(2, p.lampTexSize);
+  const size = Math.min(Math.max(2, p.lampTexSize), Math.max(1.5, p.lampTexH ?? p.lampTexSize));
   return clamp(Math.round(size / (p.lampFine ? 0.65 : 1)), 3, p.lampFine ? 6 : 4);
 }
 
@@ -439,7 +447,7 @@ export function shadeWarp(
   const S = planShape(p);
   const PM = perimeterMap(S);
   const tex = pattern(p);
-  const size = Math.max(2, p.lampTexSize);
+  const sizeH = Math.max(1.5, p.lampTexH ?? p.lampTexSize);
   const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
   const tierH = c.top / Math.max(1, Math.round(p.shTiers));
   const twist = (p.shTwist * DEG) / Math.max(1, tierH);
@@ -478,7 +486,7 @@ export function shadeWarp(
     mz /= ml;
     let d = 0;
     if (tex && depth > 0) {
-      d = depth * tex(col * c.around, F.s / size) * F.fade *
+      d = depth * tex(col * c.around, F.s / sizeH) * F.fade *
         smooth(c.hubT + 0.5, c.hubT + 3, F.qz) *
         smooth(fadeOut, fadeOut + 6, F.qr) *
         (c.topR > 0 ? smooth(c.top - 0.5, c.top - 3, F.qz) : 1) *
@@ -516,10 +524,11 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
   const w = clamp(p.lampWall, 0.4, 6);
   const tex = pattern(p);
   const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
-  const size = Math.max(2, p.lampTexSize);
+  const size = Math.max(2, p.lampTexSize); // pattern width (around)
+  const sizeH = Math.max(1.5, p.lampTexH ?? p.lampTexSize); // pattern height (along the surface)
   const kq = tex ? perDot(p) : 1;
-  // mesh spacing: exactly `kq` points per dot; plain surfaces just need to be smooth
-  const step = tex ? size / kq : p.lampFine ? 1.5 : 2.5;
+  // mesh spacing along the surface: exactly `kq` rows per block; plain surfaces just need to be smooth
+  const step = tex ? sizeH / kq : p.lampFine ? 1.5 : 2.5;
   const sockR = p.socketD / 2;
   const J = joint(p);
   const S = planShape(p);
@@ -691,7 +700,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
             const blend = 1 - smooth(w * 1.25 + 0.6, w * 1.25 + 3, Math.abs(F.t));
             if (blend <= 0) continue;
             const col = Math.atan2(y, x) / (2 * Math.PI);
-            const d = depth * tex(col * aroundB, F.s / size) * F.fade * smooth(notchH + 0.4, notchH + 3, F.qz) * smooth(bodyTop - 1, bodyTop - 8, F.qz) * blend;
+            const d = depth * tex(col * aroundB, F.s / sizeH) * F.fade * smooth(notchH + 0.4, notchH + 3, F.qz) * smooth(bodyTop - 1, bodyTop - 8, F.qz) * blend;
             const r2 = r + d * F.nr;
             v[3 * i] = (x / r) * r2;
             v[3 * i + 1] = (y / r) * r2;

@@ -223,8 +223,9 @@ const LAMP_CONTROLS: Control[] = [
   { kind: 'range', key: 'shSides', label: 'Corners', min: 0, max: 8, step: 1, hint: '0 = round. 3 = triangle.' },
   { kind: 'range', key: 'shCorner', label: 'Corner rounding', min: 0, max: 100, step: 1, unit: '%', hint: '100 = round.' },
   { kind: 'range', key: 'shTwist', label: 'Twist per tier', min: -90, max: 90, step: 1, unit: '°' },
-  { kind: 'select', key: 'lampTex', label: 'Surface', options: [['dots', 'Knurled dots'], ['ribs', 'Ribs'], ['rings', 'Rings'], ['none', 'Smooth']] },
-  { kind: 'range', key: 'lampTexSize', label: 'Pattern size', min: 2.5, max: 15, step: 0.5, unit: 'mm' },
+  { kind: 'select', key: 'lampTex', label: 'Surface', options: [['basket', 'Basket weave'], ['dots', 'Knurled dots'], ['ribs', 'Ribs'], ['rings', 'Rings'], ['none', 'Smooth']] },
+  { kind: 'range', key: 'lampTexSize', label: 'Pattern width', min: 2.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going around.' },
+  { kind: 'range', key: 'lampTexH', label: 'Pattern height', min: 1.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going up.' },
   { kind: 'range', key: 'lampTexDepth', label: 'Pattern depth', min: 0.2, max: 3, step: 0.1, unit: 'mm' },
   { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.6, max: 3, step: 0.1, unit: 'mm', hint: 'Thin walls let more light through.' },
   { kind: 'range', key: 'hubSpokes', label: 'Spokes', min: 2, max: 8, step: 1 },
@@ -482,7 +483,9 @@ function renderStyleControls() {
       if (params.lampTier === 'barrel' && coneOnly.includes(c.key)) return false;
       if (params.lampTier === 'cone' && c.key === 'shTierH') return false;
       if (params.lampShow !== 'both' && c.key === 'lampView') return false;
-      if (params.lampTex === 'none' && ['lampTexSize', 'lampTexDepth', 'baseTex'].includes(c.key)) return false;
+      if (params.lampTex === 'none' && ['lampTexSize', 'lampTexH', 'lampTexDepth', 'baseTex'].includes(c.key)) return false;
+      if (params.lampTex === 'ribs' && c.key === 'lampTexH') return false;
+      if (params.lampTex === 'rings' && c.key === 'lampTexSize') return false;
       return true;
     });
   }

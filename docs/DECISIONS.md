@@ -58,3 +58,5 @@
 16. Lamp pattern looked random/aliased: mesh points didn't line up with the dots and dots were
     spaced by angle (stretched on sides, ignored the twist). Now a true grid: rows resampled along
     the surface, columns evenly spaced along the plan outline and twisted with it.
+17. User's photos of the real printed lamp: basket weave (alternating rectangular blocks, crisp
+    edges), not round dots. Added 'basket' pattern (default), separate pattern width/height, 6 spokes.

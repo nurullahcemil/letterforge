@@ -61,6 +61,8 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
   Rows: the outer outline is `resample`d at size/perDot along its length. Columns: revolve with
   around·perDot segments, then `perimeterMap` spaces them evenly along the plan outline (flat sides
   and corners alike) and they turn with the twist. Don't go back to angle- or z-based patterns.
+- Default pattern = basket weave (checkerboard of crisp blocks, width `lampTexSize` 4.5 around,
+  height `lampTexH` 3 along the surface), 6 spokes — matches photos of the user's printed lamp.
 - Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
   shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
   while putting on, > 0 when lifting/pushing a locked shade).
