@@ -82,7 +82,8 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
 - Barrel outline: no part leans more than 45° (`shadeOutline` raises valleys with 45° flanks →
   V waists, like the original). 45° is the steepest one 0.42 line climbs at 0.2 layers, so every
   layer is ONE line (user: "I don't want a thick lamp"). Check: `scripts/lamp-lines.ts` (must say
-  1 line: 100%).
+  1 line: 100%). Same on the woven base: where the rounded shoulder turns flatter than 45° the bands
+  carry on in a straight 45° line into the neck (flat bands printed as stair steps at the neck).
 - Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
   shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
   while putting on, > 0 when lifting/pushing a locked shade).

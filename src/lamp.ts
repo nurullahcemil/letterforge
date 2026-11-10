@@ -859,11 +859,18 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     if (woven) {
       // body curve from the bottom edge up to the neck
+      // where the rounded shoulder turns flatter than 45° it would print as stair steps: carry on in
+      // a straight 45° line into the neck instead (the neck hides the end)
       const curve: Pt[] = [];
       for (const pt of bc) {
-        if (curve.length && pt[0] < J.neckR - 1) break;
+        const q = curve[curve.length - 1];
+        if (q && (pt[0] < J.neckR - 1 || q[0] - pt[0] > pt[1] - q[1] + 1e-6)) break;
         curve.push(pt);
       }
+      const end = curve[curve.length - 1];
+      const run = end[0] - (J.neckR - 1);
+      const nSeg = Math.max(1, Math.ceil(run / 1.5));
+      for (let i = 1; i <= nSeg; i++) curve.push([end[0] - (run * i) / nSeg, end[1] + (run * i) / nSeg]);
       const { bands, z: bz } = wovenBands(wasm, k, curve, {
         S: () => 1, twistPerMm: 0, count: Math.max(12, Math.round((2 * Math.PI * Rb) / Math.max(2, p.lampTexSize))),
         amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6, seamAngle: Math.PI / 2,
