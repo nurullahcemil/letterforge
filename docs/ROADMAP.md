@@ -1,5 +1,9 @@
 # Roadmap / open items
 
+## Done: mushroom lamp (style `lamp`)
+Stacked cone-tier shade + base for an E27 kit, with corners, twist, dots/ribs/rings pattern.
+Possible next: the wavy lamp below could become another shade type inside the lamp style.
+
 ## Next: parametric wavy lamp / vase (requested, not started)
 Reference: a tall lamp shade made of vertical ribs that wave sideways along the height
 (sinusoidal fins, star-like cross-section, bulging middle), printed in vase mode with

@@ -89,6 +89,13 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'oswald',
     patch: { capHeight: 16, colorA: '#f2efe8', colorB: '#cdbf98', tracking: 0.03, lineSpacing: 1.35, rMin: 0.4, rMax: 10, rLean: 60, rSpan: 'letter', rDir: 'right', textDx: 0, textDy: 0 },
   },
+  lamp: {
+    label: 'Lamp',
+    blurb: 'A mushroom table lamp: a puffy stacked shade and a base, for an E27 lamp kit (socket, cable and bulb). Print the shade in a light, translucent colour and use an LED bulb.',
+    text: '',
+    font: 'archivo',
+    patch: { colorA: '#f3e6cf', colorB: '#d9967a' },
+  },
 };
 
 type Control =
@@ -196,7 +203,38 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'select', key: 'rSpan', label: 'Ramp across', options: [['letter', 'Each letter'], ['line', 'Whole line']] },
     { kind: 'select', key: 'bookOrient', label: 'Print orientation', options: [['standing', 'Standing'], ['lying', 'Lying flat']] },
   ],
+  lamp: [],
 };
+
+const LAMP_CONTROLS: Control[] = [
+  { kind: 'select', key: 'lampShow', label: 'Make', options: [['both', 'Shade and base'], ['shade', 'Shade only'], ['base', 'Base only']] },
+  { kind: 'range', key: 'shTiers', label: 'Shade tiers', min: 1, max: 6, step: 1 },
+  { kind: 'range', key: 'shDia', label: 'Shade width', min: 100, max: 300, step: 1, unit: 'mm', hint: 'Widest point of the bottom tier.' },
+  { kind: 'range', key: 'shShrink', label: 'Smaller each tier', min: 0, max: 35, step: 1, unit: '%' },
+  { kind: 'range', key: 'shPuff', label: 'Waist depth', min: 0, max: 100, step: 1, unit: '%', hint: 'How far each tier tucks in under the one above.' },
+  { kind: 'range', key: 'shRim', label: 'Rim height', min: 0, max: 40, step: 0.5, unit: 'mm', hint: 'The upright band at the edge of each tier.' },
+  { kind: 'range', key: 'shSlope', label: 'Top slope', min: 25, max: 70, step: 1, unit: '°', hint: 'How steeply each tier rises to the middle. Below about 30° may sag.' },
+  { kind: 'range', key: 'shUnder', label: 'Underside angle', min: 15, max: 65, step: 1, unit: '°', hint: 'How far the underside leans out. Above about 60° may sag.' },
+  { kind: 'range', key: 'shRound', label: 'Roundness', min: 0, max: 30, step: 0.5, unit: 'mm' },
+  { kind: 'range', key: 'shTopHole', label: 'Top vent', min: 0, max: 80, step: 1, unit: 'mm', hint: 'A hole at the very top lets heat out. 0 = closed.' },
+  { kind: 'range', key: 'shSides', label: 'Corners', min: 0, max: 8, step: 1, hint: '0 = round. 3 = soft triangle.' },
+  { kind: 'range', key: 'shSideDepth', label: 'Corner strength', min: 0, max: 50, step: 1, unit: '%' },
+  { kind: 'range', key: 'shCorner', label: 'Corner sharpness', min: 0.5, max: 6, step: 0.1 },
+  { kind: 'range', key: 'shTwist', label: 'Twist per tier', min: -90, max: 90, step: 1, unit: '°' },
+  { kind: 'select', key: 'lampTex', label: 'Surface', options: [['dots', 'Knurled dots'], ['ribs', 'Ribs'], ['rings', 'Rings'], ['none', 'Smooth']] },
+  { kind: 'range', key: 'lampTexSize', label: 'Pattern size', min: 2.5, max: 15, step: 0.5, unit: 'mm' },
+  { kind: 'range', key: 'lampTexDepth', label: 'Pattern depth', min: 0.2, max: 3, step: 0.1, unit: 'mm' },
+  { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.6, max: 3, step: 0.1, unit: 'mm', hint: 'Thin walls let more light through.' },
+  { kind: 'range', key: 'socketD', label: 'Socket hole', min: 20, max: 60, step: 0.5, unit: 'mm', hint: 'Measure the threaded ring of your lamp socket. E27 is usually about 40 mm.' },
+  { kind: 'range', key: 'hubSpokes', label: 'Spokes', min: 2, max: 8, step: 1 },
+  { kind: 'range', key: 'baseH', label: 'Base height', min: 40, max: 250, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'baseD', label: 'Base width', min: 60, max: 200, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'baseTaper', label: 'Base top width', min: 50, max: 120, step: 1, unit: '%' },
+  { kind: 'range', key: 'baseRound', label: 'Base shoulder', min: 0, max: 50, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'baseFeet', label: 'Feet', min: 0, max: 12, step: 1, hint: '0 = flat bottom. The cable leaves through a gap.' },
+  { kind: 'toggle', key: 'baseTex', label: 'Pattern on the base' },
+];
+STYLE_CONTROLS.lamp = LAMP_CONTROLS;
 
 const params: Params = { ...defaults };
 let fontKey = 'archivo';
@@ -386,7 +424,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase') { renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow') { renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -428,6 +466,21 @@ function renderStyleControls() {
     });
   }
   if (!params.lineMode) list = list.filter((c) => c.key !== 'lineW');
+  if (params.style === 'lamp') {
+    const shadeKeys = ['shTiers', 'shDia', 'shShrink', 'shPuff', 'shRim', 'shSlope', 'shUnder', 'shRound', 'shTopHole', 'shSides', 'shSideDepth', 'shCorner', 'shTwist', 'hubSpokes'];
+    const baseKeys = ['baseH', 'baseD', 'baseTaper', 'baseRound', 'baseFeet', 'baseTex'];
+    list = list.filter((c) => {
+      if (params.lampShow === 'base' && shadeKeys.includes(c.key)) return false;
+      if (params.lampShow === 'shade' && baseKeys.includes(c.key)) return false;
+      if (Math.round(params.shSides) < 2 && (c.key === 'shSideDepth' || c.key === 'shCorner')) return false;
+      if (params.lampTex === 'none' && ['lampTexSize', 'lampTexDepth', 'baseTex'].includes(c.key)) return false;
+      return true;
+    });
+  }
+  // the lamp has no text, so its text and size sections go away
+  const isLamp = params.style === 'lamp';
+  $('#text-section').hidden = isLamp;
+  $('#size-section').hidden = isLamp;
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -655,6 +708,7 @@ function syncColors() {
     stack: ['Colour', '—'],
     stepped: ['Letters', 'Base'],
     ramp: ['Plate', 'Letters'],
+    lamp: ['Shade', 'Base'],
   };
   const [a, b] = labels[params.style];
   $('#colorA-label').textContent = a;
@@ -663,6 +717,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  lamp: `<svg viewBox="0 0 48 32"><path d="M24 2c-6 4-12 7-14 10 3 1 6 0 8 0-5 3-10 6-12 9 6 1 12 0 18 0s12 1 18 0c-2-3-7-6-12-9 2 0 5 1 8 0-2-3-8-6-14-10z" fill="currentColor" opacity=".35" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 22h10l1 8H18z" fill="currentColor"/></svg>`,
   keychain: `<svg viewBox="0 0 48 32"><path d="M9 8h30a8 8 0 0 1 0 16H9a8 8 0 0 1 0-16z" fill="currentColor" opacity=".3"/><circle cx="9" cy="16" r="2.6" fill="var(--bg)"/><path d="M17 21c2-7 4-10 6-10s1 5-1 7m5 3c1-4 3-7 5-7 1 0 1 3-1 5m4 2c1-3 2-5 4-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`,
   duo: `<svg viewBox="0 0 48 32"><path d="M4 18h40v10H4z" fill="currentColor" opacity=".4"/><path d="M8 17c3-9 6-12 8-10s-2 7-4 9m8 1c2-6 4-9 6-8 2 2-1 6-3 8m7 0c2-5 5-8 7-7 1 2-1 5-3 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M38 5l3 3-3 3M41 8h-6" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/></svg>`,
   book: `<svg viewBox="0 0 48 32"><rect x="6" y="3" width="16" height="26" rx="1" fill="currentColor" opacity=".3"/><rect x="18" y="2" width="24" height="28" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M22 9h6l10 2v2l-10-1h-6zM22 18h4l12 2v2l-12-1h-4z" fill="currentColor"/></svg>`,
@@ -847,6 +902,7 @@ function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
 }
 
 function baseName() {
+  if (params.style === 'lamp') return 'lamp';
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
   return `${t}-${params.style}`;
 }

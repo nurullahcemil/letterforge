@@ -281,3 +281,4 @@ textarea:focus, input[type='text']:focus, input[type='number']:focus { outline: 
 .lp-note { display: block; color: var(--ink-3); font-size: 11px; margin: -2px 0 6px; }
 .lp-actions { display: flex; gap: 6px; margin-top: 8px; }
 .lp-actions button { flex: 1; font: inherit; font-size: 12px; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; background: none; color: inherit; cursor: pointer; }
+section[hidden] { display: none; }

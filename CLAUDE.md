@@ -30,7 +30,7 @@ Regression check used so far: run smoke before and after a change and diff the
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
-stack (bold stack), stepped, ramp (ramp relief), book (book sleeve).
+stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -45,5 +45,11 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve).
 See the bottom of `docs/DECISIONS.md` for the feature list and history.
 The user prints on a Bambu Lab X1E with Bambu Studio 2.x; 3MF colour import is confirmed working.
 
-## Next idea from the user (not started)
-Parametric wavy lamp/vase like a ribbed sinusoidal lamp shade — see `docs/ROADMAP.md`.
+## Lamp style
+Mushroom table lamp for an E27 lamp kit, modelled on a stacked "Pilzlampe" the user showed.
+`src/lamp.ts`: shade outline (r,z) of stacked cone tiers → rounded with offset tricks → wall →
+revolve → hub ring + spokes at the bottom → warp for plan shape (corners), twist and surface
+pattern (pattern follows distance along the outline, so dots keep their size on slopes).
+Base: hollow, 45° roof to the socket hole, feet notches, cable notch. Never bed-split.
+Check: `npx tsx scripts/lamp-check.ts '{"shTiers":4}'` (status, pieces, volume).
+Next idea: the wavy ribbed lamp in `docs/ROADMAP.md`.

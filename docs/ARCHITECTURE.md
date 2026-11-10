@@ -27,6 +27,11 @@
 - Memory: every WASM object goes through `this.k()` and is freed in `flush()`;
   kept parts freed on the next build.
 
+## src/lamp.ts — lamp style (no text)
+- `shadeOutline(p)` sharp (r,z) outline of the tiers, mirrored; `buildLamp(wasm, keep, p, warnings)`
+  → `[{name, m, role: 'shade'|'base'}]`. `Builder.lamp()` lays the pieces side by side on the bed.
+- UI: `LAMP_CONTROLS` in main.ts; the Text and Size sections are hidden for this style.
+
 ## src/worker.ts
 Messages: `font {key, buffer, ext}`, `build {fontKey, topFontKey, params}`, `merged {byColor}`.
 

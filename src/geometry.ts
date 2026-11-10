@@ -3,12 +3,13 @@ import * as SS from 'straight-skeleton';
 import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
+import { buildLamp, type LampParams } from './lamp';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
-export interface Params {
+export interface Params extends LampParams {
   style: Style;
   text: string;
   capHeight: number;
@@ -195,6 +196,7 @@ export class Builder {
     const warnings: string[] = [];
     let parts: WorkPart[] = [];
     try {
+      if (p.style === 'lamp') return this.lamp(p, warnings);
       const layout = layoutText(font, p.text || ' ', {
         capHeight: p.capHeight,
         tracking: p.tracking,
@@ -343,6 +345,42 @@ export class Builder {
       u.delete();
     }
     return concatMeshes(chunks);
+  }
+
+  /** Lamp: shade and base, each laid on the bed side by side. Never split (cuts would show in the light). */
+  private lamp(p: Params, warnings: string[]): BuildResult {
+    const pieces = buildLamp(this.wasm, (o) => this.k(o), p, warnings);
+    this.kept = [];
+    const out: Part[] = [];
+    let x = 0;
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    for (const pc of pieces) {
+      const b = pc.m.boundingBox();
+      const w = b.max[0] - b.min[0];
+      const d = b.max[1] - b.min[1];
+      if (w > p.bedSize || d > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is ${Math.round(w)} mm wide, larger than your ${p.bedSize} mm bed.`);
+      if (b.max[2] - b.min[2] > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is taller than your printer may allow (${Math.round(b.max[2] - b.min[2])} mm).`);
+      const m = pc.m.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]]);
+      x += w + 15;
+      const color = pc.role === 'shade' ? p.colorA : p.colorB;
+      this.kept.push({ name: pc.name, color, m });
+      const mesh = m.getMesh();
+      const np = mesh.numProp;
+      const vp = mesh.vertProperties;
+      const positions = new Float32Array((vp.length / np) * 3);
+      for (let i = 0, j = 0; i < vp.length; i += np, j += 3) {
+        for (let a = 0; a < 3; a++) {
+          const v = vp[i + a];
+          positions[j + a] = v;
+          if (v < lo[a]) lo[a] = v;
+          if (v > hi[a]) hi[a] = v;
+        }
+      }
+      out.push({ name: pc.name, color, positions, indices: new Uint32Array(mesh.triVerts) });
+    }
+    const size: [number, number, number] = out.length ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] : [0, 0, 0];
+    return { parts: out, warnings, size, letters: [] };
   }
 
   // ---------- helpers ----------

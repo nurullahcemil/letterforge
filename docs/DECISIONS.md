@@ -45,3 +45,5 @@
 9. Click-a-letter popover (width/rotate/move), stepped base + per-letter drag, outline ramp fix.
 10. Bed-split gap fix. 11. 3MF colours via m:colorgroup; STL single file.
 12. Join touching letter pieces.
+13. Lamp style (mushroom lamp: shade + base, E27 kit). Printability: walls lean at most
+    max(underside angle, 90° − top slope); warning above 62°. Top vent default 30 mm (no flat ceiling).
