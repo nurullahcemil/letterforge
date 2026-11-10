@@ -333,21 +333,85 @@ export function planShape(p: LampParams): (a: number) => number {
   };
 }
 
-/** Surface pattern 0..1 at angle a (radians) and distance along the surface v. */
-function pattern(p: LampParams, rRef: number) {
-  const size = Math.max(2, p.lampTexSize);
-  const around = Math.max(6, Math.round((2 * Math.PI * rRef) / size)); // whole number of bumps → no seam
+/**
+ * Surface pattern 0..1 on a grid: u counts dots around, v counts dots along the surface.
+ * The mesh has exactly `perDot` points per dot in both directions, so every dot comes out the same.
+ */
+function pattern(p: LampParams): ((u: number, v: number) => number) | null {
   const tau = 2 * Math.PI;
   switch (p.lampTex) {
-    case 'dots':
-      return (a: number, v: number) => ((1 + Math.cos(tau * (a / tau) * around) * Math.cos((tau * v) / size)) / 2) ** 1.5;
+    case 'dots': // staggered round bumps (knurl)
+      return (u, v) => ((1 + Math.cos(tau * u) * Math.cos(tau * v)) / 2) ** 1.5;
     case 'ribs':
-      return (a: number) => ((1 - Math.cos(tau * (a / tau) * around)) / 2) ** 0.8;
+      return (u) => ((1 - Math.cos(tau * u)) / 2) ** 0.8;
     case 'rings':
-      return (_a: number, v: number) => ((1 - Math.cos((tau * v) / size)) / 2) ** 0.8;
+      return (_u, v) => ((1 - Math.cos(tau * v)) / 2) ** 0.8;
     default:
       return null;
   }
+}
+
+/** Points per dot: 4 while editing, 6 in downloads (fewer for very small dots). */
+function perDot(p: LampParams): number {
+  const size = Math.max(2, p.lampTexSize);
+  return clamp(Math.round(size / (p.lampFine ? 0.65 : 1)), 3, p.lampFine ? 6 : 4);
+}
+
+/** Evenly spaced points along an open curve, exactly `step` apart (plus the end point). */
+function resample(curve: Pt[], step: number): Pt[] {
+  const out: Pt[] = [curve[0]];
+  let need = step;
+  for (let i = 0; i + 1 < curve.length; i++) {
+    const a = curve[i];
+    const b = curve[i + 1];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    let at = 0;
+    while (len - at >= need - 1e-9) {
+      at += need;
+      const t = at / len;
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      need = step;
+    }
+    need -= len - at;
+  }
+  const last = curve[curve.length - 1];
+  const l = out[out.length - 1];
+  if (Math.hypot(last[0] - l[0], last[1] - l[1]) > step * 0.25) out.push(last);
+  else out[out.length - 1] = last;
+  return out;
+}
+
+/**
+ * Plan outline measured by length: maps "fraction of the way round" (0..1) to the angle in the
+ * shape, so columns of dots are evenly spaced along flat sides and corners alike.
+ */
+function perimeterMap(S: (a: number) => number) {
+  const N = 4096;
+  const cum = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) {
+    const a0 = (2 * Math.PI * i) / N;
+    const a1 = (2 * Math.PI * (i + 1)) / N;
+    const r0 = S(a0);
+    const r1 = S(a1);
+    cum[i + 1] = cum[i] + Math.hypot(r1 - r0, ((r0 + r1) / 2) * (a1 - a0));
+  }
+  const L = cum[N];
+  const inv = new Float64Array(N + 1);
+  for (let j = 0, i = 0; j <= N; j++) {
+    const target = (j / N) * L;
+    while (i < N - 1 && cum[i + 1] < target) i++;
+    const t = (target - cum[i]) / (cum[i + 1] - cum[i] || 1);
+    inv[j] = ((i + t) / N) * 2 * Math.PI;
+  }
+  return {
+    /** length of the outline at unit size */
+    length: L,
+    angle(c: number) {
+      const x = (((c % 1) + 1) % 1) * N;
+      const j = Math.floor(x);
+      return inv[j] + (inv[Math.min(N, j + 1)] - inv[j]) * (x - j);
+    },
+  };
 }
 
 /** A ring sector (r0..r1, z0..z1) spanning `deg` degrees, starting at angle `start`. */
@@ -370,10 +434,12 @@ function sector(wasm: ManifoldToplevel, k: Keep, r0: number, r1: number, z0: num
  */
 export function shadeWarp(
   p: LampParams,
-  c: { oc: Pt[]; step: number; top: number; topR: number; topHole: number; hubT: number; lip: number; sMin: number; J: ReturnType<typeof joint>; w: number },
+  c: { oc: Pt[]; step: number; top: number; topR: number; topHole: number; hubT: number; lip: number; sMin: number; J: ReturnType<typeof joint>; w: number; around: number },
 ) {
   const S = planShape(p);
-  const tex = pattern(p, p.shDia / 2);
+  const PM = perimeterMap(S);
+  const tex = pattern(p);
+  const size = Math.max(2, p.lampTexSize);
   const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
   const tierH = c.top / Math.max(1, Math.round(p.shTiers));
   const twist = (p.shTwist * DEG) / Math.max(1, tierH);
@@ -385,23 +451,25 @@ export function shadeWarp(
   const out = (x: number, y: number, z: number): [number, number, number] => {
     const r = Math.hypot(x, y);
     if (r < 1e-9) return [x, y, z];
-    const a = Math.atan2(y, x);
-    const ux = x / r;
-    const uy = y / r;
-    // simple: scale out from the centre (hub, spokes)
+    const th = Math.atan2(y, x);
+    // column: fraction of the way round; its angle in the shape spaces columns evenly along the outline
+    const col = th / (2 * Math.PI);
+    const as = PM.angle(col);
+    // simple: scale out from the centre (hub, spokes); the collar stays round and unturned
     const f = smooth(fadeIn, fadeOut, r);
-    const sr = 1 - f * (1 - S(a - twist * z));
-    const simple: [number, number, number] = [ux * r * sr, uy * r * sr, z];
+    let dth = as + twist * z - th;
+    dth -= 2 * Math.PI * Math.round(dth / (2 * Math.PI));
+    const aS = th + f * dth;
+    const rS = r * (1 - f * (1 - S(as)));
+    const simple: [number, number, number] = [Math.cos(aS) * rS, Math.sin(aS) * rS, z];
     const F = frame(r, z);
     if (!F) return simple;
     // 1 = inside the wall band; the first layers (hub height) keep the simple mapping so the bottom stays flat
     const blend = (1 - smooth(band0, band1, Math.abs(F.t))) * smooth(c.hubT, c.hubT + 2, z);
     if (blend <= 0) return simple;
-    // wall: put the point at the same depth below the reshaped outer surface
-    // the wall always takes the full plan shape (fading it out near the centre would fold the
-    // umbrella tops); only the hub, handled by `simple`, stays round
-    const fq = 1;
-    const sq = S(a - twist * F.qz);
+    // wall: put the point at the same depth below the reshaped outer surface. The wall always
+    // takes the full plan shape (fading it near the centre folded umbrella tops).
+    const sq = S(as);
     // normal of the reshaped surface (scaling r by sq tilts the normal)
     let mr = F.nr / Math.max(0.05, sq);
     let mz = F.nz;
@@ -410,7 +478,7 @@ export function shadeWarp(
     mz /= ml;
     let d = 0;
     if (tex && depth > 0) {
-      d = depth * tex(a, F.s) * F.fade *
+      d = depth * tex(col * c.around, F.s / size) * F.fade *
         smooth(c.hubT + 0.5, c.hubT + 3, F.qz) *
         smooth(fadeOut, fadeOut + 6, F.qr) *
         (c.topR > 0 ? smooth(c.top - 0.5, c.top - 3, F.qz) : 1) *
@@ -418,13 +486,13 @@ export function shadeWarp(
     }
     // in plan, a flat side faces away from the centre line by angle β: step that much further out
     // from the centre so the wall is still `t` thick measured square to the side
-    const ap = a - twist * F.qz;
     const e = 0.002;
-    const slope = (S(ap + e) - S(ap - e)) / (2 * e) / Math.max(0.05, S(ap));
-    const cosB = 1 / Math.sqrt(1 + (fq * slope) ** 2);
+    const slope = (S(as + e) - S(as - e)) / (2 * e) / Math.max(0.05, sq);
+    const cosB = 1 / Math.sqrt(1 + slope * slope);
     const rw = F.qr * sq + ((d - F.t) * mr) / cosB;
     const zw = F.qz + (d - F.t) * mz;
-    const wall: [number, number, number] = [ux * rw, uy * rw, zw];
+    const aw = as + twist * F.qz;
+    const wall: [number, number, number] = [Math.cos(aw) * rw, Math.sin(aw) * rw, zw];
     return [
       simple[0] + (wall[0] - simple[0]) * blend,
       simple[1] + (wall[1] - simple[1]) * blend,
@@ -446,10 +514,12 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
   const pieces: LampPiece[] = [];
   let debug: LampResult['debug'];
   const w = clamp(p.lampWall, 0.4, 6);
-  const tex = pattern(p, p.shDia / 2);
+  const tex = pattern(p);
   const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
-  // finer mesh for the files; a lighter one while editing
-  const step = tex ? clamp(p.lampTexSize / (p.lampFine ? 4 : 2.5), 0.6, 3) : p.lampFine ? 1.5 : 2.5;
+  const size = Math.max(2, p.lampTexSize);
+  const kq = tex ? perDot(p) : 1;
+  // mesh spacing: exactly `kq` points per dot; plain surfaces just need to be smooth
+  const step = tex ? size / kq : p.lampFine ? 1.5 : 2.5;
   const sockR = p.socketD / 2;
   const J = joint(p);
   const S = planShape(p);
@@ -476,7 +546,12 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     const big = 4 * p.shDia;
     A = k(A.intersect(k(wasm.CrossSection.square([big, top]).translate([-big / 2, 0]))));
-    let wall = k(A.subtract(k(A.offset(-w, 'Round', 2, 48))));
+    // rebuild the outline from points exactly one grid step apart along the outer surface, so rows of
+    // mesh points line up with rows of dots
+    const ocRaw = outerCurve((k(A.intersect(k(wasm.CrossSection.square([big, top + 50]).translate([0.01, -10])))).toPolygons()[0] ?? []) as Pt[]);
+    const ocA = resample(ocRaw, step);
+    A = k(new wasm.CrossSection([mirror([[0, 0], ...ocA, [0, ocA[ocA.length - 1][1]]])], 'NonZero'));
+    let wall = k(A.subtract(k(A.offset(-w, 'Miter', 2))));
     const rimIn = lip - w * 1.5;
     wall = k(wall.subtract(k(wasm.CrossSection.square([2 * rimIn, w + 0.02]).translate([-rimIn, -0.01]))));
     if (topR > 0) {
@@ -487,9 +562,13 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     if (topHole > 0.5) wall = k(wall.subtract(k(wasm.CrossSection.square([2 * topHole, 200]).translate([-topHole, top - 100]))));
     wall = k(wall.intersect(k(wasm.CrossSection.square([big, top + 50]).translate([0, -10]))));
     const outer = (k(A.intersect(k(wasm.CrossSection.square([big, top + 50]).translate([0.01, -10])))).toPolygons()[0] ?? []) as Pt[];
-    // offsets leave many tiny arcs; drop them, then add evenly spaced points for the pattern
-    const prof = k(new wasm.CrossSection(densify(k(wall.simplify(0.03)).toPolygons() as Pt[][], step), 'NonZero'));
-    const segs = Math.round(clamp((2 * Math.PI * (p.shDia / 2)) / (tex ? step : 2), 96, 1440));
+    // the outer skin already has grid-spaced points; only split long edges (cuts, inside skin)
+    const prof = k(new wasm.CrossSection(densify(wall.toPolygons() as Pt[][], step * 1.05), 'NonZero'));
+    // columns: a whole number of dots around (no seam), each `kq` mesh columns wide
+    const Rref = (lip + p.shDia / 2) / 2;
+    const perim = perimeterMap(S).length * Rref;
+    const around = tex ? clamp(Math.round(perim / size), 6, Math.floor(2400 / kq)) : 0;
+    const segs = tex ? around * kq : Math.round(clamp(perim / step, 96, 1440));
     let shade = k(wasm.Manifold.revolve(prof, segs));
     const oc = outerCurve(outer);
 
@@ -525,7 +604,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     shade = k(shade.subtract(k(wasm.Manifold.union(slots))));
 
-    const warpFn = shadeWarp(p, { oc, step, top, topR, topHole, hubT, lip, sMin, J, w });
+    const warpFn = shadeWarp(p, { oc, step, top, topR, topHole, hubT, lip, sMin, J, w, around: segs / kq });
     if (p.lampDebug) debug = { polys: prof.toPolygons() as Pt[][], point: warpFn.point };
     shade = k(shade.warpBatch(warpFn));
     pieces.push({ name: 'Shade', m: shade, role: 'shade' });
@@ -549,7 +628,12 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     if (rr > 0.2) A = k(k(A.offset(-rr, 'Round', 2, 64)).offset(rr, 'Round', 2, 64));
     A = k(A.intersect(k(wasm.CrossSection.square([4 * Rb + 40, zs + roofH + 10]).translate([-2 * Rb - 20, 0]))));
     const bodyTop = zs + roofH;
-    let wall = k(A.subtract(k(A.offset(-w * 1.25, 'Round', 2, 48))));
+    const texBase = !!(tex && p.baseTex && depth > 0);
+    // outer surface rebuilt from grid-spaced points so rows of dots line up with mesh rows
+    const bStep = texBase ? step : 2.5;
+    const bc = resample(outerCurve((k(A.intersect(k(wasm.CrossSection.square([4 * Rb + 40, bodyTop + 10]).translate([0.01, -10])))).toPolygons()[0] ?? []) as Pt[]), bStep);
+    A = k(new wasm.CrossSection([mirror([[0, 0], ...bc, [0, bc[bc.length - 1][1]]])], 'NonZero'));
+    let wall = k(A.subtract(k(A.offset(-w * 1.25, 'Miter', 2))));
     wall = k(wall.subtract(k(wasm.CrossSection.square([2 * (Rb - w * 1.25), w * 1.25 + 0.02]).translate([-(Rb - w * 1.25), -0.01]))));
     // open the body under the neck
     wall = k(wall.subtract(k(wasm.CrossSection.square([2 * (J.neckR - 3), 40]).translate([-(J.neckR - 3), bodyTop - 20]))));
@@ -567,8 +651,9 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     ];
     wall = k(wall.add(k(new wasm.CrossSection([neck], 'Positive'))));
     wall = k(wall.intersect(k(wasm.CrossSection.square([4 * Rb + 20, nTop + 10]).translate([0, -5]))));
-    const prof = k(new wasm.CrossSection(densify(k(wall.simplify(0.03)).toPolygons() as Pt[][], tex && p.baseTex ? step : 2.5), 'NonZero'));
-    const segs = Math.round(clamp((2 * Math.PI * Rb) / (tex && p.baseTex ? step : 2), 96, 1200));
+    const prof = k(new wasm.CrossSection(densify(wall.toPolygons() as Pt[][], bStep * 1.05), 'NonZero'));
+    const aroundB = texBase ? clamp(Math.round((2 * Math.PI * Rb) / size), 6, Math.floor(2400 / kq)) : 0;
+    const segs = texBase ? aroundB * kq : Math.round(clamp((2 * Math.PI * Rb) / 2, 96, 1200));
     let base = k(wasm.Manifold.revolve(prof, segs));
     // lugs on the neck (45° underneath so they print)
     const lugs: Manifold[] = [];
@@ -590,7 +675,9 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     cuts.push(k(k(wasm.Manifold.cube([Rb + 20, 9, 16], true)).translate([Rb / 2 + 10, 0, 0])));
     base = k(base.subtract(k(wasm.Manifold.union(cuts))));
-    if (tex && p.baseTex && depth > 0) {
+    if (texBase && tex) {
+      // pattern pushed along the surface (both skins together), like the shade
+      const frame = curveFrame(densifyOpen(bc, Math.min(1, bStep / 3)), Math.max(3, depth * 3, size * 0.75));
       base = k(
         base.warpBatch((v, count) => {
           for (let i = 0; i < count; i++) {
@@ -599,10 +686,16 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
             const z = v[3 * i + 2];
             const r = Math.hypot(x, y);
             if (r < J.neckR + 4 || z > bodyTop - 1) continue;
-            const a = Math.atan2(y, x);
-            const d = depth * tex(a, z) * smooth(notchH + 0.4, notchH + 3, z) * smooth(J.neckR + 4, J.neckR + 12, r) * smooth(bodyTop - 1, bodyTop - 8, z);
-            v[3 * i] = (x / r) * (r + d);
-            v[3 * i + 1] = (y / r) * (r + d);
+            const F = frame(r, z);
+            if (!F) continue;
+            const blend = 1 - smooth(w * 1.25 + 0.6, w * 1.25 + 3, Math.abs(F.t));
+            if (blend <= 0) continue;
+            const col = Math.atan2(y, x) / (2 * Math.PI);
+            const d = depth * tex(col * aroundB, F.s / size) * F.fade * smooth(notchH + 0.4, notchH + 3, F.qz) * smooth(bodyTop - 1, bodyTop - 8, F.qz) * blend;
+            const r2 = r + d * F.nr;
+            v[3 * i] = (x / r) * r2;
+            v[3 * i + 1] = (y / r) * r2;
+            v[3 * i + 2] = z + d * F.nz;
           }
         }),
       );

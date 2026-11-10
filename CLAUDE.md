@@ -57,6 +57,10 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
   and side, and the pattern moves both skins together. Never push the pattern straight out from
   the centre: on flat-ish parts that folds the wall (seen as holes in Bambu Studio). Only the hub
   fades back to round near the centre (fading the wall folded umbrella tops).
+- Pattern grid: mesh points sit exactly on the dot grid (`perDot` = 4 preview / 6 download).
+  Rows: the outer outline is `resample`d at size/perDot along its length. Columns: revolve with
+  around·perDot segments, then `perimeterMap` spaces them evenly along the plan outline (flat sides
+  and corners alike) and they turn with the twist. Don't go back to angle- or z-based patterns.
 - Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
   shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
   while putting on, > 0 when lifting/pushing a locked shade).

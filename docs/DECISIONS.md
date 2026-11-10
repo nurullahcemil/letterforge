@@ -55,3 +55,6 @@
 15. Lamp holes fix: the pattern was pushed straight out from the centre, which folded the wall on
     flat-ish parts (holes/dark patches in Bambu Studio), and the plan shape thinned flat sides to
     ~0.64× the wall. Now wall points keep their depth below the surface (`shadeWarp`).
+16. Lamp pattern looked random/aliased: mesh points didn't line up with the dots and dots were
+    spaced by angle (stretched on sides, ignored the twist). Now a true grid: rows resampled along
+    the surface, columns evenly spaced along the plan outline and twisted with it.
