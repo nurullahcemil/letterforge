@@ -56,6 +56,12 @@ const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt
  * slicers (PrusaSlicer, Bambu Studio, Orca, Cura) load it as one model made of
  * parts that each can get their own filament.
  */
+/** Bambu/Prusa triangle-paint code for a whole triangle in one filament (1-based). */
+function paintCode(filament: number): string {
+  if (filament < 3) return (filament << 2).toString(16).toUpperCase();
+  return (filament - 3).toString(16).toUpperCase() + 'C';
+}
+
 export function to3MF(parts: MeshData[], title: string): Blob {
   const n = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
   // One material (and one filament slot) per distinct colour, in order of first use.
@@ -71,9 +77,13 @@ export function to3MF(parts: MeshData[], title: string): Blob {
     for (let j = 0; j < part.positions.length; j += 3) {
       vs.push(`<vertex x="${n(part.positions[j])}" y="${n(part.positions[j + 1])}" z="${n(part.positions[j + 2])}"/>`);
     }
+    // Bambu Studio / Orca ignore part settings from other apps but always read their own
+    // per-triangle "paint" data, and add the filaments it needs. So every triangle is painted
+    // with its part's filament number.
+    const paint = paintCode(slot(part) + 1);
     const ts: string[] = [];
     for (let j = 0; j < part.indices.length; j += 3) {
-      ts.push(`<triangle v1="${part.indices[j]}" v2="${part.indices[j + 1]}" v3="${part.indices[j + 2]}"/>`);
+      ts.push(`<triangle v1="${part.indices[j]}" v2="${part.indices[j + 1]}" v3="${part.indices[j + 2]}" paint_color="${paint}"/>`);
     }
     objects += `<object id="${id}" name="${esc(part.name)}" type="model" pid="${matId}" pindex="${slot(part)}"><mesh><vertices>${vs.join('')}</vertices><triangles>${ts.join('')}</triangles></mesh></object>\n`;
   });

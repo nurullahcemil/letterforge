@@ -84,4 +84,9 @@ export const DEFAULTS: Params = {
   lineMode: false,
   lineW: 1.2,
   letterW: {},
+  letterMove: {},
+  spBase: false,
+  spBaseT: 3,
+  spBasePad: 8,
+  spBaseShape: 'rect',
 };

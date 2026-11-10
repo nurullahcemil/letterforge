@@ -21,6 +21,8 @@ export interface TextLayout {
   lineTexts: string[];
   /** Smallest and largest horizontal stretch applied (1 = none). */
   stretch: [number, number];
+  /** Centre of each letter (key = index among non-space characters), y up, mm. */
+  letterCenters: { i: number; x: number; y: number }[];
 }
 
 export interface LayoutOptions {
@@ -39,6 +41,14 @@ export interface LayoutOptions {
    * characters of the text (so keys survive re-wrapping). 1 = normal.
    */
   widths?: Record<string, number>;
+  /** Move (mm) and rotate (degrees) single letters; same keys as widths. */
+  moves?: Record<string, LetterMove>;
+}
+
+export interface LetterMove {
+  dx?: number;
+  dy?: number;
+  rot?: number;
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
@@ -145,7 +155,7 @@ function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: numb
 
   // Each run is a glyph plus the font it comes from.
   let run: { glyph: ReturnType<Font['charToGlyph']>; font: Font }[];
-  if (allInMain && !opts.widths) {
+  if (allInMain && !opts.widths && !opts.moves) {
     let glyphs: ReturnType<Font['stringToGlyphs']>;
     try {
       glyphs = font.stringToGlyphs(line);
@@ -212,6 +222,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
   let stretchHi = -Infinity;
   for (const s of shaped) widest = Math.max(widest, s.width);
 
+  const centers: { i: number; x: number; y: number }[] = [];
   const useWidths = !!opts.widths && Object.keys(opts.widths).length > 0;
   let letterNo = 0; // running index of non-space characters
   shaped.forEach(({ items, width }, li) => {
@@ -222,15 +233,18 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     const chars = Array.from(lines[li]);
     // Per-letter widths: each glyph's slot is scaled by its factor, later glyphs move along.
     let offset = 0;
+    const owned: { i: number; from: number; to: number }[] = [];
     items.forEach((p, k) => {
       const ch = chars[k] ?? '';
       const isLetter = ch.trim() !== '';
       const w = useWidths && isLetter ? Math.max(0.1, opts.widths![String(letterNo)] ?? 1) : 1;
+      const myNo = letterNo;
       if (isLetter) letterNo++;
       const path = p.glyph.getPath(p.x + shift, baseY, fontSize);
       const cs = flatten(path.commands, tol);
       const x0 = p.x + shift;
       if (w !== 1 || offset !== 0) for (const c of cs) for (const pt of c) pt[0] = x0 + offset + (pt[0] - x0) * w;
+      if (isLetter && cs.length) owned.push({ i: myNo, from: lineContours.length, to: lineContours.length + cs.length });
       lineContours.push(...cs);
       const next = k < items.length - 1 ? items[k + 1].x : width;
       offset += (next - p.x) * (w - 1);
@@ -249,6 +263,34 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       stretchLo = Math.min(stretchLo, sx);
       stretchHi = Math.max(stretchHi, sx);
     }
+    // Per-letter centre, then the user's move/rotate for that letter (after stretching,
+    // so a moved letter keeps its shape). Contours are already y-up here.
+    for (const o of owned) {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (let c = o.from; c < o.to; c++) for (const [x, y] of lineContours[c]) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+      let cx = (x0 + x1) / 2;
+      let cy = (y0 + y1) / 2;
+      const mv = opts.moves?.[String(o.i)];
+      if (mv && (mv.dx || mv.dy || mv.rot)) {
+        const a = ((mv.rot ?? 0) * Math.PI) / 180;
+        const cos = Math.cos(a), sin = Math.sin(a);
+        const dx = mv.dx ?? 0, dy = mv.dy ?? 0;
+        for (let c = o.from; c < o.to; c++)
+          for (const pt of lineContours[c]) {
+            const rx = pt[0] - cx, ry = pt[1] - cy;
+            pt[0] = cx + rx * cos - ry * sin + dx;
+            pt[1] = cy + rx * sin + ry * cos + dy;
+          }
+        cx += dx;
+        cy += dy;
+      }
+      centers.push({ i: o.i, x: cx, y: cy });
+    }
     contours.push(...lineContours);
     if (lineContours.length) lineGroups.push(lineContours);
     if (lines[li].trim().length) lastBaseline = -baseY;
@@ -262,6 +304,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     lineCount: lines.length,
     lineTexts: lines,
     stretch: [stretchLo === Infinity ? 1 : stretchLo, stretchHi === -Infinity ? 1 : stretchHi],
+    letterCenters: centers,
   };
 }
 

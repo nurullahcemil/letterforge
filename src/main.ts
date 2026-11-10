@@ -70,10 +70,10 @@ const PRESETS: Record<Style, StylePreset> = {
   },
   stepped: {
     label: 'Stepped',
-    blurb: 'Letters that step down in sharp tiers, like folded paper.',
+    blurb: 'Letters that step down in sharp tiers, like folded paper. Click a letter to resize, turn or move it.',
     text: 'A',
     font: 'oswald',
-    patch: { capHeight: 140, colorA: '#d8232a', tracking: 0.02 },
+    patch: { capHeight: 140, colorA: '#d8232a', colorB: '#f2efe8', tracking: 0.02 },
   },
   ramp: {
     label: 'Ramp relief',
@@ -157,6 +157,10 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'spHeight', label: 'Step height', min: 0.6, max: 10, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'spInset', label: 'Step width', min: 0.5, max: 8, step: 0.25, unit: 'mm' },
     { kind: 'select', key: 'spJoin', label: 'Corners', options: [['Miter', 'Sharp'], ['Round', 'Soft']] },
+    { kind: 'toggle', key: 'spBase', label: 'Base', hint: 'A plate under the letters that holds them together. It can be a second colour.' },
+    { kind: 'select', key: 'spBaseShape', label: 'Base shape', options: [['rect', 'Rectangle'], ['outline', 'Follows the letters']] },
+    { kind: 'range', key: 'spBaseT', label: 'Base thickness', min: 1, max: 12, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'spBasePad', label: 'Base margin', min: 1, max: 40, step: 0.5, unit: 'mm' },
   ],
   ramp: [
     { kind: 'range', key: 'rMin', label: 'Low end', min: 0.4, max: 10, step: 0.2, unit: 'mm' },
@@ -287,6 +291,7 @@ async function run() {
       showWarnings([`Something went wrong: ${res.message}`]);
     } else if (myId === latestBuild) {
       lastParts = res.parts;
+      lastLetters = res.letters ?? [];
       viewer.setBed(params.bedSize);
       viewer.setParts(res.parts, refitNext);
       refitNext = false;
@@ -381,7 +386,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode') { renderStyleControls(); renderGeneral(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase') { renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -409,6 +414,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'stepped' && !params.spBase) list = list.filter((c) => !['spBaseShape', 'spBaseT', 'spBasePad'].includes(c.key));
   if (params.style === 'ramp' && !params.rPlate) list = list.filter((c) => c.key !== 'rPlateT' && c.key !== 'rPad');
   if (params.style === 'duo' && !params.vHoles) list = list.filter((c) => !['holeD', 'holeDepth', 'holeWall'].includes(c.key));
   if (params.style === 'book') {
@@ -423,132 +429,137 @@ function renderStyleControls() {
   }
   if (!params.lineMode) list = list.filter((c) => c.key !== 'lineW');
   list.forEach((c) => host.appendChild(controlEl(c)));
-  if (params.style === 'book' || params.style === 'stack') host.appendChild(letterWidthsEl());
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
 
-// ---------- per-letter widths (the "variable font" width axis, one letter at a time) ----------
+// ---------- per-letter settings, opened by clicking a letter on the canvas ----------
 
-/** Indices of selected letters (index among the text's non-space characters). */
-const lwSel = new Set<number>();
+/** Letter positions from the last build (model x/y), for picking. */
+let lastLetters: { i: number; x: number; y: number }[] = [];
+/** Selected letter (index among the text's non-space characters), or null. */
+let selLetter: number | null = null;
+const pop = document.createElement('div');
+pop.className = 'letter-pop';
+pop.hidden = true;
+$('.stage').appendChild(pop);
 
-function letterWidthsEl(): HTMLElement {
-  const box = document.createElement('div');
-  box.className = 'row lw';
-  box.id = 'letter-widths';
-  fillLetterWidths(box);
-  return box;
-}
+const lettersOf = () => Array.from(params.text).filter((ch) => ch.trim() !== '');
 
-function refreshLetterWidths() {
-  const box = document.getElementById('letter-widths');
-  if (box) fillLetterWidths(box);
-}
-
-function setLetterW(indices: number[], w: number | null) {
-  const next = { ...params.letterW }; // never mutate: DEFAULTS shares the object
+function setLetter(indices: number[], patch: { w?: number; dx?: number; dy?: number; rot?: number } | null) {
+  // never mutate: DEFAULTS shares these objects
+  const W = { ...params.letterW };
+  const M = { ...params.letterMove };
   for (const i of indices) {
-    if (w === null || Math.abs(w - 1) < 1e-3) delete next[String(i)];
-    else next[String(i)] = w;
+    const k = String(i);
+    if (patch === null) {
+      delete W[k];
+      delete M[k];
+      continue;
+    }
+    if (patch.w !== undefined) {
+      if (Math.abs(patch.w - 1) < 1e-3) delete W[k];
+      else W[k] = patch.w;
+    }
+    const m = { ...M[k], ...(patch.dx !== undefined ? { dx: patch.dx } : {}), ...(patch.dy !== undefined ? { dy: patch.dy } : {}), ...(patch.rot !== undefined ? { rot: patch.rot } : {}) };
+    if (!m.dx && !m.dy && !m.rot) delete M[k];
+    else M[k] = m;
   }
-  params.letterW = next;
+  params.letterW = W;
+  params.letterMove = M;
 }
 
-function fillLetterWidths(box: HTMLElement) {
-  const letters = Array.from(params.text).filter((ch) => ch.trim() !== '');
-  // forget widths and selections for letters that no longer exist
-  for (const k of Object.keys(params.letterW)) if (+k >= letters.length) setLetterW([+k], null);
-  for (const i of [...lwSel]) if (i >= letters.length) lwSel.delete(i);
-  const wOf = (i: number) => params.letterW[String(i)] ?? 1;
-  let n = 0;
-  const lines = params.text
-    .replace(/\r/g, '')
-    .split('\n')
-    .map((line) =>
-      line
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((word) => {
-          const chips = Array.from(word)
-            .map((ch) => {
-              const i = n++;
-              const w = wOf(i);
-              const cls = ['lw-chip', lwSel.has(i) ? 'on' : '', w !== 1 ? 'set' : ''].join(' ');
-              return `<button type="button" class="${cls}" data-i="${i}" title="${escapeHtml(ch)}: ${w.toFixed(2)}×" style="--w:${Math.min(4, w)}">${escapeHtml(ch)}</button>`;
-            })
-            .join('');
-          return `<span class="lw-word">${chips}</span>`;
-        })
-        .join(''),
-    )
-    .map((l) => `<div class="lw-line">${l}</div>`)
-    .join('');
-  const sel = [...lwSel].sort((a, b) => a - b);
-  const selW = sel.length ? wOf(sel[0]) : 1;
-  const selNames = sel.map((i) => letters[i]).join(' ');
-  const fill = params.style === 'book' ? params.bookStretch : params.stStretch;
-  box.innerHTML = `
-    <span class="lbl">Letter widths ${Object.keys(params.letterW).length ? `<button type="button" class="lw-link" data-act="reset-all">Reset all</button>` : ''}</span>
-    <small>Click a letter to make it wider or narrower${fill ? '; the other letters on its line squeeze or stretch so the line still fills the width' : ''}. Shift-click to pick several.</small>
-    <div class="lw-chips">${lines}</div>
-    ${
-      sel.length
-        ? `<div class="lw-edit">
-        <div class="lw-head"><b>${escapeHtml(selNames.length > 24 ? sel.length + ' letters' : selNames)}</b><span class="lw-val">${selW.toFixed(2)}×</span></div>
-        <input type="range" min="0.3" max="4" step="0.05" value="${selW}" aria-label="Letter width">
-        <div class="lw-actions">
-          <button type="button" data-act="same">Every “${escapeHtml(letters[sel[0]] ?? '')}”</button>
-          <button type="button" data-act="reset">Reset</button>
-          <button type="button" data-act="done">Done</button>
-        </div>
-      </div>`
-        : ''
-    }`;
-  box.querySelectorAll<HTMLButtonElement>('.lw-chip').forEach((b) =>
-    b.addEventListener('click', (e) => {
-      const i = +b.dataset.i!;
-      if (e.shiftKey || e.metaKey || e.ctrlKey) {
-        if (lwSel.has(i)) lwSel.delete(i);
-        else lwSel.add(i);
-      } else if (lwSel.size === 1 && lwSel.has(i)) lwSel.clear();
-      else {
-        lwSel.clear();
-        lwSel.add(i);
-      }
-      fillLetterWidths(box);
-    }),
-  );
-  const range = box.querySelector<HTMLInputElement>('.lw-edit input[type=range]');
-  range?.addEventListener('input', () => {
-    const w = parseFloat(range.value);
-    setLetterW(sel, w);
-    box.querySelector('.lw-val')!.textContent = w.toFixed(2) + '×';
-    for (const i of sel) {
-      const chip = box.querySelector<HTMLElement>(`.lw-chip[data-i="${i}"]`);
-      if (chip) {
-        chip.style.setProperty('--w', String(w));
-        chip.classList.toggle('set', Math.abs(w - 1) > 1e-3);
-      }
-    }
-    schedule();
-  });
-  box.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
-    b.addEventListener('click', () => {
-      const act = b.dataset.act;
-      if (act === 'reset-all') {
-        params.letterW = {};
-        lwSel.clear();
-      } else if (act === 'reset') setLetterW(sel, null);
-      else if (act === 'done') lwSel.clear();
-      else if (act === 'same') {
-        const ch = letters[sel[0]];
-        letters.forEach((c, i) => c === ch && lwSel.add(i));
-        setLetterW([...lwSel], selW);
-      }
-      fillLetterWidths(box);
+function closeLetter() {
+  selLetter = null;
+  pop.hidden = true;
+  viewer.highlight(null);
+}
+
+function openLetter(i: number, clientX: number, clientY: number) {
+  selLetter = i;
+  viewer.highlight(`letter:${i}`);
+  renderLetterPop();
+  const stage = $('.stage').getBoundingClientRect();
+  pop.hidden = false;
+  const w = pop.offsetWidth;
+  const h = pop.offsetHeight;
+  let x = clientX - stage.left + 18;
+  let y = clientY - stage.top - h / 2;
+  if (x + w > stage.width - 12) x = clientX - stage.left - w - 18;
+  x = Math.max(12, Math.min(stage.width - w - 12, x));
+  y = Math.max(12, Math.min(stage.height - h - 80, y));
+  pop.style.left = x + 'px';
+  pop.style.top = y + 'px';
+}
+
+function renderLetterPop() {
+  if (selLetter === null) return;
+  const i = selLetter;
+  const ch = lettersOf()[i] ?? '';
+  const w = params.letterW[String(i)] ?? 1;
+  const m = params.letterMove[String(i)] ?? {};
+  const fill = (params.style === 'book' && params.bookStretch) || (params.style === 'stack' && params.stStretch);
+  const canDrag = params.style === 'stepped';
+  const same = lettersOf().filter((c) => c === ch).length;
+  const row = (key: string, label: string, min: number, max: number, step: number, val: number, unit: string) =>
+    `<label class="lp-row"><span>${label}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"><output>${fmtVal(val, unit)}</output></label>`;
+  pop.innerHTML = `
+    <div class="lp-head"><b class="lp-glyph">${escapeHtml(ch)}</b><span>Letter ${i + 1}</span><button type="button" class="lp-x" aria-label="Close">×</button></div>
+    ${row('w', 'Width', 0.3, 4, 0.05, w, '×')}
+    <small class="lp-note">${fill ? 'The other letters on this line squeeze or stretch so the line still fills the width.' : 'Wider or narrower, like a variable font’s width axis.'}</small>
+    ${row('rot', 'Rotate', -180, 180, 1, m.rot ?? 0, '°')}
+    ${row('dx', 'Move ←→', -100, 100, 0.5, m.dx ?? 0, 'mm')}
+    ${row('dy', 'Move ↓↑', -100, 100, 0.5, m.dy ?? 0, 'mm')}
+    ${canDrag ? '<small class="lp-note">Or drag the letter on the canvas.</small>' : ''}
+    <div class="lp-actions">
+      ${same > 1 ? `<button type="button" data-act="same">Width to every “${escapeHtml(ch)}”</button>` : ''}
+      <button type="button" data-act="reset">Reset</button>
+    </div>`;
+  pop.querySelector('.lp-x')!.addEventListener('click', closeLetter);
+  pop.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((inp) =>
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      const k = inp.dataset.k as 'w' | 'rot' | 'dx' | 'dy';
+      setLetter([i], { [k]: v });
+      inp.nextElementSibling!.textContent = fmtVal(v, k === 'w' ? '×' : k === 'rot' ? '°' : 'mm');
       schedule();
     }),
   );
+  pop.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
+    b.addEventListener('click', () => {
+      if (b.dataset.act === 'reset') setLetter([i], null);
+      else {
+        const idx: number[] = [];
+        lettersOf().forEach((c, n) => c === ch && idx.push(n));
+        setLetter(idx, { w: params.letterW[String(i)] ?? 1 });
+      }
+      renderLetterPop();
+      schedule();
+    }),
+  );
+}
+
+const fmtVal = (v: number, unit: string) => (unit === '×' ? v.toFixed(2) + '×' : unit === '°' ? Math.round(v) + '°' : v.toFixed(1) + ' mm');
+
+viewer.onPick = (pt, cx, cy) => {
+  if (!pt || !lastLetters.length) return closeLetter();
+  let best = lastLetters[0];
+  let bd = Infinity;
+  for (const l of lastLetters) {
+    const d = Math.hypot(l.x - pt.x, l.y - pt.y);
+    if (d < bd) {
+      bd = d;
+      best = l;
+    }
+  }
+  openLetter(best.i, cx, cy);
+};
+
+/** Drop settings for letters that no longer exist after the text changed. */
+function pruneLetters() {
+  const n = lettersOf().length;
+  const gone = [...new Set([...Object.keys(params.letterW), ...Object.keys(params.letterMove)])].map(Number).filter((k) => k >= n);
+  if (gone.length) setLetter(gone, null);
+  if (selLetter !== null && selLetter >= n) closeLetter();
 }
 
 function renderGeneral() {
@@ -642,13 +653,13 @@ function syncColors() {
     duo: ['Main text', 'Accent text'],
     book: ['Case', 'Letters'],
     stack: ['Colour', '—'],
-    stepped: ['Colour', '—'],
+    stepped: ['Letters', 'Base'],
     ramp: ['Plate', 'Letters'],
   };
   const [a, b] = labels[params.style];
   $('#colorA-label').textContent = a;
   $('#colorB-label').textContent = b;
-  $('#colorB-wrap').style.display = ['facet', 'stack', 'stepped'].includes(params.style) ? 'none' : '';
+  $('#colorB-wrap').style.display = ['facet', 'stack'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
 }
 
 const ICONS: Record<Style, string> = {
@@ -672,7 +683,8 @@ textEl.addEventListener('input', () => {
   params.text = textEl.value;
   textTouched = true;
   renderGeneral();
-  refreshLetterWidths();
+  pruneLetters();
+  if (selLetter !== null) renderLetterPop();
   schedule(true);
 });
 
@@ -904,6 +916,11 @@ viewer.onDragEnd = (key, a, b) => {
   } else if (key === 'text') {
     params.textDx += a;
     params.textDy += b;
+  } else if (key.startsWith('letter:')) {
+    const i = +key.slice(7);
+    const m = params.letterMove[String(i)] ?? {};
+    setLetter([i], { dx: (m.dx ?? 0) + a, dy: (m.dy ?? 0) + b });
+    if (selLetter === i) renderLetterPop();
   }
   schedule();
 };
@@ -1016,7 +1033,7 @@ function newDesign(style: Style) {
   textTouched = false;
   fontTouched = false;
   Object.assign(params, DEFAULTS);
-  lwSel.clear();
+  closeLetter();
   applyPreset(style);
   nameEl.value = 'Untitled design';
   lastSaved = '';
@@ -1037,7 +1054,7 @@ async function openDesign(id: string) {
   textTouched = true;
   fontTouched = true;
   Object.assign(params, DEFAULTS, d.params);
-  lwSel.clear();
+  closeLetter();
   fontKey = d.fontKey;
   nameEl.value = d.name;
   lastSaved = stateKey();

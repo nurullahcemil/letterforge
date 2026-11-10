@@ -22,6 +22,11 @@ export class Viewer {
     local: THREE.Vector3;
   } | null = null;
   onDragEnd: (key: DragInfo['key'], a: number, b: number) => void = () => {};
+  /** A click (no drag) on the canvas: the model point that was hit (model coordinates), or null. */
+  onPick: (point: THREE.Vector3 | null, clientX: number, clientY: number) => void = () => {};
+  private downAt: { x: number; y: number } | null = null;
+  /** Letter keys to highlight (e.g. the selected letter). */
+  private highlightKey: string | null = null;
 
   constructor(private host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -100,6 +105,7 @@ export class Viewer {
       'pointerdown',
       (e) => {
         if (e.button !== 0) return;
+        this.downAt = { x: e.clientX, y: e.clientY };
         const pick = this.pickDraggable(e);
         if (!pick) return;
         const [a, b] = pick.info.axes;
@@ -136,6 +142,14 @@ export class Viewer {
       this.needsRender = true;
     });
     const end = (e: PointerEvent) => {
+      const down = this.downAt;
+      this.downAt = null;
+      if (e.type === 'pointerup' && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) {
+        const hit = this.ray(e)
+          .intersectObjects(this.model.children, false)
+          .find((h) => !h.object.userData.previewOnly);
+        this.onPick(hit ? this.model.worldToLocal(hit.point.clone()) : null, e.clientX, e.clientY);
+      }
       const d = this.dragState;
       if (!d) return;
       this.dragState = null;
@@ -207,6 +221,7 @@ export class Viewer {
       });
       const mesh = new THREE.Mesh(g, mat);
       if (p.drag) mesh.userData.drag = p.drag;
+      if (p.previewOnly) mesh.userData.previewOnly = true;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       if (p.previewOnly) {
@@ -216,6 +231,7 @@ export class Viewer {
       this.model.add(mesh);
       if (!p.previewOnly) box.union(g.boundingBox!);
     }
+    if (this.highlightKey) this.highlight(this.highlightKey);
     if (box.isEmpty()) {
       this.needsRender = true;
       return;
@@ -236,6 +252,19 @@ export class Viewer {
       this.fit(radius, size.z);
     }
     this.lastRadius = radius;
+    this.needsRender = true;
+  }
+
+  /** Tint the parts with this drag key (null clears). */
+  highlight(key: string | null) {
+    this.highlightKey = key;
+    for (const c of this.model.children) {
+      const m = c as THREE.Mesh;
+      const mat = m.material as THREE.MeshStandardMaterial;
+      const on = key !== null && (m.userData.drag as DragInfo | undefined)?.key === key;
+      mat.emissive.setHex(on ? 0x2a6cff : 0x000000);
+      mat.emissiveIntensity = on ? 0.35 : 0;
+    }
     this.needsRender = true;
   }
 

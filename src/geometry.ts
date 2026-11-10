@@ -105,11 +105,19 @@ export interface Params {
   lineW: number;
   /** Width factor per letter (key = index among the text's non-space characters). */
   letterW: Record<string, number>;
+  /** Move (mm) / rotate (degrees) single letters; same keys as letterW. */
+  letterMove: Record<string, { dx?: number; dy?: number; rot?: number }>;
+  // stepped base
+  spBase: boolean;
+  spBaseT: number;
+  spBasePad: number;
+  spBaseShape: 'rect' | 'outline';
 }
 
 /** A part the user can drag in the viewer. axes = model axes the 2D offset maps to. */
 export interface DragInfo {
-  key: 'top' | 'main' | 'text';
+  /** 'letter:<n>' moves one letter (n = index among non-space characters). */
+  key: 'top' | 'main' | 'text' | `letter:${number}`;
   axes: [number, number];
 }
 
@@ -127,6 +135,8 @@ export interface BuildResult {
   parts: Part[];
   warnings: string[];
   size: [number, number, number];
+  /** Where each letter sits on the model (model x/y, mm), for picking letters on the canvas. */
+  letters: { i: number; x: number; y: number }[];
 }
 
 interface WorkPart {
@@ -146,6 +156,7 @@ const OVERLAP = 0.01;
 export class Builder {
   private bin: Deletable[] = [];
   private kept: WorkPart[] = [];
+  private spots: { i: number; x: number; y: number }[] = [];
   private skeletonReady: Promise<void>;
 
   constructor(private wasm: ManifoldToplevel) {
@@ -188,11 +199,15 @@ export class Builder {
         lineSpacing: p.lineSpacing,
         // stepped tiers grow outward, so keep letters far enough apart that they never fuse
         gap: p.style === 'stepped' ? 2 * (Math.max(1, Math.round(p.spSteps)) - 1) * p.spInset + 0.8 : 0,
+        widths: p.letterW,
+        moves: p.style === 'stepped' || Object.keys(p.letterMove ?? {}).length ? (p.letterMove ?? {}) : undefined,
       });
       const cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
       if (cs.isEmpty()) {
-        return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0] };
+        return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
+      // flat styles keep layout coordinates; book and stack replace these with their own layout
+      this.spots = p.style === 'duo' ? [] : layout.letterCenters;
       switch (p.style) {
         case 'sign':
           parts = this.sign(cs, layout.lastBaseline, p, warnings);
@@ -221,19 +236,22 @@ export class Builder {
           if ((p.stStretch && layout.lineCount > 1) || hasW) {
             // every line the same width, like a block set in a variable-width font
             const b = cs.bounds();
-            lines = layoutText(font, p.text, {
+            const l2 = layoutText(font, p.text, {
               capHeight: p.capHeight,
               tracking: p.tracking,
               lineSpacing: p.lineSpacing,
               stretchTo: p.stStretch ? b.max[0] - b.min[0] : undefined,
               widths: p.letterW,
-            }).lines;
+              moves: p.letterMove,
+            });
+            lines = l2.lines;
+            this.spots = l2.letterCenters;
           }
           parts = this.stack(lines, p, warnings);
           break;
         }
         case 'stepped':
-          parts = this.stepped(cs, p, warnings);
+          parts = this.stepped(cs, layout.letterCenters, p, warnings);
           break;
         case 'ramp':
           parts = this.ramp(cs, layout.lines, p, warnings);
@@ -289,7 +307,7 @@ export class Builder {
           `Model is ${Math.round(size[0])}×${Math.round(size[1])} mm, larger than your ${p.bedSize} mm bed. Turn on "Split to fit bed".`,
         );
       }
-      return { parts: out, warnings, size };
+      return { parts: out, warnings, size, letters: this.spots };
     } finally {
       this.flush();
     }
@@ -707,16 +725,68 @@ export class Builder {
     return [{ name: 'Block', color: p.colorA, m: body }];
   }
 
-  private stepped(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+  private stepped(cs: CrossSection, centers: { i: number; x: number; y: number }[], p: Params, warnings: string[]): WorkPart[] {
     const N = Math.max(1, Math.round(p.spSteps));
+    const z0 = p.spBase ? p.spBaseT : 0;
     const slabs: Manifold[] = [];
     for (let k = 0; k < N; k++) {
       const grow = (N - 1 - k) * p.spInset;
       const s = grow > 0 ? this.k(cs.offset(grow, p.spJoin, 4)) : cs;
-      slabs.push(this.extrude(s, p.spHeight + (k ? OVERLAP : 0), k * p.spHeight - (k ? OVERLAP : 0)));
+      // with a base, the first tier sinks a hair into it so they fuse in a single-body STL
+      const sink = k || p.spBase ? OVERLAP : 0;
+      slabs.push(this.extrude(s, p.spHeight + sink, z0 + k * p.spHeight - sink));
     }
     if (p.spInset * (N - 1) > p.capHeight * 0.25) warnings.push('Wide steps start to merge the letters together.');
-    return [{ name: 'Letters', color: p.colorA, m: this.k(this.wasm.Manifold.union(slabs)) }];
+    const all = this.k(this.wasm.Manifold.union(slabs));
+    // One part per letter, so each can be dragged on its own in the viewer.
+    const pieces = all.decompose();
+    pieces.forEach((m) => this.k(m));
+    const parts: WorkPart[] = [];
+    pieces
+      .map((m) => {
+        const b = m.boundingBox();
+        const mx = (b.min[0] + b.max[0]) / 2;
+        const my = (b.min[1] + b.max[1]) / 2;
+        // the letter whose centre lies inside this piece (nearest if several)
+        let best = -1;
+        let bestD = Infinity;
+        for (const c of centers) {
+          const inside = c.x >= b.min[0] - 0.01 && c.x <= b.max[0] + 0.01 && c.y >= b.min[1] - 0.01 && c.y <= b.max[1] + 0.01;
+          const d = Math.hypot(c.x - mx, c.y - my) - (inside ? 1e6 : 0);
+          if (d < bestD) {
+            bestD = d;
+            best = c.i;
+          }
+        }
+        return { m, best, x: b.min[0] };
+      })
+      .sort((a, b) => a.x - b.x)
+      .forEach(({ m, best }, n) =>
+        parts.push({
+          name: `Letter ${n + 1}`,
+          color: p.colorA,
+          m,
+          drag: best >= 0 ? { key: `letter:${best}`, axes: [0, 1] } : undefined,
+        }),
+      );
+    if (p.spBase) {
+      const outer = this.k(cs.offset((N - 1) * p.spInset, p.spJoin, 4));
+      let base: CrossSection;
+      if (p.spBaseShape === 'outline') {
+        const r = Math.max(1, p.spBasePad);
+        base = this.k(this.k(this.k(outer.offset(r * 2, 'Round')).offset(-r, 'Round')).simplify(0.02));
+      } else {
+        const b = outer.bounds();
+        const pad = p.spBasePad;
+        base = this.rect(b.min[0] - pad, b.min[1] - pad, b.max[0] + pad, b.max[1] + pad);
+        const r = Math.min(pad, 4);
+        if (r > 0.3) base = this.k(this.k(base.offset(-r, 'Round')).offset(r, 'Round'));
+      }
+      parts.unshift({ name: 'Base', color: p.colorB, m: this.extrude(base, p.spBaseT) });
+    } else if (pieces.length > 1) {
+      warnings.push('The letters print as separate pieces. Turn on "Base" to join them.');
+    }
+    return parts;
   }
 
   /** Thin outline of the letters (the "line" look). Leaves the shape alone when off. */
@@ -727,24 +797,50 @@ export class Builder {
   }
 
   /** Letters extruded into wedges that rise across each letter or each line. */
-  private rampSolids(lineSections: CrossSection[], p: Params, z0: number, leanDeg = 0): Manifold[] {
+  /**
+   * @param shapes optional solid letter shapes per line (before "line letters" outlining):
+   *   every outline piece then ramps across its whole letter, so the inner and outer line
+   *   of an O share one slope.
+   */
+  private rampSolids(lineSections: CrossSection[], p: Params, z0: number, leanDeg = 0, shapes?: CrossSection[]): Manifold[] {
     const lean = Math.tan((Math.min(75, Math.max(0, leanDeg)) * Math.PI) / 180);
     const lo = Math.max(0.4, p.rMin);
     const hi = Math.max(lo, p.rMax);
     const pieces: { c: CrossSection; x0: number; x1: number; idx: number }[] = [];
     let idx = 0;
-    for (const lcs of lineSections) {
-      if (lcs.isEmpty()) continue;
-      const lb = lcs.bounds();
+    lineSections.forEach((lcs, li) => {
+      if (lcs.isEmpty()) return;
+      const lb = (shapes?.[li] ?? lcs).bounds();
       const comps = lcs.decompose();
       comps.forEach((c) => this.k(c));
       comps.sort((a, b) => a.bounds().min[0] - b.bounds().min[0]);
+      // solid letters of this line: the ramp span (and rise direction) each piece belongs to
+      const owners = shapes?.[li] && !shapes[li].isEmpty() ? shapes[li].decompose() : null;
+      owners?.forEach((o) => this.k(o));
+      owners?.sort((a, b) => a.bounds().min[0] - b.bounds().min[0]);
+      const ownerBoxes = owners?.map((o) => o.bounds());
+      const base = idx;
       for (const c of comps) {
         const b = c.bounds();
-        if (p.rSpan === 'line') pieces.push({ c, x0: lb.min[0], x1: lb.max[0], idx: idx++ });
-        else pieces.push({ c, x0: b.min[0], x1: b.max[0], idx: idx++ });
+        let x0 = b.min[0];
+        let x1 = b.max[0];
+        let n = idx;
+        if (ownerBoxes) {
+          const cx = (b.min[0] + b.max[0]) / 2;
+          const cy = (b.min[1] + b.max[1]) / 2;
+          const k = ownerBoxes.findIndex((o) => cx >= o.min[0] && cx <= o.max[0] && cy >= o.min[1] && cy <= o.max[1]);
+          if (k >= 0) {
+            x0 = ownerBoxes[k].min[0];
+            x1 = ownerBoxes[k].max[0];
+            n = base + k;
+          }
+        }
+        if (p.rSpan === 'line') pieces.push({ c, x0: lb.min[0], x1: lb.max[0], idx: n });
+        else pieces.push({ c, x0, x1, idx: n });
+        if (!ownerBoxes) idx++;
       }
-    }
+      if (ownerBoxes) idx = base + ownerBoxes.length;
+    });
     return pieces.map((pc) => {
       const rising = p.rDir === 'right' || (p.rDir === 'alternate' && pc.idx % 2 === 0);
       const span = Math.max(1e-3, pc.x1 - pc.x0);
@@ -765,7 +861,8 @@ export class Builder {
   private ramp(cs: CrossSection, lines: Vec2[][][], p: Params, warnings: string[]): WorkPart[] {
     const z0 = p.rPlate ? p.rPlateT : 0;
     const parts: WorkPart[] = [];
-    const ms = this.rampSolids(lines.map((lc) => this.outline(this.cs(lc), p)), p, z0, p.rLean);
+    const solid = lines.map((lc) => this.cs(lc));
+    const ms = this.rampSolids(solid.map((c) => this.outline(c, p)), p, z0, p.rLean, p.lineMode ? solid : undefined);
     if (ms.length) parts.push({ name: 'Letters', color: p.colorB, m: this.k(this.wasm.Manifold.union(ms)) });
     if (p.rPlate) {
       const b = cs.bounds();
@@ -806,6 +903,7 @@ export class Builder {
         maxWidth: maxW,
         align: p.bookAlign,
         widths: p.letterW,
+        moves: p.letterMove,
       });
     const blockH = (l: ReturnType<typeof lay>) => (l.lineCount - 1) * l.capHeight * p.lineSpacing + l.capHeight * 1.3;
     let layout = lay(p.capHeight);
@@ -838,11 +936,15 @@ export class Builder {
         lineSpacing: p.lineSpacing,
         stretchTo: maxW,
         widths: p.letterW,
+        moves: p.letterMove,
       });
       const [lo, hi] = layout.stretch;
       // Lines that could not be condensed further: stretch the block taller to fill the height.
       const tall = smart ? smart.capFill / smart.cap : 1;
-      if (tall > 1.001) for (const line of layout.lines) for (const c of line) for (const pt of c) pt[1] *= tall;
+      if (tall > 1.001) {
+        for (const line of layout.lines) for (const c of line) for (const pt of c) pt[1] *= tall;
+        for (const c of layout.letterCenters) c.y *= tall;
+      }
       if (p.bookFit) warnings.pop(); // replace the plain "sized to fit" note
       warnings.push(
         `Text fills the front: ${lineTexts.length} line${lineTexts.length > 1 ? 's' : ''}, ${(cap * tall).toFixed(1)} mm tall letters.`,
@@ -858,12 +960,14 @@ export class Builder {
       const dx = outW / 2 - (b.min[0] + b.max[0]) / 2 + p.textDx;
       const dy = outH / 2 - (b.min[1] + b.max[1]) / 2 + p.textDy;
       const placed = lines.map((lc) => this.k(this.k(this.cs(lc).translate([dx, dy])).intersect(face)));
+      this.spots = layout.letterCenters.map((c) => ({ i: c.i, x: c.x + dx, y: c.y + dy }));
       const clipped = placed.some((c, i) => Math.abs(c.area() - this.cs(lines[i]).area()) > 1);
       if (clipped) warnings.push('Part of the text runs off the front and is cut at the edge. Drag it, make it smaller, or turn on "Fit text to the front".');
+      const solidPlaced = [...placed];
       for (let i = 0; i < placed.length; i++) placed[i] = this.outline(placed[i], p);
       if (p.lineMode && p.lineW < 0.8) warnings.push('Lines thinner than 0.8 mm may not print well with a 0.4 mm nozzle.');
       if (p.bookEffect === 'ramp' || p.bookEffect === 'sweep') {
-        const ms = this.rampSolids(placed, p, outT - OVERLAP, p.bookEffect === 'sweep' ? p.rLean : 0);
+        const ms = this.rampSolids(placed, p, outT - OVERLAP, p.bookEffect === 'sweep' ? p.rLean : 0, p.lineMode ? solidPlaced : undefined);
         if (ms.length) {
           // keep swept tips inside the outline of the case
           const keep = this.k(this.wasm.Manifold.cube([outW, outH, outT + p.rMax + 5]));
