@@ -105,7 +105,7 @@ export const DEFAULTS: Params = {
   shSides: 3,
   shCorner: 28,
   shTwist: 0,
-  lampWall: 0.9,
+  lampWall: 0.42,
   lampTex: 'basket',
   lampTexSize: 5,
   lampTexH: 2.13,

@@ -62,7 +62,11 @@ function paintCode(filament: number): string {
   return (filament - 3).toString(16).toUpperCase() + 'C';
 }
 
-export function to3MF(parts: MeshData[], title: string): Blob {
+/**
+ * `separate`: every part is its own object (e.g. lamp shade and base, printed one at a time),
+ * instead of parts of one assembled model.
+ */
+export function to3MF(parts: MeshData[], title: string, separate = false): Blob {
   const n = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
   // One colour (and one filament slot) per distinct colour, in order of first use.
   // Written as an m:colorgroup: Bambu Studio 2.x reads only that, not basematerials.
@@ -95,13 +99,29 @@ export function to3MF(parts: MeshData[], title: string): Blob {
 <metadata name="Application">Letterforge</metadata>
 <resources>
 <m:colorgroup id="${matId}">${palette.map((c) => `<m:color color="${c.toUpperCase()}"/>`).join('')}</m:colorgroup>
-${objects}<object id="${baseId}" name="${esc(title)}" type="model"><components>${components}</components></object>
-</resources>
-<build><item objectid="${baseId}"/></build>
+${objects}${separate ? '' : `<object id="${baseId}" name="${esc(title)}" type="model"><components>${components}</components></object>\n`}</resources>
+<build>${separate ? parts.map((_, i) => `<item objectid="${i + 1}"/>`).join('') : `<item objectid="${baseId}"/>`}</build>
 </model>`;
   // Bambu Studio / Orca Slicer read this file even from other apps: it names every part
   // and gives it a filament slot, so a two-colour model opens with two filaments set.
-  const settings = `<?xml version="1.0" encoding="UTF-8"?>
+  const settings = separate
+    ? `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+${parts
+  .map(
+    (p, i) => `  <object id="${i + 1}">
+    <metadata key="name" value="${esc(p.name)}"/>
+    <metadata key="extruder" value="${slot(p) + 1}"/>
+    <part id="${i + 1}" subtype="normal_part">
+      <metadata key="name" value="${esc(p.name)}"/>
+      <metadata key="extruder" value="${slot(p) + 1}"/>
+    </part>
+  </object>`,
+  )
+  .join('\n')}
+</config>
+`
+    : `<?xml version="1.0" encoding="UTF-8"?>
 <config>
   <object id="${baseId}">
     <metadata key="name" value="${esc(title)}"/>

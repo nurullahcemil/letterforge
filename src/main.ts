@@ -227,7 +227,7 @@ const LAMP_CONTROLS: Control[] = [
   { kind: 'range', key: 'lampTexSize', label: 'Pattern width', min: 2.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going around.' },
   { kind: 'range', key: 'lampTexH', label: 'Pattern height', min: 1.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going up.' },
   { kind: 'range', key: 'lampTexDepth', label: 'Pattern depth', min: 0.2, max: 3, step: 0.1, unit: 'mm' },
-  { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.6, max: 3, step: 0.1, unit: 'mm', hint: 'Thin walls let more light through.' },
+  { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.3, max: 3, step: 0.01, unit: 'mm', hint: 'Match your slicer\'s line width for clean walls: 0.42 = one line with a 0.4 mm nozzle, 0.84 = two lines. In-between sizes add messy gap fill.' },
   { kind: 'range', key: 'hubSpokes', label: 'Spokes', min: 2, max: 8, step: 1 },
   { kind: 'range', key: 'baseH', label: 'Base height', min: 50, max: 250, step: 0.5, unit: 'mm', hint: 'Body only; the neck adds to it.' },
   { kind: 'range', key: 'baseD', label: 'Base width', min: 80, max: 200, step: 0.5, unit: 'mm' },
@@ -955,7 +955,7 @@ $('#dl-3mf').addEventListener('click', async () => {
   setBusy(false);
   const printable = parts.filter((p) => !p.previewOnly);
   if (!printable.length) return;
-  download(to3MF(forExport(printable), params.text.trim() || 'Letterforge'), baseName() + '.3mf');
+  download(to3MF(forExport(printable), params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp'), baseName() + '.3mf');
 });
 
 $('#dl-stl').addEventListener('click', async () => {

@@ -64,3 +64,5 @@
     bands, each a sine-wave ring (5 mm wave, ~1.5 mm deep, constant wave count scaled with radius),
     phase flipped every band; bands are separate closed shells touching face to face. Rebuilt
     exactly that way (`wovenBands`), no texture sampling. Unmerged on purpose (speed).
+19. Bambu warned >1M triangles and showed white gap fill: 16 → 6 points per wave (cos so crests
+    are hit), wall 0.42 measured flat (one line; widened only where too steep), separate 3MF objects.

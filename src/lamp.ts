@@ -525,7 +525,7 @@ export function shadeWarp(
  * Basket weave built the way the real lamp is: the wall is a stack of separate bands, each a
  * wavy ring (a smooth wave going around) extruded straight along the surface for one band height,
  * with every other band shifted half a wave. Bands are spaced evenly along the outer surface curve,
- * tilt to follow it, and keep `w` wall thickness measured square to the band. Where neighbouring
+ * tilt to follow it, and keep `w` wall thickness measured flat (one print line by default). Where neighbouring
  * bands sit on opposite sides they don't touch, which leaves the small light holes of the original.
  * Like the original file, the bands are separate closed rings stacked face to face (not merged):
  * merging ~100 wavy rings takes the geometry library tens of seconds, and slicers join them anyway.
@@ -555,7 +555,8 @@ function wovenBands(
   const ring = (r: number, phase: number): Pt[] => {
     const A = (o.amp * r) / o.rRef;
     return B.map((b, j) => {
-      const wv = A * Math.sin(2 * Math.PI * o.count * (j / M) + phase);
+      // cos: a mesh point sits exactly on every crest and valley, so few points per wave keep full depth
+      const wv = A * Math.cos(2 * Math.PI * o.count * (j / M) + phase);
       return [r * b[0] + wv * Nn[j][0], r * b[1] + wv * Nn[j][1]];
     });
   };
@@ -566,8 +567,12 @@ function wovenBands(
     const [ra, za] = pts[i];
     const [rb, zb] = pts[i + 1];
     const h = Math.max(0.05, zb - za);
-    const cosT = h / Math.hypot(rb - ra, h);
-    const wPlan = o.w / Math.max(0.3, cosT);
+    // the wall is measured flat, as the slicer cuts it: one line width stays one line on every
+    // slope (measuring it square to a tilted band would make slices wider → extra lines, gap fill)
+    // ...but on steep parts each 0.2 mm layer steps sideways by 0.2·tan(lean); widen just enough that
+    // every layer still sits half on the one below (otherwise it prints in mid-air)
+    const lean = Math.abs(rb - ra) / h;
+    const wPlan = Math.max(o.w, Math.min(3, 2 * 0.2 * lean));
     const outer = k(new wasm.CrossSection([ring(ra, (i % 2) * Math.PI)], 'Positive'));
     const band2d = k(outer.subtract(k(outer.offset(-wPlan, 'Miter', 2))));
     const rot = k(band2d.rotate((o.twistPerMm * za * 180) / Math.PI));
@@ -609,7 +614,7 @@ function wovenShade(
   const count = Math.max(12, Math.round((perimeterMap(S).length * rRef) / wave));
   const { bands, z: zr, ring } = wovenBands(wasm, k, curve, {
     S, twistPerMm, count, amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef, w,
-    hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: p.lampFine ? 16 : 8,
+    hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6,
   });
   // hub: a plate under the first band, spokes, and the collar with the lock slots
   const hubT = 3;
@@ -817,7 +822,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
       }
       const { bands, z: bz } = wovenBands(wasm, k, curve, {
         S: () => 1, twistPerMm: 0, count: Math.max(12, Math.round((2 * Math.PI * Rb) / Math.max(2, p.lampTexSize))),
-        amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w: w * 1.25, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: p.lampFine ? 16 : 8,
+        amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: 6,
       });
       // merge only where parts overlap: the top bands with the neck, the bottom bands with the feet cuts
       wovenTop = bands.filter((_, i) => bz[i][1] > bodyTop - 12);
