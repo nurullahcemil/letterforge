@@ -820,8 +820,8 @@ async function loadCatalog(): Promise<GFMeta[]> {
     if (!r.ok) throw new Error(String(r.status));
     const all = (await r.json()) as GFMeta[];
     gfCatalog = all.filter((f) => f.styles.includes('normal')).sort((a, b) => a.family.localeCompare(b.family));
-    $('#gf-list').innerHTML = gfCatalog.map((f) => `<option value="${escapeHtml(f.family)}">${escapeHtml(f.category)}</option>`).join('');
-    gfNote.textContent = `${gfCatalog.length.toLocaleString()} fonts. Type a name, e.g. Poppins, Bebas Neue, Josefin Sans.`;
+    gfNote.textContent = `${gfCatalog.length.toLocaleString()} Google Fonts. Tap one to use it, or search by name.`;
+    renderGfGrid();
   } catch {
     gfNote.textContent = 'Could not reach Google Fonts. Check your connection and try again.';
     gfCatalog = null;
@@ -830,29 +830,148 @@ async function loadCatalog(): Promise<GFMeta[]> {
   return gfCatalog;
 }
 
+/** The family picked by typing its full name, or by tapping it in the grid. */
+let gfPicked: GFMeta | undefined;
 function pickedFamily(): GFMeta | undefined {
   const v = gfSearch.value.trim().toLowerCase();
-  return gfCatalog?.find((f) => f.family.toLowerCase() === v);
+  return gfCatalog?.find((f) => f.family.toLowerCase() === v) ?? gfPicked;
 }
 
-gfSearch.addEventListener('focus', () => void loadCatalog());
-gfSearch.addEventListener('input', () => {
-  const f = pickedFamily();
+/** Fill the weight list for a family (and enable Use). */
+function showWeights(f: GFMeta | undefined) {
   gfWeight.disabled = !f;
   ($('#gf-use') as HTMLButtonElement).disabled = !f;
   if (!f) {
     gfWeight.innerHTML = '';
+    if (gfCatalog) gfNote.textContent = `${gfCatalog.length.toLocaleString()} Google Fonts. Tap one to use it, or search by name.`;
     return;
   }
   const ws = [...f.weights].sort((a, b) => a - b);
-  // bold reads best as a 3D print; take 700 or the closest weight
-  const best = ws.reduce((a, b) => (Math.abs(b - 700) < Math.abs(a - 700) ? b : a), ws[0]);
+  const best = bestWeight(f);
   const names: Record<number, string> = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
   gfWeight.innerHTML = ws.map((w) => `<option value="${w}" ${w === best ? 'selected' : ''}>${names[w] ?? w}</option>`).join('');
-  gfNote.textContent = f.subsets.includes('latin-ext') ? `${f.family}: ${f.category}.` : `${f.family}: ${f.category}. No extended Latin, so letters such as ğ ş ı may be missing.`;
+  gfNote.textContent = f.subsets.includes('latin-ext')
+    ? `${f.family}. Change the weight and press Use to switch.`
+    : `${f.family}. No extended Latin, so letters such as ğ ş ı may be missing.`;
+}
+
+gfSearch.addEventListener('focus', () => void loadCatalog());
+gfSearch.addEventListener('input', () => {
+  gfPicked = undefined;
+  renderGfGrid();
+  showWeights(pickedFamily());
 });
 
-async function useGoogleFont() {
+// ----- browsable grid: each font's name drawn in that font, loaded only when it scrolls into view -----
+const GF_POPULAR = ['Poppins', 'Montserrat', 'Bebas Neue', 'Anton', 'Lobster', 'Oswald', 'Playfair Display', 'Josefin Sans', 'Raleway', 'Abril Fatface', 'Bangers', 'Permanent Marker', 'Righteous', 'Russo One', 'Alfa Slab One', 'Luckiest Guy', 'Titan One', 'Lilita One', 'Fjalla One', 'Rubik', 'Nunito', 'Inter', 'Lato', 'Roboto', 'Open Sans', 'Caveat', 'Satisfy', 'Great Vibes', 'Kaushan Script', 'Cinzel', 'DM Serif Display', 'Space Grotesk', 'Barlow Condensed', 'Teko', 'Staatliches', 'Chewy', 'Black Ops One', 'Passion One', 'Comfortaa', 'Baloo 2', 'Quicksand', 'Merriweather', 'Archivo Black', 'Bungee', 'Fredoka', 'Pacifico', 'Dancing Script'];
+const GF_CATS: [string, string][] = [['', 'All'], ['sans-serif', 'Sans'], ['serif', 'Serif'], ['display', 'Display'], ['handwriting', 'Handwriting'], ['monospace', 'Mono']];
+let gfCat = '';
+let gfShown: GFMeta[] = [];
+let gfCount = 0;
+const gfGrid = $('#gf-grid');
+const gfLoaded = new Set<string>();
+/** Weight used for the preview and as the starting choice: bold reads best as a 3D print. */
+function bestWeight(f: GFMeta): number {
+  return [...f.weights].sort((a, b) => a - b).reduce((a, b) => (Math.abs(b - 700) < Math.abs(a - 700) ? b : a), f.weights[0] ?? 400);
+}
+const gfPreview = new IntersectionObserver(
+  (entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const el = e.target as HTMLElement;
+      gfPreview.unobserve(el);
+      if (el.classList.contains('gf-more')) {
+        addGfCards(60);
+        continue;
+      }
+      const f = gfCatalog?.find((m) => m.id === el.dataset.id);
+      if (!f) continue;
+      const css = `gfp-${f.id}`;
+      if (gfLoaded.has(css)) {
+        el.classList.add('ready');
+        continue;
+      }
+      gfLoaded.add(css);
+      const sub = f.subsets.includes('latin') ? 'latin' : f.subsets[0];
+      new FontFace(css, `url(${GF_CDN}/${f.id}@latest/${sub}-${bestWeight(f)}-normal.woff)`)
+        .load()
+        .then((ff) => {
+          document.fonts.add(ff);
+          gfGrid.querySelectorAll(`[data-id="${f.id}"]`).forEach((c) => c.classList.add('ready'));
+        })
+        .catch(() => {});
+    }
+  },
+  { root: gfGrid, rootMargin: '120px' },
+);
+
+function renderGfCats() {
+  const host = $('#gf-cats');
+  host.innerHTML = GF_CATS.map(([v, l]) => `<button type="button" data-c="${v}" class="${v === gfCat ? 'on' : ''}">${l}</button>`).join('');
+  host.querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+    b.addEventListener('click', () => {
+      gfCat = b.dataset.c!;
+      renderGfCats();
+      void loadCatalog().then(renderGfGrid);
+    }),
+  );
+}
+
+function renderGfGrid() {
+  if (!gfCatalog) return;
+  const q = gfSearch.value.trim().toLowerCase();
+  let list = gfCatalog.filter((f) => (!gfCat || f.category === gfCat) && (!q || f.family.toLowerCase().includes(q)));
+  if (q) {
+    // names that start with the search come first
+    list = [...list.filter((f) => f.family.toLowerCase().startsWith(q)), ...list.filter((f) => !f.family.toLowerCase().startsWith(q))];
+  } else {
+    const rank = new Map(GF_POPULAR.map((n, i) => [n, i]));
+    list = [...list.filter((f) => rank.has(f.family)).sort((a, b) => rank.get(a.family)! - rank.get(b.family)!), ...list.filter((f) => !rank.has(f.family))];
+  }
+  gfShown = list;
+  gfCount = 0;
+  gfGrid.innerHTML = '';
+  gfGrid.scrollTop = 0;
+  if (!list.length) {
+    gfGrid.innerHTML = `<small class="note">No Google Font matches “${escapeHtml(gfSearch.value.trim())}”.</small>`;
+    return;
+  }
+  addGfCards(40);
+}
+
+function addGfCards(n: number) {
+  gfGrid.querySelector('.gf-more')?.remove();
+  const usedId = fontKey.startsWith('gf:') ? fontKey.split(':')[1] : '';
+  const frag = document.createDocumentFragment();
+  for (const f of gfShown.slice(gfCount, gfCount + n)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'gf-card' + (f.id === usedId ? ' on' : '') + (gfLoaded.has(`gfp-${f.id}`) ? ' ready' : '');
+    b.dataset.id = f.id;
+    b.title = f.family;
+    b.innerHTML = `<span style="font-family:'gfp-${f.id}', var(--font-ui, sans-serif)">${escapeHtml(f.family)}</span><small>${escapeHtml(GF_CATS.find(([v]) => v === f.category)?.[1] ?? f.category)}</small>`;
+    b.addEventListener('click', () => {
+      gfPicked = f;
+      showWeights(f);
+      void useGoogleFont(true);
+    });
+    frag.appendChild(b);
+    gfPreview.observe(b);
+  }
+  gfCount += n;
+  if (gfCount < gfShown.length) {
+    const more = document.createElement('div');
+    more.className = 'gf-more';
+    frag.appendChild(more);
+    gfPreview.observe(more);
+  }
+  gfGrid.appendChild(frag);
+}
+renderGfCats();
+// the list is small to fetch; load it once the page has settled so the grid is ready to browse
+setTimeout(() => void loadCatalog(), 1500);
+
+async function useGoogleFont(keepSearch = false) {
   const f = pickedFamily();
   if (!f) return;
   const key = `gf:${f.id}:${gfWeight.value}`;
@@ -861,8 +980,11 @@ async function useGoogleFont() {
   sentFonts.delete(key);
   fontKey = key;
   fontTouched = true;
-  gfSearch.value = '';
-  gfSearch.dispatchEvent(new Event('input'));
+  if (!keepSearch && gfSearch.value) {
+    gfSearch.value = '';
+    gfSearch.dispatchEvent(new Event('input'));
+  }
+  gfGrid.querySelectorAll<HTMLElement>('.gf-card').forEach((c) => c.classList.toggle('on', c.dataset.id === f.id));
   syncText2();
   renderFonts();
   schedule(true);

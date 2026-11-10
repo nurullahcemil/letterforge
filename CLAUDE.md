@@ -14,7 +14,9 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   - opentype.js 2.0.0 for glyph outlines (`src/text.ts`).
 - three.js 0.187 viewer (`src/viewer.ts`). qrcode, fflate (3MF zip).
 - Fonts: 7 bundled @fontsource WOFFs (latin + latin-ext fallback for Turkish etc.),
-  Google Fonts via Fontsource CDN, user uploads (TTF/OTF/WOFF, not WOFF2).
+  Google Fonts via Fontsource CDN, user uploads (TTF/OTF/WOFF, not WOFF2). Google Fonts gallery
+  (`#gf-grid`): catalog from api.fontsource.org, popular fonts first, kind chips, each name drawn in
+  its own font (loaded only when scrolled into view, 40 cards then more on scroll); tap = use.
 - Saved designs: IndexedDB in the browser (`src/store.ts`). Hash routes `#/`, `#/new/<style>`, `#/d/<id>`.
 
 ## Commands
