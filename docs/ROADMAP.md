@@ -22,4 +22,3 @@ Suggested approach (fits the existing stack):
   filaments (currently can show 4).
 - Optional: show the colour-change height next to downloads for single-STL two-tone prints.
 - Done: GitHub repo connected to Vercel (push to main deploys).
-- `style6.css` contains unused letter-chip styles from an earlier UI (harmless).
