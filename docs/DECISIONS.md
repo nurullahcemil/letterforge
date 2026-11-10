@@ -47,3 +47,8 @@
 12. Join touching letter pieces.
 13. Lamp style (mushroom lamp: shade + base, E27 kit). Printability: walls lean at most
     max(underside angle, 90° − top slope); warning above 62°. Top vent default 30 mm (no flat ceiling).
+14. Lamp matched to the user's real lamp file (sizes only; licence forbids copying): round-bulge
+    shade with triangle plan, base with neck, own twist lock; assembled preview; lighter preview mesh.
+    Gotchas: manifold booleans are lazy, the cost shows up at the next warp/getMesh; offsets add
+    tiny arcs at every curve point → `simplify(0.03)` before densifying; round offsets eat the
+    bottom edge → extend outlines below z=0 and trim.

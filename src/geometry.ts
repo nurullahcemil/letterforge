@@ -3,7 +3,7 @@ import * as SS from 'straight-skeleton';
 import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
-import { buildLamp, type LampParams } from './lamp';
+import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
@@ -130,6 +130,10 @@ export interface Part {
   /** Shown in the viewer only (e.g. moss fill); never exported. */
   previewOnly?: boolean;
   drag?: DragInfo;
+  /** Lamp, assembled view: move the part by this to get its print position. */
+  printOffset?: [number, number, number];
+  /** Lamp, assembled view: the part as printed, when it can't just be moved there. */
+  printMesh?: { positions: Float32Array; indices: Uint32Array };
 }
 
 export interface BuildResult {
@@ -347,25 +351,42 @@ export class Builder {
     return concatMeshes(chunks);
   }
 
-  /** Lamp: shade and base, each laid on the bed side by side. Never split (cuts would show in the light). */
+  /**
+   * Lamp: shade and base. Shown standing on each other ("assembled") or side by side; the files are
+   * always laid out side by side, each part flat on the bed (printOffset moves a part there).
+   * Never bed-split (cuts would show in the light).
+   */
   private lamp(p: Params, warnings: string[]): BuildResult {
-    const pieces = buildLamp(this.wasm, (o) => this.k(o), p, warnings);
+    const { pieces, shadeZ } = buildLamp(this.wasm, (o) => this.k(o), p, warnings);
     this.kept = [];
     const out: Part[] = [];
     let x = 0;
+    const assembled = p.lampView === 'assembled' && pieces.length > 1;
     const lo = [Infinity, Infinity, Infinity];
     const hi = [-Infinity, -Infinity, -Infinity];
     for (const pc of pieces) {
       const b = pc.m.boundingBox();
       const w = b.max[0] - b.min[0];
       const d = b.max[1] - b.min[1];
-      if (w > p.bedSize || d > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is ${Math.round(w)} mm wide, larger than your ${p.bedSize} mm bed.`);
+      if (w > p.bedSize || d > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is ${Math.round(w)} × ${Math.round(d)} mm, larger than your ${p.bedSize} mm bed.`);
       if (b.max[2] - b.min[2] > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is taller than your printer may allow (${Math.round(b.max[2] - b.min[2])} mm).`);
-      const m = pc.m.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]]);
+      // print layout: side by side, flat on the bed
+      const pt: [number, number, number] = [x - b.min[0], 0, -b.min[2]];
       x += w + 15;
+      const printM = pc.m.translate(pt);
       const color = pc.role === 'shade' ? p.colorA : p.colorB;
-      this.kept.push({ name: pc.name, color, m });
-      const mesh = m.getMesh();
+      this.kept.push({ name: pc.name, color, m: printM });
+      // preview: assembled (shade on the base, turned to its locked position) or the print layout
+      let view = printM;
+      let offset: [number, number, number] | undefined;
+      if (assembled) {
+        view = this.k(pc.role === 'shade' ? pc.m.rotate([0, 0, -LAMP_TURN]).translate([0, 0, shadeZ]) : pc.m);
+        const vb = view.boundingBox();
+        const pb = printM.boundingBox();
+        offset = [pb.min[0] - vb.min[0], pb.min[1] - vb.min[1], pb.min[2] - vb.min[2]];
+        if (pc.role === 'shade') offset = undefined; // shade is turned: export it from the print copy below
+      }
+      const mesh = view.getMesh();
       const np = mesh.numProp;
       const vp = mesh.vertProperties;
       const positions = new Float32Array((vp.length / np) * 3);
@@ -377,7 +398,21 @@ export class Builder {
           if (v > hi[a]) hi[a] = v;
         }
       }
-      out.push({ name: pc.name, color, positions, indices: new Uint32Array(mesh.triVerts) });
+      const part: Part = { name: pc.name, color, positions, indices: new Uint32Array(mesh.triVerts) };
+      if (assembled) {
+        if (offset) part.printOffset = offset;
+        else {
+          const pm = printM.getMesh();
+          const q = new Float32Array((pm.vertProperties.length / pm.numProp) * 3);
+          for (let i = 0, j = 0; i < pm.vertProperties.length; i += pm.numProp, j += 3) {
+            q[j] = pm.vertProperties[i];
+            q[j + 1] = pm.vertProperties[i + 1];
+            q[j + 2] = pm.vertProperties[i + 2];
+          }
+          part.printMesh = { positions: q, indices: new Uint32Array(pm.triVerts) };
+        }
+      }
+      out.push(part);
     }
     const size: [number, number, number] = out.length ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] : [0, 0, 0];
     return { parts: out, warnings, size, letters: [] };

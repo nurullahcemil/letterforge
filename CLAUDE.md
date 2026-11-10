@@ -46,10 +46,18 @@ See the bottom of `docs/DECISIONS.md` for the feature list and history.
 The user prints on a Bambu Lab X1E with Bambu Studio 2.x; 3MF colour import is confirmed working.
 
 ## Lamp style
-Mushroom table lamp for an E27 lamp kit, modelled on a stacked "Pilzlampe" the user showed.
-`src/lamp.ts`: shade outline (r,z) of stacked cone tiers → rounded with offset tricks → wall →
-revolve → hub ring + spokes at the bottom → warp for plan shape (corners), twist and surface
-pattern (pattern follows distance along the outline, so dots keep their size on slopes).
-Base: hollow, 45° roof to the socket hole, feet notches, cable notch. Never bed-split.
-Check: `npx tsx scripts/lamp-check.ts '{"shTiers":4}'` (status, pieces, volume).
-Next idea: the wavy ribbed lamp in `docs/ROADMAP.md`.
+Table lamp for an E27 lamp kit. Defaults are measured from a lamp the user owns a paid file of
+("Dreieckige retro Lampe mit Korbstruktur", MakerWorld, Standard Digital File License): use it for
+sizes only, never copy its geometry. Real sizes: shade 173 tall, 202×222 (triangle, 244 across
+corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; neck Ø65; socket hole Ø41.
+`src/lamp.ts`:
+- Shade: outline (r,z) → wall → revolve → hub (rim ring, spokes, collar) → warp for plan shape
+  (rounded polygon), twist, pattern (pattern follows distance along the outline).
+- Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
+  shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
+  while putting on, > 0 when lifting/pushing a locked shade).
+- Preview builds lighter; downloads rebuild with `lampFine: true`.
+- "Put together" view: shade shown on the base; files always use the side-by-side print layout
+  (`Part.printOffset` / `printMesh`, applied in `forExport`).
+Other checks: `scripts/lamp-check.ts` (validity), `scripts/lamp-slice.ts` (SVG slices),
+`scripts/lamp-time.ts` (speed).

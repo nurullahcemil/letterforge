@@ -91,7 +91,7 @@ const PRESETS: Record<Style, StylePreset> = {
   },
   lamp: {
     label: 'Lamp',
-    blurb: 'A mushroom table lamp: a puffy stacked shade and a base, for an E27 lamp kit (socket, cable and bulb). Print the shade in a light, translucent colour and use an LED bulb.',
+    blurb: 'A table lamp for an E27 lamp kit (socket, cable, LED bulb): a stacked shade that twists onto a base. Drop the shade on and turn it to lock. Print the shade in a light, translucent colour.',
     text: '',
     font: 'archivo',
     patch: { colorA: '#f3e6cf', colorB: '#d9967a' },
@@ -100,7 +100,7 @@ const PRESETS: Record<Style, StylePreset> = {
 
 type Control =
   | { kind: 'range'; key: keyof Params; label: string; min: number; max: number; step: number; unit?: string; hint?: string }
-  | { kind: 'select'; key: keyof Params; label: string; options: [string, string][] }
+  | { kind: 'select'; key: keyof Params; label: string; options: [string, string][]; hint?: string }
   | { kind: 'toggle'; key: keyof Params; label: string; hint?: string }
   | { kind: 'text'; key: keyof Params; label: string; placeholder?: string; hint?: string };
 
@@ -208,31 +208,36 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
 
 const LAMP_CONTROLS: Control[] = [
   { kind: 'select', key: 'lampShow', label: 'Make', options: [['both', 'Shade and base'], ['shade', 'Shade only'], ['base', 'Base only']] },
-  { kind: 'range', key: 'shTiers', label: 'Shade tiers', min: 1, max: 6, step: 1 },
-  { kind: 'range', key: 'shDia', label: 'Shade width', min: 100, max: 300, step: 1, unit: 'mm', hint: 'Widest point of the bottom tier.' },
+  { kind: 'select', key: 'lampView', label: 'Show', options: [['assembled', 'Put together'], ['print', 'As printed']], hint: 'Files are always laid out for printing.' },
+  { kind: 'select', key: 'lampTier', label: 'Shade shape', options: [['barrel', 'Round bulges'], ['cone', 'Umbrella tiers']] },
+  { kind: 'range', key: 'shTiers', label: 'Tiers', min: 1, max: 6, step: 1 },
+  { kind: 'range', key: 'shDia', label: 'Shade size', min: 100, max: 320, step: 1, unit: 'mm', hint: 'Across the corners (the diameter when round).' },
+  { kind: 'range', key: 'shTierH', label: 'Tier height', min: 20, max: 120, step: 0.5, unit: 'mm' },
   { kind: 'range', key: 'shShrink', label: 'Smaller each tier', min: 0, max: 35, step: 1, unit: '%' },
-  { kind: 'range', key: 'shPuff', label: 'Waist depth', min: 0, max: 100, step: 1, unit: '%', hint: 'How far each tier tucks in under the one above.' },
+  { kind: 'range', key: 'shPuff', label: 'Waist depth', min: 0, max: 100, step: 1, unit: '%', hint: 'How far the shade pulls in between tiers.' },
   { kind: 'range', key: 'shRim', label: 'Rim height', min: 0, max: 40, step: 0.5, unit: 'mm', hint: 'The upright band at the edge of each tier.' },
   { kind: 'range', key: 'shSlope', label: 'Top slope', min: 25, max: 70, step: 1, unit: '°', hint: 'How steeply each tier rises to the middle. Below about 30° may sag.' },
   { kind: 'range', key: 'shUnder', label: 'Underside angle', min: 15, max: 65, step: 1, unit: '°', hint: 'How far the underside leans out. Above about 60° may sag.' },
   { kind: 'range', key: 'shRound', label: 'Roundness', min: 0, max: 30, step: 0.5, unit: 'mm' },
   { kind: 'range', key: 'shTopHole', label: 'Top vent', min: 0, max: 80, step: 1, unit: 'mm', hint: 'A hole at the very top lets heat out. 0 = closed.' },
-  { kind: 'range', key: 'shSides', label: 'Corners', min: 0, max: 8, step: 1, hint: '0 = round. 3 = soft triangle.' },
-  { kind: 'range', key: 'shSideDepth', label: 'Corner strength', min: 0, max: 50, step: 1, unit: '%' },
-  { kind: 'range', key: 'shCorner', label: 'Corner sharpness', min: 0.5, max: 6, step: 0.1 },
+  { kind: 'range', key: 'shSides', label: 'Corners', min: 0, max: 8, step: 1, hint: '0 = round. 3 = triangle.' },
+  { kind: 'range', key: 'shCorner', label: 'Corner rounding', min: 0, max: 100, step: 1, unit: '%', hint: '100 = round.' },
   { kind: 'range', key: 'shTwist', label: 'Twist per tier', min: -90, max: 90, step: 1, unit: '°' },
   { kind: 'select', key: 'lampTex', label: 'Surface', options: [['dots', 'Knurled dots'], ['ribs', 'Ribs'], ['rings', 'Rings'], ['none', 'Smooth']] },
   { kind: 'range', key: 'lampTexSize', label: 'Pattern size', min: 2.5, max: 15, step: 0.5, unit: 'mm' },
   { kind: 'range', key: 'lampTexDepth', label: 'Pattern depth', min: 0.2, max: 3, step: 0.1, unit: 'mm' },
   { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.6, max: 3, step: 0.1, unit: 'mm', hint: 'Thin walls let more light through.' },
-  { kind: 'range', key: 'socketD', label: 'Socket hole', min: 20, max: 60, step: 0.5, unit: 'mm', hint: 'Measure the threaded ring of your lamp socket. E27 is usually about 40 mm.' },
   { kind: 'range', key: 'hubSpokes', label: 'Spokes', min: 2, max: 8, step: 1 },
-  { kind: 'range', key: 'baseH', label: 'Base height', min: 40, max: 250, step: 1, unit: 'mm' },
-  { kind: 'range', key: 'baseD', label: 'Base width', min: 60, max: 200, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'baseH', label: 'Base height', min: 50, max: 250, step: 0.5, unit: 'mm', hint: 'Body only; the neck adds to it.' },
+  { kind: 'range', key: 'baseD', label: 'Base width', min: 80, max: 200, step: 0.5, unit: 'mm' },
   { kind: 'range', key: 'baseTaper', label: 'Base top width', min: 50, max: 120, step: 1, unit: '%' },
   { kind: 'range', key: 'baseRound', label: 'Base shoulder', min: 0, max: 50, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'neckH', label: 'Neck height', min: 18, max: 60, step: 0.5, unit: 'mm', hint: 'The socket sits on top of the neck.' },
   { kind: 'range', key: 'baseFeet', label: 'Feet', min: 0, max: 12, step: 1, hint: '0 = flat bottom. The cable leaves through a gap.' },
   { kind: 'toggle', key: 'baseTex', label: 'Pattern on the base' },
+  { kind: 'range', key: 'socketD', label: 'Socket hole', min: 20, max: 60, step: 0.5, unit: 'mm', hint: 'E27 with a threaded ring: about 41 mm. E27 without thread: 38 mm. Measure yours.' },
+  { kind: 'range', key: 'jointD', label: 'Joint size', min: 50, max: 90, step: 0.5, unit: 'mm', hint: 'Neck width where the shade twists on. Keep the same on lamps you want to swap shades between.' },
+  { kind: 'range', key: 'jointFit', label: 'Joint fit', min: 0.15, max: 1, step: 0.05, unit: 'mm', hint: 'Gap in the twist lock. Bigger = looser.' },
 ];
 STYLE_CONTROLS.lamp = LAMP_CONTROLS;
 
@@ -424,7 +429,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow') { renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier') { renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -467,12 +472,16 @@ function renderStyleControls() {
   }
   if (!params.lineMode) list = list.filter((c) => c.key !== 'lineW');
   if (params.style === 'lamp') {
-    const shadeKeys = ['shTiers', 'shDia', 'shShrink', 'shPuff', 'shRim', 'shSlope', 'shUnder', 'shRound', 'shTopHole', 'shSides', 'shSideDepth', 'shCorner', 'shTwist', 'hubSpokes'];
-    const baseKeys = ['baseH', 'baseD', 'baseTaper', 'baseRound', 'baseFeet', 'baseTex'];
+    const shadeKeys = ['shTiers', 'shDia', 'shTierH', 'shShrink', 'shPuff', 'shRim', 'shSlope', 'shUnder', 'shRound', 'shTopHole', 'shSides', 'shCorner', 'shTwist', 'hubSpokes', 'lampTier'];
+    const baseKeys = ['baseH', 'baseD', 'baseTaper', 'baseRound', 'neckH', 'baseFeet', 'baseTex', 'socketD'];
+    const coneOnly = ['shRim', 'shSlope', 'shUnder', 'shRound', 'shTopHole'];
     list = list.filter((c) => {
       if (params.lampShow === 'base' && shadeKeys.includes(c.key)) return false;
       if (params.lampShow === 'shade' && baseKeys.includes(c.key)) return false;
-      if (Math.round(params.shSides) < 2 && (c.key === 'shSideDepth' || c.key === 'shCorner')) return false;
+      if (Math.round(params.shSides) < 3 && c.key === 'shCorner') return false;
+      if (params.lampTier === 'barrel' && coneOnly.includes(c.key)) return false;
+      if (params.lampTier === 'cone' && c.key === 'shTierH') return false;
+      if (params.lampShow !== 'both' && c.key === 'lampView') return false;
       if (params.lampTex === 'none' && ['lampTexSize', 'lampTexDepth', 'baseTex'].includes(c.key)) return false;
       return true;
     });
@@ -898,6 +907,21 @@ $('#fit').addEventListener('click', () => viewer.fit());
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
 function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
+  if (params.style === 'lamp') {
+    return meshes.map((m) => {
+      const pm = m as unknown as Part;
+      if (pm.printMesh) return { ...m, positions: pm.printMesh.positions, indices: pm.printMesh.indices };
+      if (!pm.printOffset) return m;
+      const [dx, dy, dz] = pm.printOffset;
+      const q = new Float32Array(m.positions.length);
+      for (let i = 0; i < q.length; i += 3) {
+        q[i] = m.positions[i] + dx;
+        q[i + 1] = m.positions[i + 1] + dy;
+        q[i + 2] = m.positions[i + 2] + dz;
+      }
+      return { ...m, positions: q };
+    });
+  }
   return params.style === 'book' && params.bookOrient === 'standing' ? standOnOpenEnd(meshes) : meshes;
 }
 
@@ -915,8 +939,18 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 
-$('#dl-3mf').addEventListener('click', () => {
-  const printable = lastParts.filter((p) => !p.previewOnly);
+/** The lamp preview is built lighter; downloads rebuild it at full detail first. */
+async function fullDetailParts(): Promise<Part[]> {
+  if (params.style !== 'lamp') return lastParts;
+  const res = await call({ type: 'build', fontKey, params: { ...params, lampFine: true } });
+  return res.type === 'result' ? res.parts : lastParts;
+}
+
+$('#dl-3mf').addEventListener('click', async () => {
+  setBusy(true);
+  const parts = await fullDetailParts();
+  setBusy(false);
+  const printable = parts.filter((p) => !p.previewOnly);
   if (!printable.length) return;
   download(to3MF(forExport(printable), params.text.trim() || 'Letterforge'), baseName() + '.3mf');
 });
@@ -924,6 +958,7 @@ $('#dl-3mf').addEventListener('click', () => {
 $('#dl-stl').addEventListener('click', async () => {
   // One STL with everything. STL can't store colour; use the 3MF for two colours.
   setBusy(true);
+  await fullDetailParts();
   const res = await call({ type: 'merged', byColor: false });
   setBusy(false);
   if (res.type !== 'merged') return;
