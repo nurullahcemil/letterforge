@@ -83,4 +83,5 @@ export const DEFAULTS: Params = {
   textDy: 0,
   lineMode: false,
   lineW: 1.2,
+  letterW: {},
 };

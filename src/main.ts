@@ -423,7 +423,132 @@ function renderStyleControls() {
   }
   if (!params.lineMode) list = list.filter((c) => c.key !== 'lineW');
   list.forEach((c) => host.appendChild(controlEl(c)));
+  if (params.style === 'book' || params.style === 'stack') host.appendChild(letterWidthsEl());
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
+}
+
+// ---------- per-letter widths (the "variable font" width axis, one letter at a time) ----------
+
+/** Indices of selected letters (index among the text's non-space characters). */
+const lwSel = new Set<number>();
+
+function letterWidthsEl(): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'row lw';
+  box.id = 'letter-widths';
+  fillLetterWidths(box);
+  return box;
+}
+
+function refreshLetterWidths() {
+  const box = document.getElementById('letter-widths');
+  if (box) fillLetterWidths(box);
+}
+
+function setLetterW(indices: number[], w: number | null) {
+  const next = { ...params.letterW }; // never mutate: DEFAULTS shares the object
+  for (const i of indices) {
+    if (w === null || Math.abs(w - 1) < 1e-3) delete next[String(i)];
+    else next[String(i)] = w;
+  }
+  params.letterW = next;
+}
+
+function fillLetterWidths(box: HTMLElement) {
+  const letters = Array.from(params.text).filter((ch) => ch.trim() !== '');
+  // forget widths and selections for letters that no longer exist
+  for (const k of Object.keys(params.letterW)) if (+k >= letters.length) setLetterW([+k], null);
+  for (const i of [...lwSel]) if (i >= letters.length) lwSel.delete(i);
+  const wOf = (i: number) => params.letterW[String(i)] ?? 1;
+  let n = 0;
+  const lines = params.text
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) =>
+      line
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => {
+          const chips = Array.from(word)
+            .map((ch) => {
+              const i = n++;
+              const w = wOf(i);
+              const cls = ['lw-chip', lwSel.has(i) ? 'on' : '', w !== 1 ? 'set' : ''].join(' ');
+              return `<button type="button" class="${cls}" data-i="${i}" title="${escapeHtml(ch)}: ${w.toFixed(2)}×" style="--w:${Math.min(4, w)}">${escapeHtml(ch)}</button>`;
+            })
+            .join('');
+          return `<span class="lw-word">${chips}</span>`;
+        })
+        .join(''),
+    )
+    .map((l) => `<div class="lw-line">${l}</div>`)
+    .join('');
+  const sel = [...lwSel].sort((a, b) => a - b);
+  const selW = sel.length ? wOf(sel[0]) : 1;
+  const selNames = sel.map((i) => letters[i]).join(' ');
+  const fill = params.style === 'book' ? params.bookStretch : params.stStretch;
+  box.innerHTML = `
+    <span class="lbl">Letter widths ${Object.keys(params.letterW).length ? `<button type="button" class="lw-link" data-act="reset-all">Reset all</button>` : ''}</span>
+    <small>Click a letter to make it wider or narrower${fill ? '; the other letters on its line squeeze or stretch so the line still fills the width' : ''}. Shift-click to pick several.</small>
+    <div class="lw-chips">${lines}</div>
+    ${
+      sel.length
+        ? `<div class="lw-edit">
+        <div class="lw-head"><b>${escapeHtml(selNames.length > 24 ? sel.length + ' letters' : selNames)}</b><span class="lw-val">${selW.toFixed(2)}×</span></div>
+        <input type="range" min="0.3" max="4" step="0.05" value="${selW}" aria-label="Letter width">
+        <div class="lw-actions">
+          <button type="button" data-act="same">Every “${escapeHtml(letters[sel[0]] ?? '')}”</button>
+          <button type="button" data-act="reset">Reset</button>
+          <button type="button" data-act="done">Done</button>
+        </div>
+      </div>`
+        : ''
+    }`;
+  box.querySelectorAll<HTMLButtonElement>('.lw-chip').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      const i = +b.dataset.i!;
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        if (lwSel.has(i)) lwSel.delete(i);
+        else lwSel.add(i);
+      } else if (lwSel.size === 1 && lwSel.has(i)) lwSel.clear();
+      else {
+        lwSel.clear();
+        lwSel.add(i);
+      }
+      fillLetterWidths(box);
+    }),
+  );
+  const range = box.querySelector<HTMLInputElement>('.lw-edit input[type=range]');
+  range?.addEventListener('input', () => {
+    const w = parseFloat(range.value);
+    setLetterW(sel, w);
+    box.querySelector('.lw-val')!.textContent = w.toFixed(2) + '×';
+    for (const i of sel) {
+      const chip = box.querySelector<HTMLElement>(`.lw-chip[data-i="${i}"]`);
+      if (chip) {
+        chip.style.setProperty('--w', String(w));
+        chip.classList.toggle('set', Math.abs(w - 1) > 1e-3);
+      }
+    }
+    schedule();
+  });
+  box.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      if (act === 'reset-all') {
+        params.letterW = {};
+        lwSel.clear();
+      } else if (act === 'reset') setLetterW(sel, null);
+      else if (act === 'done') lwSel.clear();
+      else if (act === 'same') {
+        const ch = letters[sel[0]];
+        letters.forEach((c, i) => c === ch && lwSel.add(i));
+        setLetterW([...lwSel], selW);
+      }
+      fillLetterWidths(box);
+      schedule();
+    }),
+  );
 }
 
 function renderGeneral() {
@@ -547,6 +672,7 @@ textEl.addEventListener('input', () => {
   params.text = textEl.value;
   textTouched = true;
   renderGeneral();
+  refreshLetterWidths();
   schedule(true);
 });
 
@@ -890,6 +1016,7 @@ function newDesign(style: Style) {
   textTouched = false;
   fontTouched = false;
   Object.assign(params, DEFAULTS);
+  lwSel.clear();
   applyPreset(style);
   nameEl.value = 'Untitled design';
   lastSaved = '';
@@ -910,6 +1037,7 @@ async function openDesign(id: string) {
   textTouched = true;
   fontTouched = true;
   Object.assign(params, DEFAULTS, d.params);
+  lwSel.clear();
   fontKey = d.fontKey;
   nameEl.value = d.name;
   lastSaved = stateKey();

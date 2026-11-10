@@ -34,6 +34,11 @@ export interface LayoutOptions {
   align?: 'left' | 'center' | 'right';
   /** Stretch or squeeze every line horizontally so its ink spans exactly this width (mm). */
   stretchTo?: number;
+  /**
+   * Width factor per letter, keyed by the letter's index among all non-space
+   * characters of the text (so keys survive re-wrapping). 1 = normal.
+   */
+  widths?: Record<string, number>;
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
@@ -140,7 +145,7 @@ function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: numb
 
   // Each run is a glyph plus the font it comes from.
   let run: { glyph: ReturnType<Font['charToGlyph']>; font: Font }[];
-  if (allInMain) {
+  if (allInMain && !opts.widths) {
     let glyphs: ReturnType<Font['stringToGlyphs']>;
     try {
       glyphs = font.stringToGlyphs(line);
@@ -207,15 +212,29 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
   let stretchHi = -Infinity;
   for (const s of shaped) widest = Math.max(widest, s.width);
 
+  const useWidths = !!opts.widths && Object.keys(opts.widths).length > 0;
+  let letterNo = 0; // running index of non-space characters
   shaped.forEach(({ items, width }, li) => {
     const baseY = li * lineHeight; // opentype y-down
     const align = opts.align ?? 'center';
     const shift = align === 'left' ? -widest / 2 : align === 'right' ? widest / 2 - width : -width / 2;
     const lineContours: Vec2[][] = [];
-    for (const p of items) {
+    const chars = Array.from(lines[li]);
+    // Per-letter widths: each glyph's slot is scaled by its factor, later glyphs move along.
+    let offset = 0;
+    items.forEach((p, k) => {
+      const ch = chars[k] ?? '';
+      const isLetter = ch.trim() !== '';
+      const w = useWidths && isLetter ? Math.max(0.1, opts.widths![String(letterNo)] ?? 1) : 1;
+      if (isLetter) letterNo++;
       const path = p.glyph.getPath(p.x + shift, baseY, fontSize);
-      lineContours.push(...flatten(path.commands, tol));
-    }
+      const cs = flatten(path.commands, tol);
+      const x0 = p.x + shift;
+      if (w !== 1 || offset !== 0) for (const c of cs) for (const pt of c) pt[0] = x0 + offset + (pt[0] - x0) * w;
+      lineContours.push(...cs);
+      const next = k < items.length - 1 ? items[k + 1].x : width;
+      offset += (next - p.x) * (w - 1);
+    });
     if (opts.stretchTo && lineContours.length) {
       // Like a variable font's width axis: scale the line's outlines horizontally to fill the width.
       let lo = Infinity;

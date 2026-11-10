@@ -103,6 +103,8 @@ export interface Params {
   /** Line letters: only a thin outline of each letter instead of the solid shape. */
   lineMode: boolean;
   lineW: number;
+  /** Width factor per letter (key = index among the text's non-space characters). */
+  letterW: Record<string, number>;
 }
 
 /** A part the user can drag in the viewer. axes = model axes the 2D offset maps to. */
@@ -215,14 +217,16 @@ export class Builder {
           break;
         case 'stack': {
           let lines = layout.lines;
-          if (p.stStretch && layout.lineCount > 1) {
+          const hasW = Object.keys(p.letterW ?? {}).length > 0;
+          if ((p.stStretch && layout.lineCount > 1) || hasW) {
             // every line the same width, like a block set in a variable-width font
             const b = cs.bounds();
             lines = layoutText(font, p.text, {
               capHeight: p.capHeight,
               tracking: p.tracking,
               lineSpacing: p.lineSpacing,
-              stretchTo: b.max[0] - b.min[0],
+              stretchTo: p.stStretch ? b.max[0] - b.min[0] : undefined,
+              widths: p.letterW,
             }).lines;
           }
           parts = this.stack(lines, p, warnings);
@@ -801,6 +805,7 @@ export class Builder {
         lineSpacing: p.lineSpacing,
         maxWidth: maxW,
         align: p.bookAlign,
+        widths: p.letterW,
       });
     const blockH = (l: ReturnType<typeof lay>) => (l.lineCount - 1) * l.capHeight * p.lineSpacing + l.capHeight * 1.3;
     let layout = lay(p.capHeight);
@@ -832,6 +837,7 @@ export class Builder {
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
         stretchTo: maxW,
+        widths: p.letterW,
       });
       const [lo, hi] = layout.stretch;
       // Lines that could not be condensed further: stretch the block taller to fill the height.

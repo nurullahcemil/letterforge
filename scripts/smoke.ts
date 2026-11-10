@@ -38,6 +38,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['book-fill', { style: 'book', text: 'Bismillah\nher\nhayrın\nbaşıdır.', bookStretch: true, rLean: 55, rMin: 0.4, rMax: 7, lineSpacing: 1.1 }, 'oswald'],
   ['book-line', { style: 'book', text: 'ON SUCH\nA FULL SEA', lineMode: true, lineW: 1.2, bookStretch: true, rLean: 55, rMin: 0.4, rMax: 9 }, 'oswald'],
   ['ramp-line', { style: 'ramp', text: 'LINE', capHeight: 30, lineMode: true, lineW: 1.2 }, 'oswald'],
+  ['book-widths', { style: 'book', text: 'ON SUCH\nA FULL SEA', letterW: { '0': 3, '6': 0.5 }, rLean: 55, rMin: 0.4, rMax: 9 }, 'oswald'],
+  ['stack-widths', { style: 'stack', text: 'RAISE\nYOUR\nGAME', capHeight: 45, lineSpacing: 0.8, letterW: { '5': 2.5 } }, 'archivo'],
   ['stepped-word', { style: 'stepped', text: 'BES', capHeight: 140 }, 'oswald'],
   ['stack', { style: 'stack', text: 'RAISE\nYOUR\nGAME', capHeight: 45, lineSpacing: 0.8, tracking: -0.05 }, 'archivo'],
   ['stepped', { style: 'stepped', text: 'A', capHeight: 140 }, 'oswald'],
