@@ -73,7 +73,7 @@ export const DEFAULTS: Params = {
   bookCover: 60,
   bookEffect: 'sweep',
   bookFit: true,
-  bookStretch: false,
+  bookStretch: true,
   bookMargin: 10,
   bookAlign: 'left',
   rLean: 0,

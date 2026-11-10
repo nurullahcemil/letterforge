@@ -245,3 +245,102 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     stretch: [stretchLo === Infinity ? 1 : stretchLo, stretchHi === -Infinity ? 1 : stretchHi],
   };
 }
+
+/**
+ * Choose line breaks so the text fills a box when every line is stretched to the
+ * box width (the "fill the page" look). Tries every line count and, for each,
+ * the best split of the words (dynamic programming), scoring how far each line
+ * has to be stretched or squeezed from its natural width. Typed line breaks are kept.
+ */
+export function smartLines(
+  font: Font,
+  text: string,
+  opts: { tracking: number; lineSpacing: number },
+  boxW: number,
+  boxH: number,
+): { lines: string[]; cap: number; capFill: number } {
+  const words: { w: string; forced: boolean }[] = [];
+  for (const para of text.replace(/\r/g, '').split('\n')) {
+    const ws = para.split(/ +/).filter((x) => x.length);
+    ws.forEach((w, i) => words.push({ w, forced: i === ws.length - 1 }));
+  }
+  const W = words.length;
+
+  // Natural widths at a cap height of 1 mm (widths scale linearly with size).
+  const lo: LayoutOptions = { capHeight: 1, tracking: opts.tracking, lineSpacing: opts.lineSpacing };
+  const fs = font.unitsPerEm / capUnits(font);
+  const wordW = words.map((x) => shapeLine(font, x.w, lo, fs).width);
+  const space = shapeLine(font, 'a a', lo, fs).width - 2 * shapeLine(font, 'a', lo, fs).width;
+  const prefix = [0];
+  for (const w of wordW) prefix.push(prefix[prefix.length - 1] + w);
+  const lineW = (i: number, j: number) => prefix[j] - prefix[i] + space * (j - i - 1);
+  // a line may not run across a typed line break
+  const crosses = (i: number, j: number) => {
+    for (let k = i; k < j - 1; k++) if (words[k].forced) return true;
+    return false;
+  };
+  const forcedCount = words.filter((x) => x.forced).length; // minimum number of lines
+
+  const lineCost = (stretch: number) => {
+    const l = Math.log(stretch);
+    let c = l * l;
+    if (stretch > 2.2) c += 3 * (stretch - 2.2) ** 2; // very wide letters look odd
+    if (stretch < 0.45) c += 3 * ((0.45 - stretch) * 4) ** 2; // so do very thin ones
+    return c;
+  };
+
+  const MIN_SQUEEZE = 0.5; // never condense letters below half their width
+  let best: { score: number; lines: string[]; cap: number; capFill: number } | null = null;
+  const maxLines = Math.max(1, Math.min(W, 40));
+  for (let n = Math.max(1, forcedCount); n <= maxLines; n++) {
+    const cap = boxH / ((n - 1) * opts.lineSpacing + 1.2);
+    // dp[k][j]: best cost putting the first j words on k lines
+    const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(W + 1).fill(Infinity));
+    const from: number[][] = Array.from({ length: n + 1 }, () => new Array(W + 1).fill(-1));
+    dp[0][0] = 0;
+    for (let k = 1; k <= n; k++) {
+      for (let j = k; j <= W; j++) {
+        // a typed break must end a line
+        for (let i = k - 1; i < j; i++) {
+          if (dp[k - 1][i] === Infinity || crosses(i, j)) continue;
+          const c = dp[k - 1][i] + lineCost(boxW / (cap * Math.max(1e-6, lineW(i, j))));
+          if (c < dp[k][j]) {
+            dp[k][j] = c;
+            from[k][j] = i;
+          }
+        }
+      }
+    }
+    if (dp[n][W] === Infinity) continue;
+    const breaks: number[] = [];
+    for (let k = n, j = W; k > 0; k--) {
+      breaks.unshift(j);
+      j = from[k][j];
+    }
+    // If filling the full height would crush the widest line, use smaller letters instead
+    // (the block then sits centred on the front with some space around it).
+    let widest = 0;
+    let st = 0;
+    for (const end of breaks) {
+      widest = Math.max(widest, lineW(st, end));
+      st = end;
+    }
+    const capUsed = Math.min(cap, boxW / (MIN_SQUEEZE * Math.max(1e-6, widest)));
+    const lines: string[] = [];
+    let start = 0;
+    let worst = 0;
+    let total = 0;
+    for (const end of breaks) {
+      lines.push(words.slice(start, end).map((x) => x.w).join(' '));
+      const c = lineCost(boxW / (capUsed * lineW(start, end)));
+      worst = Math.max(worst, c);
+      total += c;
+      start = end;
+    }
+    // letters get stretched taller to make up the rest of the height; keep that modest
+    const tall = cap / capUsed;
+    const score = total / n + 0.5 * worst + 0.6 * Math.log(tall) ** 2;
+    if (!best || score < best.score) best = { score, lines, cap: capUsed, capFill: cap };
+  }
+  return best ?? { lines: [text], cap: boxH / 1.2, capFill: boxH / 1.2 };
+}

@@ -2,7 +2,7 @@ import type { ManifoldToplevel, CrossSection, Manifold, Vec2 as MVec2 } from 'ma
 import * as SS from 'straight-skeleton';
 import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
-import { layoutText, type Vec2 } from './text';
+import { layoutText, smartLines, type Vec2 } from './text';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
@@ -804,20 +804,27 @@ export class Builder {
     if (p.bookStretch) {
       // Fill the page: keep the line breaks, stretch every line to the full width and,
       // when fitting, size the lines so the block fills the height too.
-      const n = Math.max(1, layout.lineCount);
-      const cap = p.bookFit ? maxH / ((n - 1) * p.lineSpacing + 1.2) : layout.capHeight;
-      layout = layoutText(font, layout.lineTexts.join('\n'), {
+      // With "fit" on, pick the line breaks so the stretched lines fill the page evenly.
+      const smart = p.bookFit
+        ? smartLines(font, p.text || ' ', { tracking: p.tracking, lineSpacing: p.lineSpacing }, maxW, maxH)
+        : null;
+      const lineTexts = smart ? smart.lines : layout.lineTexts;
+      const cap = smart ? smart.cap : layout.capHeight;
+      layout = layoutText(font, lineTexts.join('\n'), {
         capHeight: cap,
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
         stretchTo: maxW,
       });
       const [lo, hi] = layout.stretch;
+      // Lines that could not be condensed further: stretch the block taller to fill the height.
+      const tall = smart ? smart.capFill / smart.cap : 1;
+      if (tall > 1.001) for (const line of layout.lines) for (const c of line) for (const pt of c) pt[1] *= tall;
       if (p.bookFit) warnings.pop(); // replace the plain "sized to fit" note
       warnings.push(
-        `Lines stretched to fill the front: ${cap.toFixed(1)} mm tall, widths ${Math.round(lo * 100)}–${Math.round(hi * 100)}% of normal.`,
+        `Text fills the front: ${lineTexts.length} line${lineTexts.length > 1 ? 's' : ''}, ${(cap * tall).toFixed(1)} mm tall letters.`,
       );
-      if (hi > 3) warnings.push('Some short lines are stretched a lot. Join short words onto one line for a more even look.');
+      if (hi / tall > 3) warnings.push('Some short lines are stretched a lot. Join short words onto one line for a more even look.');
     }
     const lines = layout.lines;
     const face = this.rect(0, 0, outW, outH);
