@@ -783,7 +783,7 @@ async function addCustomFont(key: string, data: ArrayBuffer) {
 // ---------- Google Fonts (through the Fontsource CDN, which serves WOFF files we can read) ----------
 
 interface GFont { key: string; label: string; css: string; url: string; extUrl?: string }
-interface GFMeta { id: string; family: string; weights: number[]; styles: string[]; subsets: string[]; category: string }
+interface GFMeta { id: string; family: string; weights: number[]; styles: string[]; subsets: string[]; category: string; variable?: boolean }
 const googleFonts = new Map<string, GFont>();
 let gfCatalog: GFMeta[] | null = null;
 const GF_CDN = 'https://cdn.jsdelivr.net/fontsource/fonts';
@@ -843,7 +843,6 @@ function showWeights(f: GFMeta | undefined) {
   ($('#gf-use') as HTMLButtonElement).disabled = !f;
   if (!f) {
     gfWeight.innerHTML = '';
-    if (gfCatalog) gfNote.textContent = `${gfCatalog.length.toLocaleString()} Google Fonts. Tap one to use it, or search by name.`;
     return;
   }
   const ws = [...f.weights].sort((a, b) => a - b);
@@ -866,6 +865,7 @@ gfSearch.addEventListener('input', () => {
 const GF_POPULAR = ['Poppins', 'Montserrat', 'Bebas Neue', 'Anton', 'Lobster', 'Oswald', 'Playfair Display', 'Josefin Sans', 'Raleway', 'Abril Fatface', 'Bangers', 'Permanent Marker', 'Righteous', 'Russo One', 'Alfa Slab One', 'Luckiest Guy', 'Titan One', 'Lilita One', 'Fjalla One', 'Rubik', 'Nunito', 'Inter', 'Lato', 'Roboto', 'Open Sans', 'Caveat', 'Satisfy', 'Great Vibes', 'Kaushan Script', 'Cinzel', 'DM Serif Display', 'Space Grotesk', 'Barlow Condensed', 'Teko', 'Staatliches', 'Chewy', 'Black Ops One', 'Passion One', 'Comfortaa', 'Baloo 2', 'Quicksand', 'Merriweather', 'Archivo Black', 'Bungee', 'Fredoka', 'Pacifico', 'Dancing Script'];
 const GF_CATS: [string, string][] = [['', 'All'], ['sans-serif', 'Sans'], ['serif', 'Serif'], ['display', 'Display'], ['handwriting', 'Handwriting'], ['monospace', 'Mono']];
 let gfCat = '';
+let gfVar = false; // show only variable fonts (any weight, one file)
 let gfShown: GFMeta[] = [];
 let gfCount = 0;
 const gfGrid = $('#gf-grid');
@@ -907,10 +907,13 @@ const gfPreview = new IntersectionObserver(
 
 function renderGfCats() {
   const host = $('#gf-cats');
-  host.innerHTML = GF_CATS.map(([v, l]) => `<button type="button" data-c="${v}" class="${v === gfCat ? 'on' : ''}">${l}</button>`).join('');
+  host.innerHTML =
+    GF_CATS.map(([v, l]) => `<button type="button" data-c="${v}" class="${v === gfCat ? 'on' : ''}">${l}</button>`).join('') +
+    `<button type="button" data-var="1" class="gf-var ${gfVar ? 'on' : ''}" aria-pressed="${gfVar}" title="Fonts that come in every weight">Variable</button>`;
   host.querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
     b.addEventListener('click', () => {
-      gfCat = b.dataset.c!;
+      if (b.dataset.var) gfVar = !gfVar;
+      else gfCat = b.dataset.c!;
       renderGfCats();
       void loadCatalog().then(renderGfGrid);
     }),
@@ -920,7 +923,7 @@ function renderGfCats() {
 function renderGfGrid() {
   if (!gfCatalog) return;
   const q = gfSearch.value.trim().toLowerCase();
-  let list = gfCatalog.filter((f) => (!gfCat || f.category === gfCat) && (!q || f.family.toLowerCase().includes(q)));
+  let list = gfCatalog.filter((f) => (!gfCat || f.category === gfCat) && (!gfVar || f.variable) && (!q || f.family.toLowerCase().includes(q)));
   if (q) {
     // names that start with the search come first
     list = [...list.filter((f) => f.family.toLowerCase().startsWith(q)), ...list.filter((f) => !f.family.toLowerCase().startsWith(q))];
@@ -930,6 +933,8 @@ function renderGfGrid() {
   }
   gfShown = list;
   gfCount = 0;
+  const typed = gfCatalog.some((f) => f.family.toLowerCase() === q);
+  if (!typed) gfNote.textContent = `${list.length.toLocaleString()} ${gfVar ? 'variable ' : ''}Google Font${list.length === 1 ? '' : 's'}${q ? (list.length === 1 ? ' matches' : ' match') : ''}. Tap one to use it, or search by name.`;
   gfGrid.innerHTML = '';
   gfGrid.scrollTop = 0;
   if (!list.length) {
@@ -949,7 +954,7 @@ function addGfCards(n: number) {
     b.className = 'gf-card' + (f.id === usedId ? ' on' : '') + (gfLoaded.has(`gfp-${f.id}`) ? ' ready' : '');
     b.dataset.id = f.id;
     b.title = f.family;
-    b.innerHTML = `<span style="font-family:'gfp-${f.id}', var(--font-ui, sans-serif)">${escapeHtml(f.family)}</span><small>${escapeHtml(GF_CATS.find(([v]) => v === f.category)?.[1] ?? f.category)}</small>`;
+    b.innerHTML = `<span style="font-family:'gfp-${f.id}', var(--font-ui, sans-serif)">${escapeHtml(f.family)}</span><small>${escapeHtml(GF_CATS.find(([v]) => v === f.category)?.[1] ?? f.category)}${f.variable ? ' · Variable' : ''}</small>`;
     b.addEventListener('click', () => {
       gfPicked = f;
       showWeights(f);

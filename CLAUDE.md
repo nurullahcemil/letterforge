@@ -17,6 +17,7 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   Google Fonts via Fontsource CDN, user uploads (TTF/OTF/WOFF, not WOFF2). Google Fonts gallery
   (`#gf-grid`): catalog from api.fontsource.org, popular fonts first, kind chips, each name drawn in
   its own font (loaded only when scrolled into view, 40 cards then more on scroll); tap = use.
+  "Variable" chip filters to variable fonts (Fontsource `variable` flag); cards show "· Variable".
 - Saved designs: IndexedDB in the browser (`src/store.ts`). Hash routes `#/`, `#/new/<style>`, `#/d/<id>`.
 
 ## Commands
