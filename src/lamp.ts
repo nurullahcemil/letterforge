@@ -48,6 +48,8 @@ type Keep = <T extends { delete(): void }>(o: T) => T;
 export interface LampPiece {
   name: string;
   m: Manifold;
+  /** More separate closed meshes that belong to this part (woven bands), kept unmerged. */
+  extra?: Manifold[];
   role: 'shade' | 'base';
 }
 
@@ -518,6 +520,131 @@ export function shadeWarp(
   return Object.assign(batch, { point: out });
 }
 
+
+/**
+ * Basket weave built the way the real lamp is: the wall is a stack of separate bands, each a
+ * wavy ring (a smooth wave going around) extruded straight along the surface for one band height,
+ * with every other band shifted half a wave. Bands are spaced evenly along the outer surface curve,
+ * tilt to follow it, and keep `w` wall thickness measured square to the band. Where neighbouring
+ * bands sit on opposite sides they don't touch, which leaves the small light holes of the original.
+ * Like the original file, the bands are separate closed rings stacked face to face (not merged):
+ * merging ~100 wavy rings takes the geometry library tens of seconds, and slicers join them anyway.
+ */
+function wovenBands(
+  wasm: ManifoldToplevel,
+  k: Keep,
+  curve: Pt[],
+  o: { S: (a: number) => number; twistPerMm: number; count: number; amp: number; rRef: number; w: number; hB: number; ppw: number },
+): { bands: Manifold[]; z: [number, number][]; ring: (r: number, phase: number) => Pt[] } {
+  const PM = perimeterMap(o.S);
+  const M = Math.max(12, Math.round(o.count * o.ppw));
+  const B: Pt[] = [];
+  for (let j = 0; j < M; j++) {
+    const a = PM.angle(j / M);
+    const s = o.S(a);
+    B.push([Math.cos(a) * s, Math.sin(a) * s]);
+  }
+  const Nn: Pt[] = B.map((_, j) => {
+    const p0 = B[(j - 1 + M) % M];
+    const p1 = B[(j + 1) % M];
+    const tx = p1[0] - p0[0];
+    const ty = p1[1] - p0[1];
+    const l = Math.hypot(tx, ty) || 1;
+    return [ty / l, -tx / l];
+  });
+  const ring = (r: number, phase: number): Pt[] => {
+    const A = (o.amp * r) / o.rRef;
+    return B.map((b, j) => {
+      const wv = A * Math.sin(2 * Math.PI * o.count * (j / M) + phase);
+      return [r * b[0] + wv * Nn[j][0], r * b[1] + wv * Nn[j][1]];
+    });
+  };
+  const pts = resample(curve, o.hB);
+  const bands: Manifold[] = [];
+  const zr: [number, number][] = [];
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [ra, za] = pts[i];
+    const [rb, zb] = pts[i + 1];
+    const h = Math.max(0.05, zb - za);
+    const cosT = h / Math.hypot(rb - ra, h);
+    const wPlan = o.w / Math.max(0.3, cosT);
+    const outer = k(new wasm.CrossSection([ring(ra, (i % 2) * Math.PI)], 'Positive'));
+    const band2d = k(outer.subtract(k(outer.offset(-wPlan, 'Miter', 2))));
+    const rot = k(band2d.rotate((o.twistPerMm * za * 180) / Math.PI));
+    const sc = rb / ra;
+    // bands touch exactly (like the original): each is its own closed ring; the slicer joins them
+    const m = k(rot.extrude(h, 0, (o.twistPerMm * h * 180) / Math.PI, [sc, sc]));
+    bands.push(k(m.translate([0, 0, za])));
+    zr.push([za, za + h]);
+  }
+  return { bands, z: zr, ring };
+}
+
+
+/** Woven shade: bands along the outer curve, plus the hub (rim plate, spokes, locking collar). */
+function wovenShade(
+  wasm: ManifoldToplevel,
+  k: Keep,
+  p: LampParams,
+  c: { ocRaw: Pt[]; lip: number; top: number; topR: number; J: ReturnType<typeof joint>; w: number; S: (a: number) => number },
+): { m: Manifold; extra: Manifold[] } {
+  const { lip, top, J, w, S } = c;
+  // the outer surface from the bottom rim to the top edge (or the vent)
+  const stopR = p.lampTier === 'cone' ? Math.max(6, p.shTopHole / 2) : 0;
+  const curve: Pt[] = [];
+  for (const pt of c.ocRaw) {
+    if (curve.length && pt[0] < stopR) {
+      const q = curve[curve.length - 1];
+      const t = (q[0] - stopR) / (q[0] - pt[0] || 1);
+      curve.push([stopR, q[1] + (pt[1] - q[1]) * t]);
+      break;
+    }
+    curve.push(pt);
+    if (pt[1] >= top - 1e-6) break;
+  }
+  const tierH = top / Math.max(1, Math.round(p.shTiers));
+  const twistPerMm = (p.shTwist * DEG) / Math.max(1, tierH);
+  const rRef = p.shDia / 2;
+  const wave = Math.max(2, p.lampTexSize);
+  const count = Math.max(12, Math.round((perimeterMap(S).length * rRef) / wave));
+  const { bands, z: zr, ring } = wovenBands(wasm, k, curve, {
+    S, twistPerMm, count, amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef, w,
+    hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: p.lampFine ? 16 : 8,
+  });
+  // hub: a plate under the first band, spokes, and the collar with the lock slots
+  const hubT = 3;
+  const filled = k(new wasm.CrossSection([ring(lip, 0)], 'Positive'));
+  const plate = k(filled.subtract(k(filled.offset(-7, 'Round', 2, 64))));
+  const n = Math.max(2, Math.round(p.hubSpokes));
+  let flat = plate;
+  for (let i = 0; i < n; i++) {
+    const bar = k(wasm.CrossSection.square([lip * 1.6, 8]).translate([J.collarOut - 1, -4]).rotate((360 * i) / n));
+    flat = k(flat.add(k(bar.intersect(filled))));
+  }
+  const collar = k(k(wasm.CrossSection.circle(J.collarOut, 128)).subtract(k(wasm.CrossSection.circle(J.collarIn, 128))));
+  flat = k(flat.subtract(k(wasm.CrossSection.circle(J.collarIn, 128))));
+  const low = bands.filter((_, i) => zr[i][0] < hubT + 0.01);
+  const rest = bands.filter((_, i) => zr[i][0] >= hubT + 0.01);
+  let shade = k(wasm.Manifold.union([...low, k(flat.extrude(hubT)), k(collar.extrude(COLLAR_H))]));
+  const slots: Manifold[] = [];
+  const slotR1 = J.collarIn + LUG_D + SLOT_PLAY;
+  const entry = LUG_DEG + 2 * SLOT_PLAY * 4;
+  const ceilZ = SLOT_LOW + LUG_H + SLOT_PLAY;
+  const fit = J.collarIn - J.neckR;
+  const slopeDrop = (LUG_D + 0.5) * Math.max(0, LUG_D - fit) / (LUG_D + 0.5);
+  for (let i = 0; i < LUGS; i++) {
+    const a0 = (360 * i) / LUGS - entry / 2;
+    slots.push(sector(wasm, k, J.collarIn - 0.5, slotR1, -1, ceilZ, a0, entry));
+    slots.push(sector(wasm, k, J.collarIn - 0.5, slotR1, SLOT_LOW + SLOT_PLAY - slopeDrop - 0.3, ceilZ, a0, entry + TURN_DEG));
+  }
+  shade = k(shade.subtract(k(wasm.Manifold.union(slots))));
+  // drop zero-volume slivers left where faces just touch (small part only, so this is quick)
+  const parts = shade.decompose().map((q) => k(q));
+  const real = parts.filter((q) => q.volume() > 1);
+  if (real.length !== parts.length) shade = k(wasm.Manifold.compose(real));
+  return { m: shade, extra: rest };
+}
+
 export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnings: string[]): LampResult {
   const pieces: LampPiece[] = [];
   let debug: LampResult['debug'];
@@ -558,6 +685,9 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     // rebuild the outline from points exactly one grid step apart along the outer surface, so rows of
     // mesh points line up with rows of dots
     const ocRaw = outerCurve((k(A.intersect(k(wasm.CrossSection.square([big, top + 50]).translate([0.01, -10])))).toPolygons()[0] ?? []) as Pt[]);
+    if (p.lampTex === 'basket') {
+      pieces.push({ name: 'Shade', ...wovenShade(wasm, k, p, { ocRaw, lip, top, topR, J, w, S }), role: 'shade' });
+    } else {
     const ocA = resample(ocRaw, step);
     A = k(new wasm.CrossSection([mirror([[0, 0], ...ocA, [0, ocA[ocA.length - 1][1]]])], 'NonZero'));
     let wall = k(A.subtract(k(A.offset(-w, 'Miter', 2))));
@@ -617,6 +747,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     if (p.lampDebug) debug = { polys: prof.toPolygons() as Pt[][], point: warpFn.point };
     shade = k(shade.warpBatch(warpFn));
     pieces.push({ name: 'Shade', m: shade, role: 'shade' });
+    }
   }
 
   // ---------- base ----------
@@ -658,7 +789,10 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
       [Math.max(sockR, J.neckR - nt), nTop - plateT - Math.max(0, J.neckR - nt - sockR)],
       [J.neckR - nt, bodyTop - 4],
     ];
-    wall = k(wall.add(k(new wasm.CrossSection([neck], 'Positive'))));
+    const woven = texBase && p.lampTex === 'basket';
+    // woven base: the body wall is made of bands (built below); only the neck is turned
+    if (woven) wall = k(new wasm.CrossSection([neck], 'Positive'));
+    else wall = k(wall.add(k(new wasm.CrossSection([neck], 'Positive'))));
     wall = k(wall.intersect(k(wasm.CrossSection.square([4 * Rb + 20, nTop + 10]).translate([0, -5]))));
     const prof = k(new wasm.CrossSection(densify(wall.toPolygons() as Pt[][], bStep * 1.05), 'NonZero'));
     const aroundB = texBase ? clamp(Math.round((2 * Math.PI * Rb) / size), 6, Math.floor(2400 / kq)) : 0;
@@ -666,9 +800,30 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     let base = k(wasm.Manifold.revolve(prof, segs));
     // lugs on the neck (45° underneath so they print)
     const lugs: Manifold[] = [];
+    let wovenTop: Manifold[] = [];
+    let wovenLow: Manifold[] = [];
+    let wovenMid: Manifold[] = [];
+    let baseExtra: Manifold[] = [];
     const lugZ = shadeZ + SLOT_LOW + SLOT_PLAY / 2; // sits on the slot floor when locked
     for (let i = 0; i < LUGS; i++) {
       lugs.push(sector(wasm, k, J.neckR - 0.5, J.neckR + LUG_D, lugZ, lugZ + LUG_H, (360 * i) / LUGS - LUG_DEG / 2, LUG_DEG, LUG_D + 0.5));
+    }
+    if (woven) {
+      // body curve from the bottom edge up to the neck
+      const curve: Pt[] = [];
+      for (const pt of bc) {
+        if (curve.length && pt[0] < J.neckR - 1) break;
+        curve.push(pt);
+      }
+      const { bands, z: bz } = wovenBands(wasm, k, curve, {
+        S: () => 1, twistPerMm: 0, count: Math.max(12, Math.round((2 * Math.PI * Rb) / Math.max(2, p.lampTexSize))),
+        amp: clamp(p.lampTexDepth, 0, 4) / 2, rRef: Rb, w: w * 1.25, hB: Math.max(0.8, p.lampTexH ?? 2.1), ppw: p.lampFine ? 16 : 8,
+      });
+      // merge only where parts overlap: the top bands with the neck, the bottom bands with the feet cuts
+      wovenTop = bands.filter((_, i) => bz[i][1] > bodyTop - 12);
+      wovenLow = bands.filter((_, i) => bz[i][1] <= bodyTop - 12 && bz[i][0] < 16);
+      wovenMid = bands.filter((_, i) => bz[i][1] <= bodyTop - 12 && bz[i][0] >= 16);
+      lugs.push(...wovenTop);
     }
     base = k(wasm.Manifold.union([base, ...lugs]));
     // feet: notches in the bottom edge; one wide notch lets the cable out
@@ -683,8 +838,12 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
       }
     }
     cuts.push(k(k(wasm.Manifold.cube([Rb + 20, 9, 16], true)).translate([Rb / 2 + 10, 0, 0])));
-    base = k(base.subtract(k(wasm.Manifold.union(cuts))));
-    if (texBase && tex) {
+    const cutAll = k(wasm.Manifold.union(cuts));
+    base = k(base.subtract(cutAll));
+    if (woven) {
+      baseExtra = [k(k(wasm.Manifold.union(wovenLow)).subtract(cutAll)), ...wovenMid];
+    }
+    if (texBase && tex && !woven) {
       // pattern pushed along the surface (both skins together), like the shade
       const frame = curveFrame(densifyOpen(bc, Math.min(1, bStep / 3)), Math.max(3, depth * 3, size * 0.75));
       base = k(
@@ -709,7 +868,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
         }),
       );
     }
-    pieces.push({ name: 'Base', m: base, role: 'base' });
+    pieces.push({ name: 'Base', m: base, extra: baseExtra, role: 'base' });
   }
   return { pieces, shadeZ, debug };
 }

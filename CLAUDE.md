@@ -61,8 +61,17 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
   Rows: the outer outline is `resample`d at size/perDot along its length. Columns: revolve with
   around·perDot segments, then `perimeterMap` spaces them evenly along the plan outline (flat sides
   and corners alike) and they turn with the twist. Don't go back to angle- or z-based patterns.
-- Default pattern = basket weave (checkerboard of crisp blocks, width `lampTexSize` 4.5 around,
-  height `lampTexH` 3 along the surface), 6 spokes — matches photos of the user's printed lamp.
+- Basket weave (default) is built exactly like the original (measured from its mesh):
+  `wovenBands` — the wall is a stack of separate bands, each a wavy ring (sine around, constant
+  wave count, scaled with the radius) extruded one band height along the surface (resampled at
+  `lampTexH` 2.13), tilted to follow it, wall measured square to it; every other band is shifted
+  half a wave. Defaults from the original: wave 5 mm (`lampTexSize`), depth 1.5 mm peak-to-valley,
+  wall 0.9 mm. Where depth > wall, neighbouring bands don't touch → small light holes (as in the
+  original). Bands touch face to face and are NOT merged (like the original file): merging or even
+  `Manifold.compose` of ~100 bands takes 15-25 s in WASM. LampPiece has `extra` (unmerged meshes);
+  Builder.lamp concatenates them; kept parts are raw meshes so STL export never merges.
+  Only overlapping bits are merged (hub + bottom bands; base neck/feet + nearby bands).
+  Beware: manifold ops are lazy — time with `scripts/lamp-time.ts`, which forces evaluation.
 - Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
   shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
   while putting on, > 0 when lifting/pushing a locked shade).

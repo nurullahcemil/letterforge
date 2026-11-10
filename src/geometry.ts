@@ -364,8 +364,32 @@ export class Builder {
     const assembled = p.lampView === 'assembled' && pieces.length > 1;
     const lo = [Infinity, Infinity, Infinity];
     const hi = [-Infinity, -Infinity, -Infinity];
+    // A piece can be several separate closed meshes (the woven bands): they are listed one after
+    // another in the same part, never merged (merging them takes the library tens of seconds).
+    const meshOf = (ms: Manifold[], f: (m: Manifold) => Manifold) =>
+      concatMeshes(
+        ms.map((m) => {
+          const mm = this.k(f(m));
+          const g = mm.getMesh();
+          const q = new Float32Array((g.vertProperties.length / g.numProp) * 3);
+          for (let i = 0, j = 0; i < g.vertProperties.length; i += g.numProp, j += 3) {
+            q[j] = g.vertProperties[i];
+            q[j + 1] = g.vertProperties[i + 1];
+            q[j + 2] = g.vertProperties[i + 2];
+          }
+          return { positions: q, indices: new Uint32Array(g.triVerts) };
+        }),
+      );
     for (const pc of pieces) {
-      const b = pc.m.boundingBox();
+      const all = [pc.m, ...(pc.extra ?? [])];
+      const b = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      for (const m of all) {
+        const bb = m.boundingBox();
+        for (let a = 0; a < 3; a++) {
+          b.min[a] = Math.min(b.min[a], bb.min[a]);
+          b.max[a] = Math.max(b.max[a], bb.max[a]);
+        }
+      }
       const w = b.max[0] - b.min[0];
       const d = b.max[1] - b.min[1];
       if (w > p.bedSize || d > p.bedSize) warnings.push(`The ${pc.name.toLowerCase()} is ${Math.round(w)} × ${Math.round(d)} mm, larger than your ${p.bedSize} mm bed.`);
@@ -373,45 +397,24 @@ export class Builder {
       // print layout: side by side, flat on the bed
       const pt: [number, number, number] = [x - b.min[0], 0, -b.min[2]];
       x += w + 15;
-      const printM = pc.m.translate(pt);
       const color = pc.role === 'shade' ? p.colorA : p.colorB;
-      this.kept.push({ name: pc.name, color, m: printM });
+      const printMesh = meshOf(all, (m) => m.translate(pt));
+      this.kept.push({ name: pc.name, color, raw: printMesh });
       // preview: assembled (shade on the base, turned to its locked position) or the print layout
-      let view = printM;
-      let offset: [number, number, number] | undefined;
-      if (assembled) {
-        view = this.k(pc.role === 'shade' ? pc.m.rotate([0, 0, -LAMP_TURN]).translate([0, 0, shadeZ]) : pc.m);
-        const vb = view.boundingBox();
-        const pb = printM.boundingBox();
-        offset = [pb.min[0] - vb.min[0], pb.min[1] - vb.min[1], pb.min[2] - vb.min[2]];
-        if (pc.role === 'shade') offset = undefined; // shade is turned: export it from the print copy below
-      }
-      const mesh = view.getMesh();
-      const np = mesh.numProp;
-      const vp = mesh.vertProperties;
-      const positions = new Float32Array((vp.length / np) * 3);
-      for (let i = 0, j = 0; i < vp.length; i += np, j += 3) {
+      const view = !assembled
+        ? printMesh
+        : pc.role === 'shade'
+          ? meshOf(all, (m) => m.rotate([0, 0, -LAMP_TURN]).translate([0, 0, shadeZ]))
+          : meshOf(all, (m) => m.translate([0, 0, 0]));
+      for (let i = 0; i < view.positions.length; i += 3) {
         for (let a = 0; a < 3; a++) {
-          const v = vp[i + a];
-          positions[j + a] = v;
+          const v = view.positions[i + a];
           if (v < lo[a]) lo[a] = v;
           if (v > hi[a]) hi[a] = v;
         }
       }
-      const part: Part = { name: pc.name, color, positions, indices: new Uint32Array(mesh.triVerts) };
-      if (assembled) {
-        if (offset) part.printOffset = offset;
-        else {
-          const pm = printM.getMesh();
-          const q = new Float32Array((pm.vertProperties.length / pm.numProp) * 3);
-          for (let i = 0, j = 0; i < pm.vertProperties.length; i += pm.numProp, j += 3) {
-            q[j] = pm.vertProperties[i];
-            q[j + 1] = pm.vertProperties[i + 1];
-            q[j + 2] = pm.vertProperties[i + 2];
-          }
-          part.printMesh = { positions: q, indices: new Uint32Array(pm.triVerts) };
-        }
-      }
+      const part: Part = { name: pc.name, color, positions: view.positions, indices: view.indices };
+      if (assembled) part.printMesh = printMesh;
       out.push(part);
     }
     const size: [number, number, number] = out.length ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] : [0, 0, 0];

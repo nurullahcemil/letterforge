@@ -9,6 +9,7 @@ const wasm = await Module(); wasm.setup();
 const over = JSON.parse(process.argv[2] ?? '{}');
 const p = { ...DEFAULTS, lampShow: 'shade', lampDebug: true, ...over } as any;
 const { debug } = buildLamp(wasm, (x: any) => x, p, []);
+if (!debug) { console.log(JSON.stringify(over), 'woven bands: built exactly, nothing to check here (use lamp-check)'); process.exit(0); }
 const polys = debug!.polys;
 const shoelace = (q: number[][]) => q.reduce((acc, a, i) => { const b = q[(i + 1) % q.length]; return acc + a[0] * b[1] - b[0] * a[1]; }, 0) / 2;
 let worst = 0;

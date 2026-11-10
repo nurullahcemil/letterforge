@@ -60,3 +60,7 @@
     the surface, columns evenly spaced along the plan outline and twisted with it.
 17. User's photos of the real printed lamp: basket weave (alternating rectangular blocks, crisp
     edges), not round dots. Added 'basket' pattern (default), separate pattern width/height, 6 spokes.
+18. "100% accurate" basket weave: measured the original mesh. It is a stack of separate 2.13 mm
+    bands, each a sine-wave ring (5 mm wave, ~1.5 mm deep, constant wave count scaled with radius),
+    phase flipped every band; bands are separate closed shells touching face to face. Rebuilt
+    exactly that way (`wovenBands`), no texture sampling. Unmerged on purpose (speed).
