@@ -21,5 +21,5 @@ Suggested approach (fits the existing stack):
 - 3MF: decide whether to drop `paint_color` or `m:colorgroup` so Bambu shows exactly 2
   filaments (currently can show 4).
 - Optional: show the colour-change height next to downloads for single-STL two-tone prints.
-- GitHub repo + Vercel Git integration (see DEPLOY.md).
+- Done: GitHub repo connected to Vercel (push to main deploys).
 - `style6.css` contains unused letter-chip styles from an earlier UI (harmless).
