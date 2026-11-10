@@ -6,6 +6,8 @@ export interface LampParams {
   lampView: 'assembled' | 'print';
   /** Build at full detail (downloads); otherwise a lighter preview. */
   lampFine?: boolean;
+  /** Tests only: return the wall outline and reshape function. */
+  lampDebug?: boolean;
   /** barrel = round bulges stacked like a tower; cone = umbrella tiers with a closed top. */
   lampTier: 'barrel' | 'cone';
   shTiers: number;
@@ -52,6 +54,8 @@ export interface LampResult {
   pieces: LampPiece[];
   /** Height of the shade's bottom above the base's bottom when assembled. */
   shadeZ: number;
+  /** With lampDebug: the shade's wall outline and the function that reshapes it (for checks). */
+  debug?: { polys: Pt[][]; point: (x: number, y: number, z: number) => [number, number, number] };
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -194,36 +198,113 @@ function densifyOpen(curve: Pt[], step: number): Pt[] {
   return out;
 }
 
-/** Distance along a curve (r, z) for any nearby point, so patterns keep their size on slopes. */
-function arcLookup(curve: Pt[]) {
-  const cell = 4;
+export interface Frame {
+  /** distance along the curve */
+  s: number;
+  /** nearest point on the curve */
+  qr: number;
+  qz: number;
+  /** outward unit normal there */
+  nr: number;
+  nz: number;
+  /** depth below the curve (positive = inside the wall) */
+  t: number;
+  /** 0..1: pattern fades out at sharp bends (the waists) */
+  fade: number;
+}
+
+/**
+ * For any point near the shade's outer curve (r, z): where it sits relative to the surface.
+ * Lets the inside and outside skins be moved together, so the wall keeps its thickness.
+ */
+export function curveFrame(curve: Pt[], bendR: number): (r: number, z: number) => Frame | null {
+  const n = curve.length;
   const s: number[] = [0];
-  for (let i = 1; i < curve.length; i++) s.push(s[i - 1] + Math.hypot(curve[i][0] - curve[i - 1][0], curve[i][1] - curve[i - 1][1]));
-  const grid = new Map<string, number[]>();
-  curve.forEach(([r, z], i) => {
-    const key = `${Math.floor(r / cell)},${Math.floor(z / cell)}`;
-    (grid.get(key) ?? grid.set(key, []).get(key)!).push(i);
-  });
+  for (let i = 1; i < n; i++) s.push(s[i - 1] + Math.hypot(curve[i][0] - curve[i - 1][0], curve[i][1] - curve[i - 1][1]));
+  // outward normals (curve runs bottom → top, so outward is the tangent turned clockwise)
+  const nr = new Float64Array(n);
+  const nz = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = curve[Math.max(0, i - 1)];
+    const b = curve[Math.min(n - 1, i + 1)];
+    const dr = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const l = Math.hypot(dr, dz) || 1;
+    nr[i] = dz / l;
+    nz[i] = -dr / l;
+  }
+  // bend radius at each point; the pattern fades where the curve bends tighter than bendR
+  const raw = new Float64Array(n).fill(1);
+  for (let i = 1; i < n - 1; i++) {
+    const turn = Math.acos(clamp(nr[i - 1] * nr[i + 1] + nz[i - 1] * nz[i + 1], -1, 1));
+    const len = s[i + 1] - s[i - 1];
+    const radius = turn > 1e-6 ? len / turn : Infinity;
+    raw[i] = smooth(bendR * 0.4, bendR, radius);
+  }
+  const fade = new Float64Array(n);
+  for (let i = 0, j0 = 0; i < n; i++) {
+    while (s[i] - s[j0] > bendR) j0++;
+    let m = 1;
+    for (let j = j0; j < n && s[j] - s[i] <= bendR; j++) m = Math.min(m, raw[j]);
+    fade[i] = m;
+  }
+  const cell = 3;
+  const key = (cx: number, cz: number) => cx * 100003 + cz;
+  const grid = new Map<number, number[]>();
+  for (let i = 0; i + 1 < n; i++) {
+    const r0 = Math.min(curve[i][0], curve[i + 1][0]);
+    const r1 = Math.max(curve[i][0], curve[i + 1][0]);
+    const z0 = Math.min(curve[i][1], curve[i + 1][1]);
+    const z1 = Math.max(curve[i][1], curve[i + 1][1]);
+    for (let cx = Math.floor(r0 / cell); cx <= Math.floor(r1 / cell); cx++)
+      for (let cz = Math.floor(z0 / cell); cz <= Math.floor(z1 / cell); cz++) {
+        const k = key(cx, cz);
+        (grid.get(k) ?? grid.set(k, []).get(k)!).push(i);
+      }
+  }
   return (r: number, z: number) => {
     const cx = Math.floor(r / cell);
     const cz = Math.floor(z / cell);
     let best = -1;
     let bd = Infinity;
-    for (let ring = 1; ring <= 4 && best < 0; ring++) {
-      for (let dx = -ring; dx <= ring; dx++)
-        for (let dz = -ring; dz <= ring; dz++) {
-          const l = grid.get(`${cx + dx},${cz + dz}`);
-          if (!l) continue;
-          for (const i of l) {
-            const d = (curve[i][0] - r) ** 2 + (curve[i][1] - z) ** 2;
-            if (d < bd) {
-              bd = d;
-              best = i;
-            }
+    let bu = 0;
+    for (let dx = -2; dx <= 2; dx++)
+      for (let dz = -2; dz <= 2; dz++) {
+        const l = grid.get(key(cx + dx, cz + dz));
+        if (!l) continue;
+        for (const i of l) {
+          const ar = curve[i][0];
+          const az = curve[i][1];
+          const er = curve[i + 1][0] - ar;
+          const ez = curve[i + 1][1] - az;
+          const ll = er * er + ez * ez || 1;
+          const u = clamp(((r - ar) * er + (z - az) * ez) / ll, 0, 1);
+          const d = (ar + er * u - r) ** 2 + (az + ez * u - z) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = i;
+            bu = u;
           }
         }
-    }
-    return best < 0 ? z : s[best];
+      }
+    if (best < 0) return null;
+    const i = best;
+    const qr = curve[i][0] + (curve[i + 1][0] - curve[i][0]) * bu;
+    const qz = curve[i][1] + (curve[i + 1][1] - curve[i][1]) * bu;
+    let mr = nr[i] + (nr[i + 1] - nr[i]) * bu;
+    let mz = nz[i] + (nz[i + 1] - nz[i]) * bu;
+    const ml = Math.hypot(mr, mz) || 1;
+    mr /= ml;
+    mz /= ml;
+    return {
+      s: s[i] + (s[i + 1] - s[i]) * bu,
+      qr,
+      qz,
+      nr: mr,
+      nz: mz,
+      t: (qr - r) * mr + (qz - z) * mz,
+      fade: fade[i] + (fade[i + 1] - fade[i]) * bu,
+    };
   };
 }
 
@@ -280,8 +361,90 @@ function sector(wasm: ManifoldToplevel, k: Keep, r0: number, r1: number, z0: num
   return k(m.rotate([0, 0, start]));
 }
 
+/**
+ * Moves every point of the round (revolved) shade into its final place: plan shape, twist and
+ * surface pattern. Points in the wall are placed by their depth below the outer surface, measured
+ * at right angles to it, so the wall keeps its thickness on every slope and every side, and the
+ * pattern pushes both skins together (no folds or holes). Hub points away from the wall are just
+ * scaled out from the centre.
+ */
+export function shadeWarp(
+  p: LampParams,
+  c: { oc: Pt[]; step: number; top: number; topR: number; topHole: number; hubT: number; lip: number; sMin: number; J: ReturnType<typeof joint>; w: number },
+) {
+  const S = planShape(p);
+  const tex = pattern(p, p.shDia / 2);
+  const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
+  const tierH = c.top / Math.max(1, Math.round(p.shTiers));
+  const twist = (p.shTwist * DEG) / Math.max(1, tierH);
+  const fadeIn = c.J.collarOut + 1;
+  const fadeOut = Math.max(fadeIn + 2, Math.min(c.J.collarOut + 12, c.lip * c.sMin - 8));
+  const frame = curveFrame(densifyOpen(c.oc, Math.min(1, c.step / 3)), Math.max(3, depth * 3, p.lampTexSize * 0.75));
+  const band0 = c.w + 0.6;
+  const band1 = c.w + 3;
+  const out = (x: number, y: number, z: number): [number, number, number] => {
+    const r = Math.hypot(x, y);
+    if (r < 1e-9) return [x, y, z];
+    const a = Math.atan2(y, x);
+    const ux = x / r;
+    const uy = y / r;
+    // simple: scale out from the centre (hub, spokes)
+    const f = smooth(fadeIn, fadeOut, r);
+    const sr = 1 - f * (1 - S(a - twist * z));
+    const simple: [number, number, number] = [ux * r * sr, uy * r * sr, z];
+    const F = frame(r, z);
+    if (!F) return simple;
+    // 1 = inside the wall band; the first layers (hub height) keep the simple mapping so the bottom stays flat
+    const blend = (1 - smooth(band0, band1, Math.abs(F.t))) * smooth(c.hubT, c.hubT + 2, z);
+    if (blend <= 0) return simple;
+    // wall: put the point at the same depth below the reshaped outer surface
+    // the wall always takes the full plan shape (fading it out near the centre would fold the
+    // umbrella tops); only the hub, handled by `simple`, stays round
+    const fq = 1;
+    const sq = S(a - twist * F.qz);
+    // normal of the reshaped surface (scaling r by sq tilts the normal)
+    let mr = F.nr / Math.max(0.05, sq);
+    let mz = F.nz;
+    const ml = Math.hypot(mr, mz) || 1;
+    mr /= ml;
+    mz /= ml;
+    let d = 0;
+    if (tex && depth > 0) {
+      d = depth * tex(a, F.s) * F.fade *
+        smooth(c.hubT + 0.5, c.hubT + 3, F.qz) *
+        smooth(fadeOut, fadeOut + 6, F.qr) *
+        (c.topR > 0 ? smooth(c.top - 0.5, c.top - 3, F.qz) : 1) *
+        smooth(Math.max(4, c.topHole), Math.max(4, c.topHole) + 6, F.qr);
+    }
+    // in plan, a flat side faces away from the centre line by angle β: step that much further out
+    // from the centre so the wall is still `t` thick measured square to the side
+    const ap = a - twist * F.qz;
+    const e = 0.002;
+    const slope = (S(ap + e) - S(ap - e)) / (2 * e) / Math.max(0.05, S(ap));
+    const cosB = 1 / Math.sqrt(1 + (fq * slope) ** 2);
+    const rw = F.qr * sq + ((d - F.t) * mr) / cosB;
+    const zw = F.qz + (d - F.t) * mz;
+    const wall: [number, number, number] = [ux * rw, uy * rw, zw];
+    return [
+      simple[0] + (wall[0] - simple[0]) * blend,
+      simple[1] + (wall[1] - simple[1]) * blend,
+      simple[2] + (wall[2] - simple[2]) * blend,
+    ];
+  };
+  const batch = (v: Float64Array, count: number) => {
+    for (let i = 0; i < count; i++) {
+      const q = out(v[3 * i], v[3 * i + 1], v[3 * i + 2]);
+      v[3 * i] = q[0];
+      v[3 * i + 1] = q[1];
+      v[3 * i + 2] = q[2];
+    }
+  };
+  return Object.assign(batch, { point: out });
+}
+
 export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnings: string[]): LampResult {
   const pieces: LampPiece[] = [];
+  let debug: LampResult['debug'];
   const w = clamp(p.lampWall, 0.4, 6);
   const tex = pattern(p, p.shDia / 2);
   const depth = tex ? clamp(p.lampTexDepth, 0, 4) : 0;
@@ -362,33 +525,9 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     shade = k(shade.subtract(k(wasm.Manifold.union(slots))));
 
-    // plan shape, twist and texture: move every point out from the centre
-    const tierH = top / Math.max(1, Math.round(p.shTiers));
-    const twist = (p.shTwist * DEG) / Math.max(1, tierH);
-    const fadeIn = J.collarOut + 1;
-    const fadeOut = Math.max(fadeIn + 2, Math.min(J.collarOut + 12, lip * sMin - 8));
-    const arc = tex ? arcLookup(densifyOpen(oc, step / 3)) : null;
-    shade = k(
-      shade.warpBatch((v, count) => {
-        for (let i = 0; i < count; i++) {
-          const x = v[3 * i];
-          const y = v[3 * i + 1];
-          const z = v[3 * i + 2];
-          const r = Math.hypot(x, y);
-          if (r < 1e-9) continue;
-          const a = Math.atan2(y, x);
-          const f = smooth(fadeIn, fadeOut, r); // keep the collar round
-          const s = 1 - f * (1 - S(a - twist * z));
-          let d = 0;
-          if (tex && arc && depth > 0 && z > 0.3) {
-            d = depth * tex(a, arc(r, z)) * smooth(hubT + 0.5, hubT + 3, z) * smooth(fadeOut, fadeOut + 6, r) * (topR > 0 ? smooth(top - 0.5, top - 3, z) : 1) * smooth(Math.max(4, topHole), Math.max(4, topHole) + 6, r);
-          }
-          const r2 = r * s + d;
-          v[3 * i] = (x / r) * r2;
-          v[3 * i + 1] = (y / r) * r2;
-        }
-      }),
-    );
+    const warpFn = shadeWarp(p, { oc, step, top, topR, topHole, hubT, lip, sMin, J, w });
+    if (p.lampDebug) debug = { polys: prof.toPolygons() as Pt[][], point: warpFn.point };
+    shade = k(shade.warpBatch(warpFn));
     pieces.push({ name: 'Shade', m: shade, role: 'shade' });
   }
 
@@ -470,5 +609,5 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
     }
     pieces.push({ name: 'Base', m: base, role: 'base' });
   }
-  return { pieces, shadeZ };
+  return { pieces, shadeZ, debug };
 }

@@ -294,7 +294,7 @@ function call(msg: any): Promise<any> {
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const viewer = new Viewer($('#viewport'));
-(window as any).__letterforge = { viewer, params };
+(window as any).__letterforge = { viewer, params, rebuild: () => { refreshUI(); schedule(true); } };
 viewer.setBed(params.bedSize);
 
 const statusEl = $('#status');

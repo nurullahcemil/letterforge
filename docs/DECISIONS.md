@@ -52,3 +52,6 @@
     Gotchas: manifold booleans are lazy, the cost shows up at the next warp/getMesh; offsets add
     tiny arcs at every curve point → `simplify(0.03)` before densifying; round offsets eat the
     bottom edge → extend outlines below z=0 and trim.
+15. Lamp holes fix: the pattern was pushed straight out from the centre, which folded the wall on
+    flat-ish parts (holes/dark patches in Bambu Studio), and the plan shape thinned flat sides to
+    ~0.64× the wall. Now wall points keep their depth below the surface (`shadeWarp`).

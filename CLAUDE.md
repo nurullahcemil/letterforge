@@ -51,13 +51,18 @@ Table lamp for an E27 lamp kit. Defaults are measured from a lamp the user owns 
 sizes only, never copy its geometry. Real sizes: shade 173 tall, 202×222 (triangle, 244 across
 corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; neck Ø65; socket hole Ø41.
 `src/lamp.ts`:
-- Shade: outline (r,z) → wall → revolve → hub (rim ring, spokes, collar) → warp for plan shape
-  (rounded polygon), twist, pattern (pattern follows distance along the outline).
+- Shade: outline (r,z) → wall → revolve → hub (rim ring, spokes, collar) → `shadeWarp`.
+- `shadeWarp`: wall points are placed by their depth below the outer surface, measured square to
+  it (meridian normal, plus the plan-shape angle), so the wall keeps its thickness on every slope
+  and side, and the pattern moves both skins together. Never push the pattern straight out from
+  the centre: on flat-ish parts that folds the wall (seen as holes in Bambu Studio). Only the hub
+  fades back to round near the centre (fading the wall folded umbrella tops).
 - Twist lock (own design): 3 lugs on the base neck, 3 L-slots inside the shade collar. Drop the
   shade on, turn 32° to lock. Check with `npx tsx scripts/lamp-lock.ts '{}'` (overlap must be 0
   while putting on, > 0 when lifting/pushing a locked shade).
 - Preview builds lighter; downloads rebuild with `lampFine: true`.
 - "Put together" view: shade shown on the base; files always use the side-by-side print layout
   (`Part.printOffset` / `printMesh`, applied in `forExport`).
-Other checks: `scripts/lamp-check.ts` (validity), `scripts/lamp-slice.ts` (SVG slices),
+Other checks: `scripts/lamp-holes.ts` (folds/holes, must say clean), `scripts/lamp-wall.ts`
+(wall thickness), `scripts/lamp-check.ts` (validity), `scripts/lamp-slice.ts` (SVG slices),
 `scripts/lamp-time.ts` (speed).
