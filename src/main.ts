@@ -1,8 +1,8 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
-import { toSTL, to3MF, standOnOpenEnd } from './export';
-import type { Params, Part, Style } from './geometry';
+import { toSTL, to3MF, standOnOpenEnd, toBackingSVG } from './export';
+import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
@@ -255,6 +255,7 @@ const sentFonts = new Set<string>();
 let reqId = 0;
 let latestBuild = 0;
 let lastParts: Part[] = [];
+let lastBacking: BuildResult['backing'];
 const pending = new Map<number, (d: any) => void>();
 
 worker.onmessage = (e) => {
@@ -336,6 +337,15 @@ async function run() {
     } else if (myId === latestBuild) {
       lastParts = res.parts;
       lastLetters = res.letters ?? [];
+      lastBacking = res.backing;
+      const bn = $('#backing-note');
+      bn.hidden = !params.backOn;
+      if (params.backOn) {
+        bn.textContent = lastBacking
+          ? `Board ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Red lines are cuts, blue lines are the letter guide.`
+          : 'Nothing to back yet.';
+      }
+      ($('#dl-backing') as HTMLButtonElement).disabled = !lastBacking;
       viewer.setBed(params.bedSize);
       viewer.setParts(res.parts, refitNext);
       refitNext = false;
@@ -417,7 +427,8 @@ function controlEl(c: Control): HTMLElement {
       b.addEventListener('click', () => {
         (params as any)[c.key] = b.dataset.v;
         row.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-        renderStyleControls();
+        if (String(c.key).startsWith('back')) renderBacking();
+        else renderStyleControls();
         schedule(true);
       }),
     );
@@ -430,7 +441,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier') { renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -640,6 +651,27 @@ function renderGeneral() {
   controls.forEach((c) => host.appendChild(controlEl(c)));
 }
 
+const BACKING_CONTROLS: Control[] = [
+  { kind: 'select', key: 'backShape', label: 'Shape', options: [['outline', 'Follows the letters'], ['rect', 'Rectangle']] },
+  { kind: 'range', key: 'backMargin', label: 'Margin around the letters', min: 0, max: 80, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'backRound', label: 'Corner rounding', min: 0, max: 60, step: 1, unit: 'mm' },
+  { kind: 'select', key: 'backHoles', label: 'Hanging holes', options: [['none', 'None'], ['two', '2 at the top'], ['four', '4 corners']] },
+  { kind: 'range', key: 'backHoleD', label: 'Hole size', min: 2, max: 12, step: 0.5, unit: 'mm', hint: 'Kept clear of the letters so a screw or nail can reach it.' },
+  { kind: 'range', key: 'backT', label: 'Board thickness', min: 1, max: 20, step: 0.5, unit: 'mm', hint: 'For the 3D preview only; the laser file is the outline.' },
+  { kind: 'toggle', key: 'backGuide', label: 'Mark where the letters go', hint: 'Adds the letter outlines in blue, to engrave or score as a gluing guide.' },
+];
+
+function renderBacking() {
+  const sec = $('#backing-section');
+  sec.hidden = params.style === 'lamp' || params.style === 'book';
+  const host = $('#backing-controls');
+  host.innerHTML = '';
+  host.appendChild(controlEl({ kind: 'toggle', key: 'backOn', label: 'Make a laser-cut backing', hint: 'A wooden board behind the letters, cut on a laser cutter. Shown under the model in 3D.' }));
+  if (params.backOn) BACKING_CONTROLS.filter((c) => c.key !== 'backHoleD' || params.backHoles !== 'none').forEach((c) => host.appendChild(controlEl(c)));
+  $('#dl-backing').hidden = !params.backOn;
+  if (!params.backOn) $('#backing-note').hidden = true;
+}
+
 function renderPrinter() {
   const host = $('#printer-controls');
   host.innerHTML = '';
@@ -702,6 +734,7 @@ function refreshUI() {
   renderFonts();
   renderGeneral();
   renderStyleControls();
+  renderBacking();
   renderPrinter();
   updateSaveState();
 }
@@ -1083,6 +1116,11 @@ $('#dl-3mf').addEventListener('click', async () => {
   const printable = parts.filter((p) => !p.previewOnly);
   if (!printable.length) return;
   download(to3MF(forExport(printable), params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp'), baseName() + '.3mf');
+});
+
+$('#dl-backing').addEventListener('click', () => {
+  if (!lastBacking) return;
+  download(toBackingSVG(lastBacking, params.text.trim() || 'Letterforge'), baseName() + '-backing.svg');
 });
 
 $('#dl-stl').addEventListener('click', async () => {

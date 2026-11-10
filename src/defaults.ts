@@ -2,6 +2,14 @@ import type { Params } from './geometry';
 
 export const DEFAULTS: Params = {
   style: 'sign',
+  backOn: false,
+  backShape: 'outline',
+  backMargin: 12,
+  backRound: 8,
+  backHoles: 'two',
+  backHoleD: 5,
+  backT: 3,
+  backGuide: true,
   text: 'MENU',
   capHeight: 40,
   tracking: 0.02,

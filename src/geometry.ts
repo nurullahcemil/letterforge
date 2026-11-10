@@ -10,6 +10,15 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Laser-cut wooden backing (a board behind the letters; SVG for the laser, preview only in 3D). */
+  backOn?: boolean;
+  backShape?: 'outline' | 'rect';
+  backMargin?: number;
+  backRound?: number;
+  backHoles?: 'none' | 'two' | 'four';
+  backHoleD?: number;
+  backT?: number;
+  backGuide?: boolean;
   style: Style;
   text: string;
   capHeight: number;
@@ -142,6 +151,8 @@ export interface BuildResult {
   size: [number, number, number];
   /** Where each letter sits on the model (model x/y, mm), for picking letters on the canvas. */
   letters: { i: number; x: number; y: number }[];
+  /** Laser-cut backing, in model x/y mm: `cut` = board outline and holes, `guide` = where the letters sit. */
+  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number };
 }
 
 interface WorkPart {
@@ -272,6 +283,11 @@ export class Builder {
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
       this.bin = this.bin.filter((o) => !keep.has(o as Manifold));
       this.kept = parts.filter((x) => !x.previewOnly);
+      const backing = p.backOn && p.style !== 'book' ? this.backing(p, warnings) : undefined;
+      if (backing) {
+        const t = clampN(p.backT ?? 3, 1, 30);
+        parts.push({ name: 'Wood backing', color: '#c8a27a', previewOnly: true, m: this.k(backing.board.extrude(t).translate([0, 0, -t])) });
+      }
 
       const out: Part[] = [];
       const lo = [Infinity, Infinity, Infinity];
@@ -316,7 +332,7 @@ export class Builder {
           `Model is ${Math.round(size[0])}×${Math.round(size[1])} mm, larger than your ${p.bedSize} mm bed. Turn on "Split to fit bed".`,
         );
       }
-      return { parts: out, warnings, size, letters: this.spots };
+      return { parts: out, warnings, size, letters: this.spots, backing: backing?.svg };
     } finally {
       this.flush();
     }
@@ -1128,6 +1144,75 @@ export class Builder {
   }
 
 
+  /**
+   * Laser-cut wooden backing: the footprint of everything printed (seen from above), grown by a
+   * margin. "outline" follows the letters (inner holes of letters filled, nearby letters bridged);
+   * "rect" is the bounding box with rounded corners. Hanging holes are kept clear of the letters so
+   * a screw or nail can reach them. The 3D preview shows the board under the model; the SVG holds
+   * the board outline + holes (cut) and the letter outlines (guide, to engrave or score).
+   */
+  private backing(p: Params, warnings: string[]) {
+    const W = this.wasm;
+    const prints = this.kept.map((x) => x.m).filter(Boolean) as Manifold[];
+    if (!prints.length) return undefined;
+    const foot = this.k(W.CrossSection.union(prints.map((m) => this.k(m.project()))));
+    if (foot.isEmpty()) return undefined;
+    const margin = clampN(p.backMargin ?? 10, 0, 200);
+    const round = clampN(p.backRound ?? 8, 0, 200);
+    const fb = foot.bounds();
+    let board: CrossSection;
+    if (p.backShape === 'rect') {
+      board = this.rect(fb.min[0] - margin, fb.min[1] - margin, fb.max[0] + margin, fb.max[1] + margin);
+      const r = Math.min(round, (fb.max[0] - fb.min[0]) / 2 + margin - 0.5, (fb.max[1] - fb.min[1]) / 2 + margin - 0.5);
+      if (r > 0.3) board = this.k(this.k(board.offset(-r, 'Round', 2, 64)).offset(r, 'Round', 2, 64));
+    } else {
+      // grow, bridge gaps between letters and lines (close), then keep only outer edges
+      const bridge = Math.max(round, p.capHeight * 0.35);
+      let g = this.k(this.k(foot.offset(margin + bridge, 'Round', 2, 64)).offset(-bridge, 'Round', 2, 64));
+      const outer = (g.toPolygons() as [number, number][][]).filter((q) => polyArea(q) > 0);
+      g = this.k(new W.CrossSection(outer, 'Positive'));
+      board = round > 0.3 ? this.k(this.k(g.offset(-round * 0.5, 'Round', 2, 64)).offset(round * 0.5, 'Round', 2, 64)) : g;
+    }
+    // hanging holes: start at the wanted spot and slide inward until clear of the edge and the letters
+    const d = clampN(p.backHoleD ?? 5, 2, 20);
+    const holes: CrossSection[] = [];
+    if (p.backHoles === 'two' || p.backHoles === 'four') {
+      // where a hole centre may go: 3 mm of wood all round it, and 2 mm clear of the letters
+      const ok = this.k(this.k(board.offset(-(d / 2 + 3), 'Round', 2, 48)).subtract(this.k(foot.offset(d / 2 + 2, 'Round', 2, 48))));
+      const loops = ok.toPolygons() as [number, number][][];
+      const bb = board.bounds();
+      const inset = d / 2 + Math.max(4, margin / 2);
+      const xs = [0.15, 0.85].map((f) => bb.min[0] + f * (bb.max[0] - bb.min[0]));
+      const ys = p.backHoles === 'four' ? [bb.max[1] - inset, bb.min[1] + inset] : [bb.max[1] - inset];
+      let missed = 0;
+      for (const y of ys) {
+        for (const x of xs) {
+          const c = nearestInside(loops, [x, y]);
+          // don't let a hole wander more than a third of the board away from where it belongs
+          if (!c || Math.hypot(c[0] - x, c[1] - y) > Math.max(bb.max[0] - bb.min[0], bb.max[1] - bb.min[1]) / 3) {
+            missed++;
+            continue;
+          }
+          holes.push(this.k(W.CrossSection.circle(d / 2, 48).translate(c)));
+        }
+      }
+      if (missed) warnings.push(`${missed} hanging hole${missed > 1 ? 's' : ''} did not fit beside the letters. Make the backing margin bigger.`);
+    }
+    const pieces = board.decompose().length;
+    if (pieces > 1) warnings.push(`The wooden backing is in ${pieces} pieces. Make its margin bigger, or use the rectangle shape.`);
+    const cutCs = holes.length ? this.k(board.subtract(this.k(W.CrossSection.union(holes)))) : board;
+    const b = cutCs.bounds();
+    return {
+      board: cutCs,
+      svg: {
+        cut: cutCs.toPolygons() as [number, number][][],
+        guide: p.backGuide === false ? [] : (foot.toPolygons() as [number, number][][]),
+        size: [b.max[0] - b.min[0], b.max[1] - b.min[1]] as [number, number],
+        pieces,
+      },
+    };
+  }
+
   private splitToBed(parts: WorkPart[], bed: number, warnings: string[]): WorkPart[] {
     const out: WorkPart[] = [];
     const usable = Math.max(20, bed - 10);
@@ -1337,4 +1422,53 @@ export function concatMeshes(chunks: { positions: Float32Array; indices: Uint32A
     io += c.indices.length;
   }
   return { positions, indices };
+}
+
+/** Signed area of a polygon (positive = counter-clockwise = an outer edge). */
+function polyArea(q: [number, number][]): number {
+  let a = 0;
+  for (let i = 0; i < q.length; i++) {
+    const [x1, y1] = q[i];
+    const [x2, y2] = q[(i + 1) % q.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return a / 2;
+}
+
+function clampN(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
+}
+
+/** The point inside the polygons (even-odd) nearest to `t`: `t` itself if inside, else the nearest edge point. */
+function nearestInside(loops: [number, number][][], t: [number, number]): [number, number] | undefined {
+  if (!loops.length) return undefined;
+  let inside = false;
+  for (const q of loops) {
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+      const [xi, yi] = q[i];
+      const [xj, yj] = q[j];
+      if (yi > t[1] !== yj > t[1] && t[0] < ((xj - xi) * (t[1] - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  if (inside) return t;
+  let best: [number, number] | undefined;
+  let bd = Infinity;
+  for (const q of loops) {
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+      const [ax, ay] = q[j];
+      const [bx, by] = q[i];
+      const dx = bx - ax;
+      const dy = by - ay;
+      const l2 = dx * dx + dy * dy || 1;
+      const u = Math.min(1, Math.max(0, ((t[0] - ax) * dx + (t[1] - ay) * dy) / l2));
+      const px = ax + u * dx;
+      const py = ay + u * dy;
+      const dd = Math.hypot(px - t[0], py - t[1]);
+      if (dd < bd) {
+        bd = dd;
+        best = [px, py];
+      }
+    }
+  }
+  return best;
 }

@@ -48,6 +48,15 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no te
 See the bottom of `docs/DECISIONS.md` for the feature list and history.
 The user prints on a Bambu Lab X1E with Bambu Studio 2.x; 3MF colour import is confirmed working.
 
+## Wooden backing (side feature, all text styles except book)
+Params `back*`. `Builder.backing()`: footprint = union of `project()` of every kept part (so split
+and dragged parts count), grown by the margin; "outline" bridges gaps (close by max(round, 0.35·cap))
+and drops inner holes, "rect" = bounds + margin with rounded corners. Hanging holes: allowed area =
+board inset by r+3 minus letters grown by r+2; each hole goes to the point of that area nearest its
+target (15%/85% across, near top/bottom). Shown in 3D as a previewOnly board under z=0 (never
+exported). `BuildResult.backing` → `toBackingSVG` (export.ts): mm units, red 0.1 = cut,
+blue 0.1 = letter guide (engrave/score). Check: `npx tsx scripts/backing-check.ts '{"backHoles":"four"}'`.
+
 ## Lamp style
 Table lamp for an E27 lamp kit. Defaults are measured from a lamp the user owns a paid file of
 ("Dreieckige retro Lampe mit Korbstruktur", MakerWorld, Standard Digital File License): use it for
