@@ -1,7 +1,7 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
-import { toSTL, toSTLZip, to3MF, standOnOpenEnd } from './export';
+import { toSTL, to3MF, standOnOpenEnd } from './export';
 import type { Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
@@ -866,19 +866,14 @@ $('#dl-3mf').addEventListener('click', () => {
 });
 
 $('#dl-stl').addEventListener('click', async () => {
-  const printable = lastParts.filter((p) => !p.previewOnly);
-  const twoColour = new Set(printable.map((p) => p.color.toLowerCase())).size > 1;
+  // One STL with everything. STL can't store colour; use the 3MF for two colours.
   setBusy(true);
-  const res = await call({ type: 'merged', byColor: twoColour });
+  const res = await call({ type: 'merged', byColor: false });
   setBusy(false);
   if (res.type !== 'merged') return;
   type M = { color: string; positions: Float32Array; indices: Uint32Array };
-  const meshes = (res.meshes as M[]).filter((m) => m.indices.length);
-  if (!meshes.length) return;
-  const placed = forExport(meshes);
-  // STL has no colour, so a multi-colour model comes as one STL per colour in a zip.
-  if (twoColour) download(toSTLZip(placed, baseName()), baseName() + '-stl-per-colour.zip');
-  else download(toSTL(placed[0]), baseName() + '.stl');
+  const mesh = (res.meshes as M[])[0];
+  if (mesh?.indices.length) download(toSTL(forExport([mesh])[0]), baseName() + '.stl');
 });
 
 // ---------- accent text (two-text sign) ----------

@@ -64,7 +64,8 @@ function paintCode(filament: number): string {
 
 export function to3MF(parts: MeshData[], title: string): Blob {
   const n = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
-  // One material (and one filament slot) per distinct colour, in order of first use.
+  // One colour (and one filament slot) per distinct colour, in order of first use.
+  // Written as an m:colorgroup: Bambu Studio 2.x reads only that, not basematerials.
   const palette: string[] = [];
   for (const p of parts) if (!palette.includes(p.color.toLowerCase())) palette.push(p.color.toLowerCase());
   const slot = (p: MeshData) => palette.indexOf(p.color.toLowerCase());
@@ -89,11 +90,11 @@ export function to3MF(parts: MeshData[], title: string): Blob {
   });
   const components = parts.map((_, i) => `<component objectid="${i + 1}"/>`).join('');
   const model = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02">
 <metadata name="Title">${esc(title)}</metadata>
 <metadata name="Application">Letterforge</metadata>
 <resources>
-<basematerials id="${matId}">${palette.map((c, i) => `<base name="Colour ${i + 1}" displaycolor="${c.toUpperCase()}FF"/>`).join('')}</basematerials>
+<m:colorgroup id="${matId}">${palette.map((c) => `<m:color color="${c.toUpperCase()}"/>`).join('')}</m:colorgroup>
 ${objects}<object id="${baseId}" name="${esc(title)}" type="model"><components>${components}</components></object>
 </resources>
 <build><item objectid="${baseId}"/></build>
