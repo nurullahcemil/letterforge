@@ -73,9 +73,11 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
   2·0.2·tan(lean) so each layer sits half on the one below. Waves use cos with 6 points per wave
   (a point on every crest/valley; 0.1 mm off the true curve) → shade ~0.73M, base ~0.29M tris.
   The lamp 3MF has shade and base as separate objects (`to3MF(..., separate)`), each < 1M tris.
-  Seam: every band has one sharp inward V notch (0.8 wide, 0.4 deep, whole wall dents) in the wave
-  valley nearest the back (+Y, world angle — stays put with twist). It is the sharpest concave corner
-  of each layer, so Bambu's Aligned/Back seam lands there. Check: `scripts/lamp-seam.ts`. Where depth > wall, neighbouring bands don't touch → small light holes (as in the
+  Seam: every band has one tiny sharp inward V crease (0.6 wide, 0.25 deep) at the SAME world angle
+  (+Y, twist taken out), spliced into the outline with its shoulders on the existing edge, so the wave
+  keeps its exact shape and the creases line up into one straight line (an older version snapped a
+  0.4 mm notch to the nearest valley → zigzag stripe the user saw as a fault). It is the sharpest
+  concave corner of each layer, so Bambu's Aligned/Back seam lands there. Check: `scripts/lamp-seam.ts`. Where depth > wall, neighbouring bands don't touch → small light holes (as in the
   original). Bands touch face to face and are NOT merged (like the original file): merging or even
   `Manifold.compose` of ~100 bands takes 15-25 s in WASM. LampPiece has `extra` (unmerged meshes);
   Builder.lamp concatenates them; kept parts are raw meshes so STL export never merges.

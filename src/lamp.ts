@@ -573,34 +573,34 @@ function wovenBands(
     });
   };
   /**
-   * Seam notch: one small sharp inward V per band, at the bottom of the wave valley nearest to
-   * `seamAngle` (world angle, so the line stays put whatever the twist). It is the sharpest inward
-   * corner of the layer, so the slicer starts every loop there and the seam hides in the weave.
-   * The whole wall dents in (inside skin follows), so it stays one line thick.
+   * Seam crease: one tiny sharp inward V per band at the SAME world angle (`seamAngle`, twist taken
+   * out) in every band, so together they form one clean straight line instead of a zigzag. The V is
+   * spliced into the outline: its two shoulders lie exactly on the existing edge, so the wave keeps
+   * its exact shape and only the V itself is new. It is the sharpest inward corner of every layer,
+   * so the slicer starts each loop there and the seam hides in the crease.
    */
-  const NOTCH_W = 0.4; // half width
-  const NOTCH_D = 0.4;
-  const notched = (pts: Pt[], phase: number, z: number): Pt[] => {
+  const CREASE_W = 0.3; // half width
+  const CREASE_D = 0.25;
+  const notched = (pts: Pt[], z: number): Pt[] => {
     if (o.seamAngle === undefined) return pts;
     const aShape = o.seamAngle - o.twistPerMm * z;
-    const u0 = PM.fraction(aShape);
-    // valleys sit where cos(2π·count·u + phase) = -1
-    const off = phase / (2 * Math.PI);
-    const kk = Math.round(u0 * o.count + off - 0.5);
-    const uT = (kk + 0.5 - off) / o.count;
-    const j = ((Math.round(uT * M) % M) + M) % M;
-    const P = pts[j];
-    const A0 = pts[(j - 1 + M) % M];
-    const B0 = pts[(j + 1) % M];
-    let tx = B0[0] - A0[0];
-    let ty = B0[1] - A0[1];
-    const tl = Math.hypot(tx, ty) || 1;
-    tx /= tl;
-    ty /= tl;
+    let u = PM.fraction(aShape) * M;
+    u = ((u % M) + M) % M;
+    const j = Math.floor(u) % M;
+    const P0 = pts[j];
+    const P1 = pts[(j + 1) % M];
+    let tx = P1[0] - P0[0];
+    let ty = P1[1] - P0[1];
+    const L = Math.hypot(tx, ty) || 1;
+    tx /= L;
+    ty /= L;
+    const W = Math.min(CREASE_W, 0.4 * L);
+    const at = Math.min(Math.max((u - j) * L, W + 0.01), L - W - 0.01);
+    const Q: Pt = [P0[0] + tx * at, P0[1] + ty * at];
     const nx = ty; // outward normal
     const ny = -tx;
-    const out = pts.slice(0, j);
-    out.push([P[0] - tx * NOTCH_W, P[1] - ty * NOTCH_W], [P[0] - nx * NOTCH_D, P[1] - ny * NOTCH_D], [P[0] + tx * NOTCH_W, P[1] + ty * NOTCH_W]);
+    const out = pts.slice(0, j + 1);
+    out.push([Q[0] - tx * W, Q[1] - ty * W], [Q[0] - nx * CREASE_D, Q[1] - ny * CREASE_D], [Q[0] + tx * W, Q[1] + ty * W]);
     return out.concat(pts.slice(j + 1));
   };
   const pts = resample(curve, o.hB);
@@ -617,7 +617,7 @@ function wovenBands(
     const lean = Math.abs(rb - ra) / h;
     const wPlan = Math.max(o.w, Math.min(3, 2 * 0.2 * lean));
     const ph = (i % 2) * Math.PI;
-    const outer = k(new wasm.CrossSection([notched(ring(ra, ph), ph, za)], 'Positive'));
+    const outer = k(new wasm.CrossSection([notched(ring(ra, ph), za)], 'Positive'));
     const band2d = k(outer.subtract(k(outer.offset(-wPlan, 'Miter', 2))));
     const rot = k(band2d.rotate((o.twistPerMm * za * 180) / Math.PI));
     const sc = rb / ra;
