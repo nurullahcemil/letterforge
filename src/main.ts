@@ -344,6 +344,7 @@ async function run() {
       lastParts = res.parts;
       lastLetters = res.letters ?? [];
       lastBacking = res.backing;
+      (window as any).__letterforge.shaper = res.shaper;
       const ax: Axis[] = params.style === 'lamp' ? [] : (res.axes ?? []);
       if (JSON.stringify(ax) !== JSON.stringify(fontAxesNow)) {
         fontAxesNow = ax;

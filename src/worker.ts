@@ -3,7 +3,7 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import type { Font } from 'opentype.js';
 import { Builder, type Params } from './geometry';
 import decompressWoff2 from 'woff2-encoder/decompress';
-import { fontAxes, isWoff2, parseFont, setFallbacks, setFontVariation, setShaper } from './text';
+import { fontAxes, isWoff2, parseFont, setFallbacks, setFontVariation, setShaper, hasShaper } from './text';
 
 type Req =
   | { type: 'font'; key: string; buffer: ArrayBuffer; ext?: ArrayBuffer }
@@ -74,7 +74,7 @@ self.onmessage = async (e: MessageEvent<Req>) => {
       setFontVariation(font, fv && fv.key === msg.fontKey ? fv.axes : undefined);
       for (const fb of ((font as any).__fallbacks ?? []) as Font[]) setFontVariation(fb, fv && fv.key === msg.fontKey ? fv.axes : undefined);
       const res = builder.build(font, msg.params, msg.topFontKey ? fonts.get(msg.topFontKey) : undefined);
-      self.postMessage({ type: 'result', id: msg.id, ...res, axes: fontAxes(font), ms: performance.now() - t });
+      self.postMessage({ type: 'result', id: msg.id, ...res, axes: fontAxes(font), shaper: hasShaper(), ms: performance.now() - t });
     } else if (msg.type === 'merged') {
       const meshes = builder.mergedByColor(!!msg.byColor);
       self.postMessage(

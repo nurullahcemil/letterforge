@@ -261,6 +261,10 @@ let HB: any;
 export function setShaper(hb: any) {
   HB = hb;
 }
+/** Whether HarfBuzz shaping is available. */
+export function hasShaper(): boolean {
+  return !!HB;
+}
 const hbFonts = new WeakMap<Font, { font: any; coords: string }>();
 function hbFont(f: Font): any | undefined {
   if (!HB) return undefined;
@@ -337,7 +341,8 @@ function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: numb
   const allInMain = chars.every((ch) => has(font, ch));
 
   // HarfBuzz when we can (whole line in one font, no per-letter edits that need one glyph per letter)
-  const hf = allInMain && !opts.widths && !opts.moves ? hbFont(font) : undefined;
+  const edits = (o?: object) => !!o && Object.keys(o).length > 0;
+  const hf = allInMain && !edits(opts.widths) && !edits(opts.moves) ? hbFont(font) : undefined;
   if (hf) {
     const r = hbShape(font, hf, line, opts, fontSize);
     if (r) return r;
