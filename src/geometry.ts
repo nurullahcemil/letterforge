@@ -10,6 +10,8 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Downloads: simplify meshes within 0.02 mm (meshoptimizer). */
+  lightFiles?: boolean;
   /** Artwork (SVG or traced picture): outlines 1 unit tall, centred on 0, y up (see art.ts). */
   art?: { name: string; contours: [number, number][][]; aspect: number };
   artSize?: number;

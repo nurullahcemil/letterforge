@@ -3,6 +3,7 @@ import { FONTS } from './fonts';
 import { Viewer } from './viewer';
 import { toSTL, to3MF, standOnOpenEnd, toBackingSVG, toBackingDXF } from './export';
 import { svgToArtwork, traceImage } from './art';
+import { lighten } from './lighten';
 import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
@@ -780,6 +781,7 @@ function renderPrinter() {
   host.innerHTML = '';
   host.appendChild(controlEl({ kind: 'range', key: 'bedSize', label: 'Print bed size', min: 120, max: 500, step: 1, unit: 'mm' }));
   host.appendChild(controlEl({ kind: 'toggle', key: 'splitBed', label: 'Split large parts to fit the bed' }));
+  host.appendChild(controlEl({ kind: 'toggle', key: 'lightFiles', label: 'Lighter files', hint: 'Downloads skip points that change the shape by less than 0.02 mm, often halving the file. Turn off for the exact mesh.' }));
 }
 
 // ---------- variable font sliders (shown when the chosen font has variation axes) ----------
@@ -1278,7 +1280,10 @@ $('#dl-3mf').addEventListener('click', async () => {
   setBusy(false);
   const printable = parts.filter((p) => !p.previewOnly);
   if (!printable.length) return;
-  download(to3MF(forExport(printable), params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp'), baseName() + '.3mf');
+  const meshes = forExport(printable);
+  // the lamp is already as light as it can be (and its bands are separate touching rings)
+  const out = params.lightFiles !== false && params.style !== 'lamp' ? await lighten(meshes) : meshes;
+  download(to3MF(out, params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp'), baseName() + '.3mf');
 });
 
 $('#dl-backing').addEventListener('click', () => {
@@ -1299,7 +1304,10 @@ $('#dl-stl').addEventListener('click', async () => {
   if (res.type !== 'merged') return;
   type M = { color: string; positions: Float32Array; indices: Uint32Array };
   const mesh = (res.meshes as M[])[0];
-  if (mesh?.indices.length) download(toSTL(forExport([mesh])[0]), baseName() + '.stl');
+  if (!mesh?.indices.length) return;
+  let one = forExport([mesh])[0];
+  if (params.lightFiles !== false && params.style !== 'lamp') [one] = await lighten([one]);
+  download(toSTL(one), baseName() + '.stl');
 });
 
 // ---------- accent text (two-text sign) ----------

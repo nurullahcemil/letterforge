@@ -2,6 +2,7 @@ import type { Params } from './geometry';
 
 export const DEFAULTS: Params = {
   style: 'sign',
+  lightFiles: true,
   artSize: 40,
   artPlace: 'left',
   artGap: 6,
