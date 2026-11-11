@@ -138,7 +138,7 @@ export interface Params extends LampParams {
   /** Width factor per letter (key = index among the text's non-space characters). */
   letterW: Record<string, number>;
   /** Move (mm) / rotate (degrees) single letters; same keys as letterW. */
-  letterMove: Record<string, { dx?: number; dy?: number; rot?: number }>;
+  letterMove: Record<string, { dx?: number; dy?: number; rot?: number; wght?: number; slnt?: number; ital?: number; bold?: number; slant?: number }>;
   // stepped base
   spBase: boolean;
   spBaseT: number;
@@ -251,6 +251,7 @@ export class Builder {
         cs = this.k(cs.offset(bold, 'Round', 2, 32));
         layout.lines = this.boldLines(layout.lines, p);
       }
+      cs = this.letterBold(cs, layout, p);
       if (JOIN_STYLES.has(p.style)) cs = this.joinLetterPieces(cs, layout.glyphs, p, warnings);
       // artwork joins the text shape (flat styles) or becomes one more line (stack, ramp)
       const art = p.style === 'book' ? undefined : this.artwork(p, cs);
@@ -301,6 +302,9 @@ export class Builder {
               moves: p.letterMove,
             });
             lines = this.boldLines(l2.lines, p);
+            l2.lines = lines;
+            this.letterBold(undefined, l2, p);
+            lines = l2.lines;
             this.spots = l2.letterCenters;
           }
           parts = this.stack(lines, p, warnings);
@@ -693,6 +697,32 @@ export class Builder {
     return parts;
   }
 
+
+  /**
+   * Made-up weight for single letters (letterMove[i].bold, mm; fonts without a weight axis): grow
+   * the letter's outline, or for a thinner letter cut it out and put back a shrunk copy. Applied to
+   * the whole shape (`cs`) and to the letter's line (used by bold stack and ramp).
+   */
+  private letterBold(cs: CrossSection | undefined, layout: { glyphs: Vec2[][][]; glyphLetter: number[]; glyphLine: number[]; lines: Vec2[][][] }, p: Params): CrossSection {
+    const lm = p.letterMove ?? {};
+    const g0 = clampN(p.textBold ?? 0, -3, 6) / 2;
+    const todo = layout.glyphs
+      .map((_, k) => ({ k, d: clampN((lm as any)[layout.glyphLetter[k]]?.bold ?? 0, -3, 6) / 2 }))
+      .filter((x) => layout.glyphLetter[x.k] >= 0 && Math.abs(x.d) > 0.005);
+    if (!todo.length) return cs as CrossSection;
+    const lines = layout.lines.map((lc) => this.cs(lc));
+    for (const { k, d } of todo) {
+      const g = this.cs(layout.glyphs[k]);
+      const now = Math.abs(g0) > 0.005 ? this.k(g.offset(g0, 'Round', 2, 32)) : g;
+      const next = this.k(g.offset(g0 + d, 'Round', 2, 32));
+      const apply = (x: CrossSection) => (d > 0 ? this.k(x.add(next)) : this.k(this.k(x.subtract(now)).add(next)));
+      if (cs) cs = apply(cs);
+      const li = layout.glyphLine[k];
+      if (lines[li]) lines[li] = apply(lines[li]);
+    }
+    layout.lines = lines.map((c) => c.toPolygons() as Vec2[][]);
+    return cs as CrossSection;
+  }
 
   /** Made-up weight on per-line outlines (see Params.textBold). */
   private boldLines(lines: Vec2[][][], p: Params): Vec2[][][] {
@@ -1149,7 +1179,9 @@ export class Builder {
       );
       if (hi / tall > 3) warnings.push('Some short lines are stretched a lot. Join short words onto one line for a more even look.');
     }
-    const lines = this.boldLines(layout.lines, p);
+    layout.lines = this.boldLines(layout.lines, p);
+    this.letterBold(undefined, layout, p);
+    const lines = layout.lines;
     const face = this.rect(0, 0, outW, outH);
     const all = this.cs(lines.flat());
     let letters: Manifold | null = null;

@@ -16,12 +16,13 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   overhangs > 45° unsupported, walls < 0.8 mm). qrcode, fflate (3MF zip, WOFF1 unpacking).
 - Text shaping: harfbuzzjs in the worker (`setShaper`; kerning, ligatures, Arabic/RTL, variable-font
   spacing), opentype.js for outlines and as fallback. WOFF2 decoded with woff2-encoder/decompress.
-  Letter style block (under the fonts, every font): Light/Regular/Bold, Narrow/Normal/Wide,
-  Upright/Italic + sliders. Real setting when the font has it (`params.fontVar = {key, axes}` →
-  `setFontVariation`; Google italic = separate file, key suffix `:i`), otherwise made up:
-  `textBold` (outline offset, mm), `textWidth` (% stretch), `textSlant` (degrees, sheared at the
-  baseline). Never both: switching to a font with the axis converts the made-up value.
-  Per-letter Width uses the font's wdth axis when present (strokes keep thickness).
+  Letter style block (under the fonts) ONLY for variable fonts (user: "only for variable fonts"):
+  Light/Regular/Bold, Narrow/Normal/Wide, Upright/Italic + sliders, each shown only if the font has
+  that axis (or a Google italic file, key suffix `:i`); `params.fontVar = {key, axes}`. No made-up
+  styling in the UI (textBold/textWidth/textSlant still work in geometry but are reset by the UI).
+  Per letter (click a letter): Weight / Slant / Italic rows for the font's own axes
+  (`letterMove[i].wght|slnt|ital`, drawn per glyph; the letter's slot follows its new width).
+  Per-letter Width uses the wdth axis when present, else stretches (all fonts).
 - Artwork (`src/art.ts`, page side): SVG via three SVGLoader (white fills = holes) or PNG/JPG traced
   with esm-potrace-wasm; `params.art` outlines (1 unit tall) placed by `Builder.artwork`.
 - Downloads: meshoptimizer "Lighter files" (0.02 mm, not the lamp; `src/lighten.ts`); backing DXF

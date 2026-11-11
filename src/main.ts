@@ -539,7 +539,8 @@ $('.stage').appendChild(pop);
 
 const lettersOf = () => Array.from(params.text).filter((ch) => ch.trim() !== '');
 
-function setLetter(indices: number[], patch: { w?: number; dx?: number; dy?: number; rot?: number } | null) {
+type LetterPatch = { w?: number; dx?: number; dy?: number; rot?: number; wght?: number | null; slnt?: number | null; ital?: number | null };
+function setLetter(indices: number[], patch: LetterPatch | null) {
   // never mutate: DEFAULTS shares these objects
   const W = { ...params.letterW };
   const M = { ...params.letterMove };
@@ -554,9 +555,16 @@ function setLetter(indices: number[], patch: { w?: number; dx?: number; dy?: num
       if (Math.abs(patch.w - 1) < 1e-3) delete W[k];
       else W[k] = patch.w;
     }
-    const m = { ...M[k], ...(patch.dx !== undefined ? { dx: patch.dx } : {}), ...(patch.dy !== undefined ? { dy: patch.dy } : {}), ...(patch.rot !== undefined ? { rot: patch.rot } : {}) };
-    if (!m.dx && !m.dy && !m.rot) delete M[k];
-    else M[k] = m;
+    const m: Record<string, number | undefined> = { ...M[k] };
+    for (const f of ['dx', 'dy', 'rot'] as const) if (patch[f] !== undefined) m[f] = patch[f];
+    // the font's own settings for this letter (null = back to the whole text's value)
+    for (const f of ['wght', 'slnt', 'ital'] as const) {
+      if (patch[f] === null) delete m[f];
+      else if (patch[f] !== undefined) m[f] = patch[f]!;
+    }
+    for (const f of Object.keys(m)) if (m[f] === undefined || (!['wght', 'slnt', 'ital'].includes(f) && !m[f])) delete m[f];
+    if (!Object.keys(m).length) delete M[k];
+    else M[k] = m as any;
   }
   params.letterW = W;
   params.letterMove = M;
@@ -594,27 +602,34 @@ function renderLetterPop() {
   const fill = (params.style === 'book' && params.bookStretch) || (params.style === 'stack' && params.stStretch);
   const canDrag = params.style === 'stepped';
   const same = lettersOf().filter((c) => c === ch).length;
+  const wghtAx = fontAxesNow.find((a) => a.tag === 'wght');
+  const slntAx = fontAxesNow.find((a) => a.tag === 'slnt');
+  const italAx = fontAxesNow.find((a) => a.tag === 'ital');
   const row = (key: string, label: string, min: number, max: number, step: number, val: number, unit: string) =>
     `<label class="lp-row"><span>${label}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"><output>${fmtVal(val, unit)}</output></label>`;
   pop.innerHTML = `
     <div class="lp-head"><b class="lp-glyph">${escapeHtml(ch)}</b><span>Letter ${i + 1}</span><button type="button" class="lp-x" aria-label="Close">×</button></div>
     ${row('w', 'Width', 0.3, 4, 0.05, w, '×')}
     <small class="lp-note">${fill ? 'The other letters on this line squeeze or stretch so the line still fills the width.' : (fontAxesNow.some((a) => a.tag === 'wdth') ? 'Narrower or wider using the font’s own width setting, so strokes keep their thickness.' : 'Narrower or wider by stretching the letter. Fonts with a width setting (e.g. Roboto Flex, Open Sans) do this without thinning the strokes.')}</small>
+    ${wghtAx ? row('wght', 'Weight', wghtAx.min, wghtAx.max, 1, m.wght ?? fontAxisNow('wght'), '') : ''}
+    ${slntAx ? row('slnt', 'Slant', 0, -slntAx.min, 0.5, -(m.slnt ?? fontAxisNow('slnt')), '°') : ''}
+    ${italAx ? row('ital', 'Italic', italAx.min, italAx.max, 1, m.ital ?? fontAxisNow('ital'), '') : ''}
     ${row('rot', 'Rotate', -180, 180, 1, m.rot ?? 0, '°')}
     ${row('dx', 'Move ←→', -100, 100, 0.5, m.dx ?? 0, 'mm')}
     ${row('dy', 'Move ↓↑', -100, 100, 0.5, m.dy ?? 0, 'mm')}
     ${canDrag ? '<small class="lp-note">Or drag the letter on the canvas.</small>' : ''}
     <div class="lp-actions">
-      ${same > 1 ? `<button type="button" data-act="same">Width to every “${escapeHtml(ch)}”</button>` : ''}
+      ${same > 1 ? `<button type="button" data-act="same">Same style for every “${escapeHtml(ch)}”</button>` : ''}
       <button type="button" data-act="reset">Reset</button>
     </div>`;
   pop.querySelector('.lp-x')!.addEventListener('click', closeLetter);
   pop.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((inp) =>
     inp.addEventListener('input', () => {
       const v = parseFloat(inp.value);
-      const k = inp.dataset.k as 'w' | 'rot' | 'dx' | 'dy';
-      setLetter([i], { [k]: v });
-      inp.nextElementSibling!.textContent = fmtVal(v, k === 'w' ? '×' : k === 'rot' ? '°' : 'mm');
+      const k = inp.dataset.k as 'w' | 'rot' | 'dx' | 'dy' | 'wght' | 'slnt' | 'ital';
+      // slant is shown leaning right as a positive angle; the font's axis counts it negative
+      setLetter([i], { [k]: k === 'slnt' ? -v : v });
+      inp.nextElementSibling!.textContent = fmtVal(v, k === 'w' ? '×' : k === 'rot' || k === 'slnt' ? '°' : k === 'wght' || k === 'ital' ? '' : 'mm');
       schedule();
     }),
   );
@@ -624,7 +639,8 @@ function renderLetterPop() {
       else {
         const idx: number[] = [];
         lettersOf().forEach((c, n) => c === ch && idx.push(n));
-        setLetter(idx, { w: params.letterW[String(i)] ?? 1 });
+        const mm = params.letterMove[String(i)] ?? {};
+        setLetter(idx, { w: params.letterW[String(i)] ?? 1, wght: mm.wght ?? null, slnt: mm.slnt ?? null, ital: mm.ital ?? null });
       }
       renderLetterPop();
       schedule();
@@ -632,7 +648,14 @@ function renderLetterPop() {
   );
 }
 
-const fmtVal = (v: number, unit: string) => (unit === '×' ? v.toFixed(2) + '×' : unit === '°' ? Math.round(v) + '°' : v.toFixed(1) + ' mm');
+const fmtVal = (v: number, unit: string) => (unit === '×' ? v.toFixed(2) + '×' : unit === '°' ? (Math.round(v * 2) / 2) + '°' : unit === '' ? String(Math.round(v)) : v.toFixed(1) + ' mm');
+
+/** The whole text's value of a variable-font axis (for a letter that has none of its own). */
+function fontAxisNow(tag: string): number {
+  const a = fontAxesNow.find((x) => x.tag === tag);
+  const v = params.fontVar?.key === fontKey ? params.fontVar.axes[tag] : undefined;
+  return v ?? a?.def ?? 0;
+}
 
 viewer.onPick = (pt, cx, cy) => {
   if (!pt || !lastLetters.length) return closeLetter();
@@ -799,7 +822,17 @@ const AXIS_NAMES: Record<string, string> = { wght: 'Weight', wdth: 'Width', opsz
 function renderAxes() {
   const host = $('#font-axes');
   host.innerHTML = '';
-  host.hidden = params.style === 'lamp';
+  const gf = googleKeyParts(fontKey);
+  const gfItalicFile = !!gf && gf.w === 'var' && googleHasItalic(gf.id);
+  // only variable fonts: every setting here is the font's own (nothing made up)
+  host.hidden = params.style === 'lamp' || !(fontAxesNow.length || gf?.w === 'var');
+  // made-up styling from an earlier version is no longer offered: clear it
+  if ((params.textBold ?? 0) !== 0 || (params.textWidth ?? 100) !== 100 || (params.textSlant ?? 0) !== 0) {
+    params.textBold = 0;
+    params.textWidth = 100;
+    params.textSlant = 0;
+    schedule(true);
+  }
   if (host.hidden) return;
   const axes = (params.fontVar?.key === fontKey ? params.fontVar.axes : {}) as Record<string, number>;
   const ax = (t: string) => fontAxesNow.find((a) => a.tag === t);
@@ -814,66 +847,7 @@ function renderAxes() {
     params.fontVar = { key: fontKey, axes: next };
   };
   const clampTo = (a: Axis, v: number) => Math.min(a.max, Math.max(a.min, v));
-  const cap = params.capHeight;
-  // a font with its own setting takes over from the stand-in (never both at once)
-  let moved = false;
-  if (wdth && (params.textWidth ?? 100) !== 100) {
-    setAxis('wdth', clampTo(wdth, (wdth.def * (params.textWidth ?? 100)) / 100));
-    params.textWidth = 100;
-    moved = true;
-  }
-  if (wght && (params.textBold ?? 0) !== 0) {
-    params.textBold = 0;
-    moved = true;
-  }
-  if ((slnt || ital) && (params.textSlant ?? 0) !== 0) {
-    if (slnt) setAxis('slnt', clampTo(slnt, -(params.textSlant ?? 0)));
-    else setAxis('ital', 1);
-    params.textSlant = 0;
-    moved = true;
-  }
-  if (moved) {
-    Object.assign(axes, params.fontVar?.key === fontKey ? params.fontVar.axes : {});
-    schedule(true);
-  }
 
-  // ---- current values (for the buttons' "on" state)
-  const tb = params.textBold ?? 0;
-  const weightNow = wght ? (axes.wght ?? wght.def) : tb > 0.05 ? 700 : tb < -0.05 ? 300 : 400;
-  const widthNow = wdth ? ((axes.wdth ?? wdth.def) / wdth.def) * 100 : params.textWidth ?? 100;
-  const gf = googleKeyParts(fontKey);
-  const italicNow = (ital && (axes.ital ?? ital.def) >= 0.5) || gf?.italic || (slnt && (axes.slnt ?? slnt.def) < -0.5) || (params.textSlant ?? 0) > 0.5;
-
-  // ---- actions
-  const setWeight = (target: 'light' | 'regular' | 'bold') => {
-    if (wght) setAxis('wght', clampTo(wght, target === 'light' ? 300 : target === 'bold' ? 700 : 400));
-    else params.textBold = target === 'bold' ? +(cap * 0.04).toFixed(2) : target === 'light' ? -(cap * 0.025).toFixed(2) : 0;
-  };
-  const setWidth = (target: 'narrow' | 'normal' | 'wide') => {
-    const pct = target === 'narrow' ? 75 : target === 'wide' ? 125 : 100;
-    if (wdth) {
-      setAxis('wdth', clampTo(wdth, (wdth.def * pct) / 100));
-      params.textWidth = 100;
-    } else params.textWidth = target === 'narrow' ? 82 : target === 'wide' ? 120 : 100;
-  };
-  const setItalic = (on: boolean) => {
-    params.textSlant = 0;
-    if (ital) setAxis('ital', on ? 1 : 0);
-    else if (gf && googleHasItalic(gf.id) && on !== gf.italic) {
-      // the family's real italic letters live in a separate file
-      const key = `gf:${gf.id}:${gf.w}${on ? ':i' : ''}`;
-      googleFont(key);
-      rememberGoogleFont(key);
-      params.fontVar = { key, axes: { ...axes } };
-      fontKey = key;
-      fontTouched = true;
-      renderFonts();
-      return;
-    } else if (slnt) setAxis('slnt', on ? clampTo(slnt, -12) : 0);
-    else if (!gf?.italic) params.textSlant = on ? 12 : 0;
-  };
-
-  // ---- quick buttons
   const seg = (label: string, opts: [string, string, boolean][], act: (v: string) => void) => {
     const row = document.createElement('div');
     row.className = 'row seg';
@@ -887,16 +861,10 @@ function renderAxes() {
     );
     host.appendChild(row);
   };
-  const near = (x: number, y: number, tol: number) => Math.abs(x - y) <= tol;
-  seg('Weight', [['light', 'Light', weightNow < 360], ['regular', 'Regular', near(weightNow, 400, 40)], ['bold', 'Bold', weightNow > 640]], (v) => setWeight(v as any));
-  seg('Width', [['narrow', 'Narrow', widthNow < 92], ['normal', 'Normal', near(widthNow, 100, 8)], ['wide', 'Wide', widthNow > 108]], (v) => setWidth(v as any));
-  seg('Style', [['upright', 'Upright', !italicNow], ['italic', 'Italic', !!italicNow]], (v) => setItalic(v === 'italic'));
-
-  // ---- fine sliders
-  const slider = (label: string, min: number, max: number, step: number, value: number, unit: string, set: (v: number) => void) => {
+  const slider = (label: string, min: number, max: number, step: number, value: number, set: (v: number) => void) => {
     const row = document.createElement('label');
     row.className = 'row range';
-    row.innerHTML = `<span class="lbl">${label}</span><span class="num"><input type="number" min="${min}" max="${max}" step="${step}" value="${+value.toFixed(2)}">${unit ? `<em>${unit}</em>` : ''}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${value}">`;
+    row.innerHTML = `<span class="lbl">${label}</span><span class="num"><input type="number" min="${min}" max="${max}" step="${step}" value="${+value.toFixed(2)}"></span><input type="range" min="${min}" max="${max}" step="${step}" value="${value}">`;
     const [num, rng] = row.querySelectorAll('input');
     const go = (x: number) => {
       if (!Number.isFinite(x)) return;
@@ -911,25 +879,47 @@ function renderAxes() {
     rng.addEventListener('change', () => renderAxes());
     host.appendChild(row);
   };
-  if (wght) slider('Weight', wght.min, wght.max, 1, axes.wght ?? wght.def, '', (v) => setAxis('wght', v));
-  else slider('Thicker / thinner', -+(cap * 0.05).toFixed(1), +(cap * 0.1).toFixed(1), 0.05, params.textBold ?? 0, 'mm', (v) => (params.textBold = v));
-  if (wdth) slider('Width', wdth.min, wdth.max, 0.5, axes.wdth ?? wdth.def, '', (v) => setAxis('wdth', v));
-  else slider('Width', 50, 200, 1, params.textWidth ?? 100, '%', (v) => (params.textWidth = v));
-  if (slnt) slider('Slant', 0, -slnt.min, 0.5, -(axes.slnt ?? slnt.def), '°', (v) => setAxis('slnt', -v));
-  else if (!ital && !gf?.italic) slider('Slant', 0, 25, 0.5, params.textSlant ?? 0, '°', (v) => (params.textSlant = v));
-  // any other axes the font has (optical size, grade, roundness…)
-  for (const a of fontAxesNow.filter((x) => !['wght', 'wdth', 'slnt', 'ital'].includes(x.tag)).slice(0, 4)) {
-    slider(AXIS_NAMES[a.tag] ?? a.tag, a.min, a.max, a.max - a.min > 20 ? 1 : 0.1, axes[a.tag] ?? a.def, '', (v) => setAxis(a.tag, v));
+  const near = (x: number, y: number, tol: number) => Math.abs(x - y) <= tol;
+
+  if (wght) {
+    const v = axes.wght ?? wght.def;
+    seg('Weight', [['300', 'Light', v < 360], ['400', 'Regular', near(v, 400, 40)], ['700', 'Bold', v > 640]], (x) => setAxis('wght', clampTo(wght, Number(x))));
+    slider('Weight', wght.min, wght.max, 1, v, (x) => setAxis('wght', x));
   }
-  const made: string[] = [];
-  if (!wght) made.push('weight (outlines made thicker or thinner)');
-  if (!wdth) made.push('width (letters stretched, so upright strokes thin out a little)');
-  if (!ital && !slnt && !(gf && googleHasItalic(gf.id))) made.push('italic (letters leaned)');
+  if (wdth) {
+    const v = axes.wdth ?? wdth.def;
+    const pct = (v / wdth.def) * 100;
+    seg('Width', [['75', 'Narrow', pct < 92], ['100', 'Normal', near(pct, 100, 8)], ['125', 'Wide', pct > 108]], (x) => setAxis('wdth', clampTo(wdth, (wdth.def * Number(x)) / 100)));
+    slider('Width', wdth.min, wdth.max, 0.5, v, (x) => setAxis('wdth', x));
+  }
+  if (ital || slnt || gfItalicFile) {
+    const on = (ital && (axes.ital ?? ital.def) >= 0.5) || gf?.italic || (slnt && (axes.slnt ?? slnt.def) < -0.5);
+    seg('Style', [['0', 'Upright', !on], ['1', 'Italic', !!on]], (x) => {
+      const it = x === '1';
+      if (ital) setAxis('ital', it ? 1 : 0);
+      else if (gfItalicFile && gf && it !== gf.italic) {
+        // the family's italic letters live in their own file
+        const key = `gf:${gf.id}:${gf.w}${it ? ':i' : ''}`;
+        googleFont(key);
+        rememberGoogleFont(key);
+        params.fontVar = { key, axes: { ...axes } };
+        fontKey = key;
+        fontTouched = true;
+        renderFonts();
+      } else if (slnt) setAxis('slnt', it ? clampTo(slnt, -12) : 0);
+    });
+    if (slnt) slider('Slant', 0, -slnt.min, 0.5, -(axes.slnt ?? slnt.def), (x) => setAxis('slnt', -x));
+  }
+  // any other settings the font has (optical size, grade, roundness…)
+  for (const a of fontAxesNow.filter((x) => !['wght', 'wdth', 'slnt', 'ital'].includes(x.tag)).slice(0, 4)) {
+    slider(AXIS_NAMES[a.tag] ?? a.tag, a.min, a.max, a.max - a.min > 20 ? 1 : 0.1, axes[a.tag] ?? a.def, (x) => setAxis(a.tag, x));
+  }
+  const missing = [!wght && 'weight', !wdth && 'width', !(ital || slnt || gfItalicFile) && 'italic'].filter(Boolean);
   const note = document.createElement('small');
   note.className = 'note';
-  note.textContent = made.length
-    ? `This font has no built-in ${made.map((m) => m.split(' (')[0]).join(', ')}, so it is made up: ${made.join('; ')}. For real narrow and wide letters pick a variable font with a width setting, e.g. Roboto Flex, Open Sans, Archivo or Encode Sans.`
-    : 'Everything here uses the font’s own settings.';
+  note.textContent = missing.length
+    ? `This variable font has no ${missing.join(' or ')} setting. Click a letter on the model to style it on its own.`
+    : 'Click a letter on the model to give it its own weight, width or slant.';
   host.appendChild(note);
 }
 

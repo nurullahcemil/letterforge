@@ -26,6 +26,9 @@ export interface TextLayout {
   letterCenters: { i: number; x: number; y: number }[];
   /** Contours of each glyph on its own (same point arrays as `contours`, so already stretched/moved). */
   glyphs: Vec2[][][];
+  /** For each entry of `glyphs`: its letter index (-1 = not a letter) and its index in `lines`. */
+  glyphLetter: number[];
+  glyphLine: number[];
 }
 
 export interface LayoutOptions {
@@ -56,6 +59,14 @@ export interface LetterMove {
   dx?: number;
   dy?: number;
   rot?: number;
+  /** This letter's own axis values on a variable font: weight, slant (negative = right), italic 0/1. */
+  wght?: number;
+  slnt?: number;
+  ital?: number;
+  /** Made-up extra thickness for this letter, mm (fonts without a weight axis; done in geometry). */
+  bold?: number;
+  /** Lean this letter right by this many degrees (around the baseline). */
+  slant?: number;
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
@@ -413,6 +424,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     ? paragraphs.flatMap((p) => wrapParagraph(font, p, opts, fontSize, opts.maxWidth! / xs))
     : paragraphs;
   const wAxis = fontAxes(font).find((a) => a.tag === 'wdth');
+  const axisTags = new Set(fontAxes(font).map((a) => a.tag));
   const contours: Vec2[][] = [];
   const lineGroups: Vec2[][][] = [];
   let lastBaseline = 0;
@@ -425,6 +437,8 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
 
   const centers: { i: number; x: number; y: number }[] = [];
   const glyphs: Vec2[][][] = [];
+  const glyphLetter: number[] = [];
+  const glyphLine: number[] = [];
   const useWidths = !!opts.widths && Object.keys(opts.widths).length > 0;
   let letterNo = 0; // running index of non-space characters
   shaped.forEach(({ items, width }, li) => {
@@ -445,29 +459,46 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       letterNo += Array.from(ch).filter((c) => c.trim() !== '').length;
       // A variable font with a width axis draws a narrower/wider letter for real (strokes keep their
       // thickness); only what the axis can't reach is made up by stretching.
+      // Per-letter weight on a variable font is drawn for real, and the letter's slot follows its new
+      // width (a bold letter needs more room).
       let sx = w;
+      let extra = 0; // mm the slot grows because of a per-letter weight
       let path: ReturnType<typeof p.glyph.getPath>;
       const useFont = (p.font as any).variation ? p.font : undefined;
-      if (w !== 1 && wAxis && p.font === font) {
+      // this letter's own axis values (weight, slant, italic) on a variable font
+      const mvL = isLetter && p.font === font ? opts.moves?.[String(myNo)] : undefined;
+      const ov: Record<string, number> = {};
+      if (mvL) for (const t of ['wght', 'slnt', 'ital'] as const) if (mvL[t] !== undefined && axisTags.has(t)) ov[t] = mvL[t]!;
+      const hasOv = Object.keys(ov).length > 0;
+      const realW = w !== 1 && !!wAxis && p.font === font;
+      if (realW || hasOv) {
         const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
-        const cur = base.wdth ?? wAxis.def;
-        const advBefore = advance(font, p.glyph);
-        setFontVariation(font, { ...base, wdth: cur * w });
+        const advBase = advance(font, p.glyph);
+        const weighted = hasOv ? { ...base, ...ov } : base;
+        if (hasOv) setFontVariation(font, weighted);
+        const advW = advance(font, p.glyph);
+        const drawAt = realW ? { ...weighted, wdth: (base.wdth ?? wAxis!.def) * w } : weighted;
+        setFontVariation(font, drawAt);
         path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, font);
-        const advAfter = advance(font, p.glyph);
+        const advD = advance(font, p.glyph);
         setFontVariation(font, base);
-        sx = advAfter > 0 ? (w * advBefore) / advAfter : w;
+        sx = realW && advD > 0 ? (w * advW) / advD : w;
+        extra = ((advW - advBase) * fontSize * w) / font.unitsPerEm;
       } else {
         path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, useFont);
       }
       const cs = flatten(path.commands, tol);
       const x0 = p.x + shift;
       if (sx !== 1 || offset !== 0) for (const c of cs) for (const pt of c) pt[0] = x0 + offset + (pt[0] - x0) * sx;
-      if (cs.length) glyphs.push(cs);
+      if (cs.length) {
+        glyphs.push(cs);
+        glyphLetter.push(isLetter ? myNo : -1);
+        glyphLine.push(lineGroups.length);
+      }
       if (isLetter && cs.length) owned.push({ i: myNo, from: lineContours.length, to: lineContours.length + cs.length });
       lineContours.push(...cs);
       const next = k < items.length - 1 ? items[k + 1].x : width;
-      offset += (next - p.x) * (w - 1);
+      offset += (next - p.x) * (w - 1) + extra;
     });
     if (xs !== 1) for (const c of lineContours) for (const pt of c) pt[0] *= xs;
     if (opts.slant) {
@@ -503,6 +534,13 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       let cx = (x0 + x1) / 2;
       let cy = (y0 + y1) / 2;
       const mv = opts.moves?.[String(o.i)];
+      if (mv?.slant) {
+        // lean just this letter around the baseline (before any turn or move)
+        const t = Math.tan((mv.slant * Math.PI) / 180);
+        const by = -baseY;
+        for (let c = o.from; c < o.to; c++) for (const pt of lineContours[c]) pt[0] += (pt[1] - by) * t;
+        cx += ((y0 + y1) / 2 - by) * t;
+      }
       if (mv && (mv.dx || mv.dy || mv.rot)) {
         const a = ((mv.rot ?? 0) * Math.PI) / 180;
         const cos = Math.cos(a), sin = Math.sin(a);
@@ -533,6 +571,8 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     stretch: [stretchLo === Infinity ? 1 : stretchLo, stretchHi === -Infinity ? 1 : stretchHi],
     letterCenters: centers,
     glyphs,
+    glyphLetter,
+    glyphLine,
   };
 }
 
