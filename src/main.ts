@@ -1,6 +1,6 @@
 import './style.css';
 import { FONTS } from './fonts';
-import { Viewer } from './viewer';
+import { Viewer, CHECK_OVERHANG_DEG, CHECK_THIN_MM, type CheckResult } from './viewer';
 import { toSTL, to3MF, standOnOpenEnd, toBackingSVG, toBackingDXF } from './export';
 import { svgToArtwork, traceImage } from './art';
 import { lighten } from './lighten';
@@ -1232,6 +1232,32 @@ $('#font-upload').addEventListener('change', async (e) => {
 });
 
 $('#fit').addEventListener('click', () => viewer.fit());
+
+// ---------- print check (three-mesh-bvh) ----------
+let checkOn = false;
+viewer.onCheck = (r: CheckResult | null) => {
+  const el = $('#check-legend');
+  el.hidden = !r;
+  if (!r) return;
+  const pct = (x: number) => (x > 0 && x < 0.001 ? '<0.1' : (x * 100).toFixed(1));
+  el.innerHTML =
+    `<div><i style="background:#d6453d"></i><b>${pct(r.overhang)}%</b> leans out more than ${CHECK_OVERHANG_DEG}° underneath: may need support.</div>` +
+    (r.thinChecked
+      ? `<div><i style="background:#e7a531"></i><b>${pct(r.thin)}%</b> is thinner than ${CHECK_THIN_MM} mm: may print weak or not at all.</div>`
+      : `<div><i style="background:#e7a531"></i>Too big to check wall thickness quickly.</div>`) +
+    `<div><i style="background:#c9ccc6"></i>The rest should print fine.</div>` +
+    (params.style === 'lamp' ? '<div>The lamp walls are one print line on purpose (light shines through), so the base shows as thin.</div>' : '');
+};
+$('#check').addEventListener('click', () => {
+  checkOn = !checkOn;
+  $('#check').setAttribute('aria-pressed', String(checkOn));
+  setBusy(true);
+  // let the button state paint before the (sometimes heavy) check runs
+  setTimeout(() => {
+    viewer.setCheck(checkOn);
+    setBusy(false);
+  }, 30);
+});
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
 function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {

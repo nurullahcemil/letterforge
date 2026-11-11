@@ -1,7 +1,31 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh';
 import type { DragInfo, Part } from './geometry';
+
+// three-mesh-bvh: raycasts walk a bounding-volume tree instead of every triangle (big models stay
+// smooth to hover and drag). Trees are built lazily, the first time a mesh is raycast.
+(THREE.BufferGeometry.prototype as any).computeBoundsTree = computeBoundsTree;
+(THREE.BufferGeometry.prototype as any).disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+/** Print check colours. */
+const CHECK_OK = new THREE.Color(0xc9ccc6);
+const CHECK_OVERHANG = new THREE.Color(0xd6453d);
+const CHECK_THIN = new THREE.Color(0xe7a531);
+export const CHECK_OVERHANG_DEG = 45;
+/** Straight down, then 45° down in 8 directions. */
+const CONE = [new THREE.Vector3(0, 0, -1), ...Array.from({ length: 8 }, (_, i) => new THREE.Vector3(Math.cos((i * Math.PI) / 4), Math.sin((i * Math.PI) / 4), -1).normalize())];
+export const CHECK_THIN_MM = 0.8;
+/** Thin-wall rays are only cast on meshes up to this many triangles (keeps the check quick). */
+const CHECK_THIN_MAX_TRIS = 400_000;
+
+export interface CheckResult {
+  overhang: number; // share of the surface area, 0–1
+  thin: number;
+  thinChecked: boolean;
+}
 
 export class Viewer {
   private renderer: THREE.WebGLRenderer;
@@ -78,6 +102,7 @@ export class Viewer {
   private sun: THREE.DirectionalLight;
 
   private ray(e: PointerEvent): THREE.Raycaster {
+    this.ensureBVH();
     const r = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -201,7 +226,9 @@ export class Viewer {
   setParts(parts: Part[], refit: boolean) {
     for (const child of [...this.model.children]) {
       const m = child as THREE.Mesh;
+      (m.geometry as any).disposeBoundsTree?.();
       m.geometry.dispose();
+      (m.userData.indexed as THREE.BufferGeometry | undefined)?.dispose();
       (m.material as THREE.Material).dispose();
       this.model.remove(m);
     }
@@ -232,6 +259,7 @@ export class Viewer {
       if (!p.previewOnly) box.union(g.boundingBox!);
     }
     if (this.highlightKey) this.highlight(this.highlightKey);
+    if (this.checking) this.onCheck?.(this.applyCheck());
     if (box.isEmpty()) {
       this.needsRender = true;
       return;
@@ -308,6 +336,150 @@ export class Viewer {
     this.controls.update();
     this.needsRender = true;
     return url;
+  }
+
+  private ensureBVH() {
+    for (const c of this.model.children) {
+      const g = (c as THREE.Mesh).geometry as any;
+      if (g && !g.boundsTree && g.index) g.computeBoundsTree();
+    }
+  }
+
+  // ---------- print check ----------
+  private checking = false;
+  /** Called with the result each time the check is (re)applied. */
+  onCheck: ((r: CheckResult | null) => void) | null = null;
+
+  /** Turn the print check view on or off. */
+  setCheck(on: boolean): CheckResult | null {
+    this.checking = on;
+    const r = this.applyCheck();
+    this.onCheck?.(r);
+    return r;
+  }
+
+  /**
+   * Colour every printed part: red = faces that point down more than 45° from upright (they need
+   * support; the bottom resting on the bed is fine), amber = walls thinner than 0.8 mm (a ray from
+   * each face, straight in, hits the other side that soon). Preview-only parts are hidden.
+   */
+  private applyCheck(): CheckResult | null {
+    let area = 0, over = 0, thin = 0;
+    let thinChecked = true;
+    const cosLimit = Math.cos((CHECK_OVERHANG_DEG * Math.PI) / 180);
+    const ray = new THREE.Raycaster();
+    ray.firstHitOnly = true as any;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const n = new THREE.Vector3(), mid = new THREE.Vector3(), back = new THREE.Vector3();
+    const down = new THREE.Vector3(0, 0, -1);
+    // everything printed, for "is there something right under this face?" (stacked parts, bands)
+    const below: THREE.Mesh[] = [];
+    if (this.checking) {
+      for (const child of this.model.children) {
+        if (child.userData.previewOnly) continue;
+        const src = ((child.userData.indexed as THREE.BufferGeometry | undefined) ?? (child as THREE.Mesh).geometry) as any;
+        if (!src.index) continue;
+        if (!src.boundsTree) src.computeBoundsTree();
+        const pm = new THREE.Mesh(src, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+        pm.position.copy(child.position); // dragged parts
+        pm.updateMatrixWorld();
+        below.push(pm);
+      }
+    }
+    for (const child of this.model.children) {
+      const mesh = child as THREE.Mesh;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mesh.userData.baseColor ??= mat.color.getHex();
+      if (mesh.userData.previewOnly) {
+        mesh.visible = !this.checking;
+        continue;
+      }
+      const g = mesh.geometry;
+      if (!this.checking) {
+        if (g.getAttribute('color')) g.deleteAttribute('color');
+        mat.vertexColors = false;
+        mat.color.setHex(mesh.userData.baseColor);
+        mat.needsUpdate = true;
+        continue;
+      }
+      // per-face colours need unshared corners: work on a non-indexed copy kept on the mesh
+      if (g.index) {
+        const flat = g.toNonIndexed();
+        flat.computeVertexNormals();
+        mesh.userData.indexed = g;
+        mesh.geometry = flat;
+      }
+      const fg = mesh.geometry;
+      const pos = fg.getAttribute('position') as THREE.BufferAttribute;
+      const tris = pos.count / 3;
+      const colors = new Float32Array(pos.count * 3);
+      const src = mesh.userData.indexed as THREE.BufferGeometry | undefined;
+      const doThin = tris <= CHECK_THIN_MAX_TRIS && !!src;
+      if (!doThin) thinChecked = false;
+      if (doThin && !(src as any).boundsTree) (src as any).computeBoundsTree();
+      // the far side of a wall is seen from behind: the probe must hit back faces too
+      const probe = doThin ? new THREE.Mesh(src, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })) : null;
+      let zMin = Infinity;
+      for (let i = 0; i < pos.count; i++) zMin = Math.min(zMin, pos.getZ(i));
+      for (let t = 0; t < tris; t++) {
+        a.fromBufferAttribute(pos, 3 * t);
+        b.fromBufferAttribute(pos, 3 * t + 1);
+        c.fromBufferAttribute(pos, 3 * t + 2);
+        n.subVectors(c, b).cross(back.subVectors(a, b));
+        const ar = n.length() / 2;
+        if (ar < 1e-9) continue;
+        n.normalize();
+        area += ar;
+        let col = CHECK_OK;
+        const onBed = Math.max(a.z, b.z, c.z) < zMin + 0.05;
+        let overhang = n.z < -cosLimit && !onBed;
+        if (overhang) {
+          // resting on another part (or the band below) is not an overhang
+          // like a slicer: material within a 45° cone below (a short ledge next to it) holds it up
+          mid.addVectors(a, b).add(c).divideScalar(3).add(mesh.position);
+          for (const d of CONE) {
+            ray.set(back.copy(mid).addScaledVector(down, 0.001), d);
+            ray.far = 1.2;
+            if (ray.intersectObjects(below, false).length) {
+              overhang = false;
+              break;
+            }
+          }
+        }
+        if (overhang) {
+          col = CHECK_OVERHANG;
+          over += ar;
+        } else if (probe) {
+          mid.addVectors(a, b).add(c).divideScalar(3);
+          ray.set(back.copy(mid).addScaledVector(n, -0.005), n.clone().negate());
+          ray.far = CHECK_THIN_MM;
+          const hit = ray.intersectObject(probe, false)[0];
+          if (hit && hit.distance < CHECK_THIN_MM) {
+            col = CHECK_THIN;
+            thin += ar;
+          }
+        }
+        for (let k = 0; k < 3; k++) colors.set([col.r, col.g, col.b], (3 * t + k) * 3);
+      }
+      fg.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      mat.vertexColors = true;
+      mat.color.setHex(0xffffff);
+      mat.needsUpdate = true;
+    }
+    if (!this.checking) {
+      // back to the shared-corner meshes (smaller, and what dragging uses)
+      for (const child of this.model.children) {
+        const mesh = child as THREE.Mesh;
+        const src = mesh.userData.indexed as THREE.BufferGeometry | undefined;
+        if (src) {
+          mesh.geometry.dispose();
+          mesh.geometry = src;
+          delete mesh.userData.indexed;
+        }
+      }
+    }
+    this.needsRender = true;
+    return this.checking && area > 0 ? { overhang: over / area, thin: thin / area, thinChecked } : null;
   }
 
   snapshot(): string {
