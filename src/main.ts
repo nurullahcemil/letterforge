@@ -271,13 +271,19 @@ async function ensureFont(key: string) {
   if (sentFonts.has(key)) return;
   const def = FONTS.find((f) => f.key === key) ?? (key.startsWith('gf:') ? googleFont(key) : undefined);
   const url = customFonts.get(key) ?? def!.url;
+  // a variable family may only have its weight file: try the alternative when the first is missing
+  const get = async (u: string, alt?: string) => {
+    let r = await fetch(u);
+    if (!r.ok && alt) r = await fetch(alt);
+    return r;
+  };
   const [buf, ext] = await Promise.all([
-    fetch(url).then((r) => {
+    get(url, (def as GFont | undefined)?.alt).then((r) => {
       if (!r.ok) throw new Error(`Could not download the font (${r.status}).`);
       return r.arrayBuffer();
     }),
     def?.extUrl
-      ? fetch(def.extUrl).then((r) => (r.ok ? r.arrayBuffer() : undefined)).catch(() => undefined)
+      ? get(def.extUrl, (def as GFont).extAlt).then((r) => (r.ok ? r.arrayBuffer() : undefined)).catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
   worker.postMessage({ type: 'font', key, buffer: buf, ext }, ext ? [buf, ext] : [buf]);
@@ -338,6 +344,11 @@ async function run() {
       lastParts = res.parts;
       lastLetters = res.letters ?? [];
       lastBacking = res.backing;
+      const ax: Axis[] = params.style === 'lamp' ? [] : (res.axes ?? []);
+      if (JSON.stringify(ax) !== JSON.stringify(fontAxesNow)) {
+        fontAxesNow = ax;
+        renderAxes();
+      }
       const bn = $('#backing-note');
       bn.hidden = !params.backOn;
       if (params.backOn) {
@@ -679,7 +690,47 @@ function renderPrinter() {
   host.appendChild(controlEl({ kind: 'toggle', key: 'splitBed', label: 'Split large parts to fit the bed' }));
 }
 
+// ---------- variable font sliders (shown when the chosen font has variation axes) ----------
+type Axis = { tag: string; min: number; max: number; def: number };
+let fontAxesNow: Axis[] = [];
+const AXIS_NAMES: Record<string, string> = { wght: 'Weight', wdth: 'Width', opsz: 'Optical size', slnt: 'Slant', ital: 'Italic', GRAD: 'Grade', CASL: 'Casual', MONO: 'Monospace', SOFT: 'Softness', WONK: 'Wonky' };
+
+function renderAxes() {
+  const host = $('#font-axes');
+  host.innerHTML = '';
+  host.hidden = !fontAxesNow.length;
+  if (!fontAxesNow.length) return;
+  const cur = params.fontVar?.key === fontKey ? params.fontVar.axes : {};
+  // weight and width first; skip axes that do nothing visible for a print (e.g. hidden ones)
+  const order = (t: string) => ['wght', 'wdth', 'opsz', 'slnt'].indexOf(t) + 1 || 9;
+  for (const a of [...fontAxesNow].sort((x, y) => order(x.tag) - order(y.tag)).slice(0, 5)) {
+    const step = a.max - a.min > 20 ? 1 : 0.1;
+    const v = Math.min(a.max, Math.max(a.min, cur[a.tag] ?? a.def));
+    const row = document.createElement('label');
+    row.className = 'row range';
+    row.innerHTML = `<span class="lbl">${AXIS_NAMES[a.tag] ?? a.tag}</span><span class="num"><input type="number" min="${a.min}" max="${a.max}" step="${step}" value="${v}"></span><input type="range" min="${a.min}" max="${a.max}" step="${step}" value="${v}">`;
+    const [num, rng] = row.querySelectorAll('input');
+    const set = (x: number) => {
+      if (!Number.isFinite(x)) return;
+      x = Math.min(a.max, Math.max(a.min, x));
+      num.value = String(x);
+      rng.value = String(x);
+      const axes = { ...(params.fontVar?.key === fontKey ? params.fontVar.axes : {}), [a.tag]: x };
+      params.fontVar = { key: fontKey, axes };
+      schedule();
+    };
+    rng.addEventListener('input', () => set(Number(rng.value)));
+    num.addEventListener('change', () => set(Number(num.value)));
+    host.appendChild(row);
+  }
+  const note = document.createElement('small');
+  note.className = 'note';
+  note.textContent = 'This is a variable font: pick any weight in between, not just Regular or Bold.';
+  host.appendChild(note);
+}
+
 function renderFonts() {
+  renderAxes();
   const host = $('#fonts');
   const all = [...FONTS.map((f) => ({ key: f.key, label: f.label, css: f.css })), ...[...googleFonts.values()], ...[...customFonts.keys()].map((k) => ({ key: k, label: k.replace(/^custom:/, ''), css: 'custom-' + k }))];
   host.innerHTML = all
@@ -815,7 +866,7 @@ async function addCustomFont(key: string, data: ArrayBuffer) {
 
 // ---------- Google Fonts (through the Fontsource CDN, which serves WOFF files we can read) ----------
 
-interface GFont { key: string; label: string; css: string; url: string; extUrl?: string }
+interface GFont { key: string; label: string; css: string; url: string; extUrl?: string; alt?: string; extAlt?: string }
 interface GFMeta { id: string; family: string; weights: number[]; styles: string[]; subsets: string[]; category: string; variable?: boolean }
 const googleFonts = new Map<string, GFont>();
 let gfCatalog: GFMeta[] | null = null;
@@ -829,15 +880,33 @@ function googleFont(key: string, meta?: GFMeta): GFont {
   meta ??= gfCatalog?.find((m) => m.id === id);
   const family = meta?.family ?? id.replace(/(^|-)(\w)/g, (_, d, c) => (d ? ' ' : '') + c.toUpperCase());
   const main = meta && !meta.subsets.includes('latin') ? meta.subsets[0] : 'latin';
-  const g: GFont = {
-    key,
-    label: `${family}${w !== '400' ? ' ' + w : ''}`,
-    css: `gf-${id}-${w}`,
-    url: `${GF_CDN}/${id}@latest/${main}-${w}-normal.woff`,
-    extUrl: !meta || meta.subsets.includes('latin-ext') ? `${GF_CDN}/${id}@latest/latin-ext-${w}-normal.woff` : undefined,
-  };
+  const ext = !meta || meta.subsets.includes('latin-ext');
+  // "gf:<id>:var" = the variable version (one WOFF2 file with every weight; "standard" also holds
+  // width etc. when the family has more axes, otherwise only the weight file exists)
+  const g: GFont =
+    w === 'var'
+      ? {
+          key,
+          label: `${family} (variable)`,
+          css: `gf-${id}-var`,
+          url: `${GF_CDN}/${id}:vf@latest/${main}-standard-normal.woff2`,
+          alt: `${GF_CDN}/${id}:vf@latest/${main}-wght-normal.woff2`,
+          extUrl: ext ? `${GF_CDN}/${id}:vf@latest/latin-ext-standard-normal.woff2` : undefined,
+          extAlt: ext ? `${GF_CDN}/${id}:vf@latest/latin-ext-wght-normal.woff2` : undefined,
+        }
+      : {
+          key,
+          label: `${family}${w !== '400' ? ' ' + w : ''}`,
+          css: `gf-${id}-${w}`,
+          url: `${GF_CDN}/${id}@latest/${main}-${w}-normal.woff`,
+          extUrl: ext ? `${GF_CDN}/${id}@latest/latin-ext-${w}-normal.woff` : undefined,
+        };
   googleFonts.set(key, g);
-  new FontFace(g.css, `url(${g.url})`).load().then((f) => document.fonts.add(f)).catch(() => {});
+  new FontFace(g.css, `url(${g.url})`)
+    .load()
+    .catch(() => (g.alt ? new FontFace(g.css, `url(${g.alt})`).load() : Promise.reject()))
+    .then((f) => document.fonts.add(f))
+    .catch(() => {});
   return g;
 }
 
@@ -881,7 +950,10 @@ function showWeights(f: GFMeta | undefined) {
   const ws = [...f.weights].sort((a, b) => a - b);
   const best = bestWeight(f);
   const names: Record<number, string> = { 100: 'Thin', 200: 'Extra light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extra bold', 900: 'Black' };
-  gfWeight.innerHTML = ws.map((w) => `<option value="${w}" ${w === best ? 'selected' : ''}>${names[w] ?? w}</option>`).join('');
+  // variable families: one file with every weight, set with the Weight slider under the fonts
+  gfWeight.innerHTML =
+    (f.variable ? '<option value="var" selected>Any weight (variable)</option>' : '') +
+    ws.map((w) => `<option value="${w}" ${!f.variable && w === best ? 'selected' : ''}>${names[w] ?? w}</option>`).join('');
   gfNote.textContent = f.subsets.includes('latin-ext')
     ? `${f.family}. Change the weight and press Use to switch.`
     : `${f.family}. No extended Latin, so letters such as ğ ş ı may be missing.`;
@@ -1014,6 +1086,8 @@ async function useGoogleFont(keepSearch = false) {
   if (!f) return;
   const key = `gf:${f.id}:${gfWeight.value}`;
   googleFont(key, f);
+  // a variable font starts bold (reads best as a print); the Weight slider changes it
+  if (gfWeight.value === 'var' && params.fontVar?.key !== key) params.fontVar = { key, axes: { wght: 700 } };
   rememberGoogleFont(key);
   sentFonts.delete(key);
   fontKey = key;
@@ -1053,10 +1127,6 @@ try {
 $('#font-upload').addEventListener('change', async (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  if (/\.woff2$/i.test(file.name)) {
-    showWarnings(['WOFF2 fonts are not supported yet. Please upload a TTF, OTF or WOFF file.']);
-    return;
-  }
   const key = 'custom:' + file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
   await addCustomFont(key, await file.arrayBuffer());
   fontKey = key;

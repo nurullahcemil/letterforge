@@ -17,7 +17,8 @@ const fonts = {
   fredoka: 'node_modules/@fontsource/fredoka/files/fredoka-latin-700-normal.woff',
   oswald: 'node_modules/@fontsource/oswald/files/oswald-latin-700-normal.woff',
 };
-const { setFallbacks } = await import('../src/text');
+const { setFallbacks, setShaper } = await import('../src/text');
+if (process.env.HB) setShaper(await import('harfbuzzjs'));
 const raw = (f: string) => { const x = fs.readFileSync(f); return parseFont(x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength)); };
 const load = (f: string) => { const font = raw(f); const ext = f.replace('-latin-', '-latin-ext-'); if (fs.existsSync(ext)) setFallbacks(font, [raw(ext)]); return font; };
 const cases: [string, Partial<Params>, string][] = [

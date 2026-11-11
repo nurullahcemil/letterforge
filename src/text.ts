@@ -1,5 +1,6 @@
 import * as ot from 'opentype.js';
 import type { Font, PathCommand } from 'opentype.js';
+import { unzlibSync } from 'fflate';
 
 const otAny = ot as any;
 const parse: (b: ArrayBuffer) => Font = otAny.parse ?? otAny.default?.parse;
@@ -54,7 +55,109 @@ export interface LetterMove {
 }
 
 export function parseFont(buffer: ArrayBuffer): Font {
-  return parse(buffer);
+  const f = parse(buffer);
+  // HarfBuzz reads only plain TTF/OTF: keep WOFF fonts unpacked for it
+  try {
+    (f as any).__bytes = isWoff1(buffer) ? woff1ToSfnt(buffer) : buffer;
+  } catch {
+    /* shaping falls back to opentype.js */
+  }
+  return f;
+}
+
+function isWoff1(b: ArrayBuffer): boolean {
+  const u = new Uint8Array(b, 0, Math.min(4, b.byteLength));
+  return u[0] === 0x77 && u[1] === 0x4f && u[2] === 0x46 && u[3] === 0x46; // 'wOFF'
+}
+
+/** WOFF 1.0 → TTF/OTF: inflate each table and write a normal table directory. */
+function woff1ToSfnt(buf: ArrayBuffer): ArrayBuffer {
+  const dv = new DataView(buf);
+  const flavor = dv.getUint32(4);
+  const n = dv.getUint16(12);
+  const tables: { tag: number; checksum: number; data: Uint8Array }[] = [];
+  for (let i = 0; i < n; i++) {
+    const o = 44 + i * 20;
+    const off = dv.getUint32(o + 4);
+    const comp = dv.getUint32(o + 8);
+    const orig = dv.getUint32(o + 12);
+    const raw = new Uint8Array(buf, off, comp);
+    tables.push({ tag: dv.getUint32(o), checksum: dv.getUint32(o + 16), data: comp < orig ? unzlibSync(raw) : raw });
+  }
+  let size = 12 + 16 * n;
+  for (const t of tables) size += (t.data.length + 3) & ~3;
+  const out = new Uint8Array(size);
+  const ov = new DataView(out.buffer);
+  let es = 0;
+  while (1 << (es + 1) <= n) es++;
+  ov.setUint32(0, flavor);
+  ov.setUint16(4, n);
+  ov.setUint16(6, (1 << es) * 16);
+  ov.setUint16(8, es);
+  ov.setUint16(10, n * 16 - (1 << es) * 16);
+  let at = 12 + 16 * n;
+  tables.forEach((t, i) => {
+    const o = 12 + i * 16;
+    ov.setUint32(o, t.tag);
+    ov.setUint32(o + 4, t.checksum);
+    ov.setUint32(o + 8, at);
+    ov.setUint32(o + 12, t.data.length);
+    out.set(t.data, at);
+    at += (t.data.length + 3) & ~3;
+  });
+  return out.buffer;
+}
+
+/** True for WOFF2 data (needs decoding before parseFont). */
+export function isWoff2(buffer: ArrayBuffer): boolean {
+  const b = new Uint8Array(buffer, 0, Math.min(4, buffer.byteLength));
+  return b[0] === 0x77 && b[1] === 0x4f && b[2] === 0x46 && b[3] === 0x32; // 'wOF2'
+}
+
+export interface FontAxis {
+  tag: string;
+  min: number;
+  max: number;
+  def: number;
+}
+
+/** Variation axes of a variable font (empty for a normal font). */
+export function fontAxes(font: Font): FontAxis[] {
+  const fvar = (font.tables as any).fvar;
+  if (!fvar?.axes) return [];
+  return fvar.axes.map((a: any) => ({ tag: a.tag, min: a.minValue, max: a.maxValue, def: a.defaultValue }));
+}
+
+/**
+ * Set a variable font's axes (e.g. { wght: 650, wdth: 90 }); missing axes go back to their default,
+ * values are clamped to the font's range. Outlines and letter widths follow (opentype.js gvar/HVAR).
+ */
+export function setFontVariation(font: Font, coords: Record<string, number> | undefined) {
+  const axes = fontAxes(font);
+  const v = (font as any).variation;
+  if (!axes.length || !v) return;
+  const c: Record<string, number> = {};
+  for (const a of axes) {
+    const want = coords?.[a.tag];
+    c[a.tag] = Number.isFinite(want) ? Math.min(a.max, Math.max(a.min, want as number)) : a.def;
+  }
+  v.set(c);
+  (font as any).__coords = c;
+}
+
+/** Advance width of a glyph with the font's current variation applied. */
+function advance(f: Font, glyph: ReturnType<Font['charToGlyph']>): number {
+  const hf = (f as any).__coords ? hbFont(f) : undefined;
+  if (hf && glyph.index !== undefined) {
+    try {
+      return hf.glyphHAdvance(glyph.index);
+    } catch {
+      /* fall through */
+    }
+  }
+  const v = (f as any).variation;
+  if (v && (f as any).__coords && (f.tables as any).hvar) return v.getTransform(glyph).advanceWidth ?? glyph.advanceWidth ?? 0;
+  return glyph.advanceWidth ?? 0;
 }
 
 function capUnits(font: Font): number {
@@ -146,6 +249,84 @@ interface Placed {
   glyph: ReturnType<Font['charToGlyph']>;
   font: Font;
   x: number;
+  /** Vertical offset (mm, up), e.g. accents placed by the shaper. */
+  dy?: number;
+  /** The text this glyph stands for (several letters for a ligature like "fi"). */
+  text?: string;
+}
+
+// ---------- HarfBuzz shaping (set up by the worker; layout falls back to opentype.js without it) ----------
+let HB: any;
+/** Give the layout a HarfBuzz module (`import('harfbuzzjs')`). */
+export function setShaper(hb: any) {
+  HB = hb;
+}
+const hbFonts = new WeakMap<Font, { font: any; coords: string }>();
+function hbFont(f: Font): any | undefined {
+  if (!HB) return undefined;
+  const bytes: ArrayBuffer | undefined = (f as any).__bytes;
+  if (!bytes) return undefined;
+  let e = hbFonts.get(f);
+  if (!e) {
+    try {
+      const face = new HB.Face(new HB.Blob(bytes));
+      e = { font: new HB.Font(face), coords: '' };
+      hbFonts.set(f, e);
+    } catch {
+      return undefined;
+    }
+  }
+  // keep HarfBuzz on the same weight/width as the outlines
+  const c = (f as any).__coords as Record<string, number> | undefined;
+  const key = c ? JSON.stringify(c) : '';
+  if (key !== e.coords) {
+    e.font.setVariations(c ? Object.entries(c).map(([t, v]) => new HB.Variation(t, v)) : []);
+    e.coords = key;
+  }
+  return e.font;
+}
+
+/** Shape a line with HarfBuzz: kerning, ligatures, accents and complex scripts (Arabic, Hindi…). */
+function hbShape(f: Font, hf: any, line: string, opts: LayoutOptions, fontSize: number): { items: Placed[]; width: number } | undefined {
+  const buf = new HB.Buffer();
+  try {
+    buf.addText(line);
+    buf.guessSegmentProperties();
+    HB.shape(hf, buf);
+    const infos = buf.getGlyphInfos();
+    const pos = buf.getGlyphPositions();
+    const scale = fontSize / f.unitsPerEm;
+    // cluster = UTF-16 index where this glyph's text starts; its text runs to the next cluster
+    const starts = [...new Set(infos.map((g: any) => g.cluster as number))].sort((a: any, b: any) => a - b) as number[];
+    const textOf = (c: number) => line.slice(c, starts[starts.indexOf(c) + 1] ?? line.length);
+    const items: Placed[] = [];
+    let x = 0;
+    let lastCluster = -1;
+    for (let i = 0; i < infos.length; i++) {
+      const g = f.glyphs.get(infos[i].codepoint);
+      if (!g) return undefined;
+      // a missing-glyph box where opentype.js finds a real letter means HarfBuzz misread the font
+      if (infos[i].codepoint === 0) {
+        const ch = String.fromCodePoint(line.codePointAt(infos[i].cluster) ?? 32);
+        if (ch.trim() && f.charToGlyphIndex(ch) > 0) return undefined;
+      }
+      const p = pos[i];
+      const first = infos[i].cluster !== lastCluster; // marks/extra glyphs of a cluster carry no letter
+      lastCluster = infos[i].cluster;
+      items.push({ glyph: g, font: f, x: x + p.xOffset * scale, dy: p.yOffset * scale, text: first ? textOf(infos[i].cluster) : '' });
+      x += p.xAdvance * scale;
+      if (i < infos.length - 1 && infos[i + 1].cluster !== infos[i].cluster) x += opts.tracking * fontSize + (opts.gap ?? 0);
+    }
+    return { items, width: x };
+  } catch {
+    return undefined;
+  } finally {
+    try {
+      buf.destroy?.();
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Lay out one line of text: glyphs with x positions (mm) and total width. */
@@ -154,6 +335,13 @@ function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: numb
   const chars = Array.from(line);
   const has = (f: Font, ch: string) => ch.trim() === '' || f.charToGlyphIndex(ch) > 0;
   const allInMain = chars.every((ch) => has(font, ch));
+
+  // HarfBuzz when we can (whole line in one font, no per-letter edits that need one glyph per letter)
+  const hf = allInMain && !opts.widths && !opts.moves ? hbFont(font) : undefined;
+  if (hf) {
+    const r = hbShape(font, hf, line, opts, fontSize);
+    if (r) return r;
+  }
 
   // Each run is a glyph plus the font it comes from.
   let run: { glyph: ReturnType<Font['charToGlyph']>; font: Font }[];
@@ -179,7 +367,7 @@ function shapeLine(font: Font, line: string, opts: LayoutOptions, fontSize: numb
     const { glyph, font: f } = run[i];
     const scale = fontSize / f.unitsPerEm;
     items.push({ glyph, font: f, x });
-    x += (glyph.advanceWidth ?? 0) * scale;
+    x += advance(f, glyph) * scale;
     if (i < run.length - 1) {
       if (run[i + 1].font === f) x += f.getKerningValue(glyph, run[i + 1].glyph) * scale;
       x += opts.tracking * fontSize + (opts.gap ?? 0);
@@ -238,12 +426,13 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
     let offset = 0;
     const owned: { i: number; from: number; to: number }[] = [];
     items.forEach((p, k) => {
-      const ch = chars[k] ?? '';
+      const ch = p.text ?? chars[k] ?? '';
       const isLetter = ch.trim() !== '';
       const w = useWidths && isLetter ? Math.max(0.1, opts.widths![String(letterNo)] ?? 1) : 1;
       const myNo = letterNo;
-      if (isLetter) letterNo++;
-      const path = p.glyph.getPath(p.x + shift, baseY, fontSize);
+      // a ligature ("fi") stands for several letters: keep the numbering of later letters right
+      letterNo += Array.from(ch).filter((c) => c.trim() !== '').length;
+      const path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, (p.font as any).variation ? p.font : undefined);
       const cs = flatten(path.commands, tol);
       const x0 = p.x + shift;
       if (w !== 1 || offset !== 0) for (const c of cs) for (const pt of c) pt[0] = x0 + offset + (pt[0] - x0) * w;

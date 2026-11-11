@@ -298,3 +298,5 @@ section[hidden] { display: none; }
 
 .backing-dl { width: 100%; margin-top: 10px; }
 #backing-note { display: block; margin-top: 6px; }
+.font-axes { margin-top: 8px; }
+.font-axes .note { display: block; margin-top: 2px; }

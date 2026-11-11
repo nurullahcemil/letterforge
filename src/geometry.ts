@@ -10,6 +10,8 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Variable font axes for the main font; used only while `key` is the selected font. */
+  fontVar?: { key: string; axes: Record<string, number> };
   /** Laser-cut wooden backing (a board behind the letters; SVG for the laser, preview only in 3D). */
   backOn?: boolean;
   backShape?: 'outline' | 'rect';
