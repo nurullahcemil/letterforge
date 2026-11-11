@@ -339,8 +339,11 @@ async function run() {
     await ensureFont(fontKey);
     const topFontKey = params.style === 'duo' ? params.topFont : undefined;
     if (topFontKey) await ensureFont(topFontKey);
+    // letters set to italic on a font whose italic is its own file: load that file too
+    const italicKey = italicCompanion();
+    if (italicKey) await ensureFont(italicKey);
     const myId = ++latestBuild;
-    const res = await call({ type: 'build', fontKey, topFontKey, params: { ...params } });
+    const res = await call({ type: 'build', fontKey, topFontKey, italicKey, params: { ...params } });
     if (res.type === 'error') {
       showWarnings([`Something went wrong: ${res.message}`]);
     } else if (myId === latestBuild) {
@@ -605,15 +608,20 @@ function renderLetterPop() {
   const wghtAx = fontAxesNow.find((a) => a.tag === 'wght');
   const slntAx = fontAxesNow.find((a) => a.tag === 'slnt');
   const italAx = fontAxesNow.find((a) => a.tag === 'ital');
+  const wdthAx = fontAxesNow.find((a) => a.tag === 'wdth');
+  const isVar = fontAxesNow.length > 0;
+  const gfp = googleKeyParts(fontKey);
+  const itFile = !!gfp && !gfp.italic && googleHasItalic(gfp.id);
+  const off = (label: string) => `<div class="lp-row lp-off"><span>${label}</span><small>Not in this font</small></div>`;
   const row = (key: string, label: string, min: number, max: number, step: number, val: number, unit: string) =>
     `<label class="lp-row"><span>${label}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"><output>${fmtVal(val, unit)}</output></label>`;
   pop.innerHTML = `
     <div class="lp-head"><b class="lp-glyph">${escapeHtml(ch)}</b><span>Letter ${i + 1}</span><button type="button" class="lp-x" aria-label="Close">×</button></div>
     ${row('w', 'Width', 0.3, 4, 0.05, w, '×')}
     <small class="lp-note">${fill ? 'The other letters on this line squeeze or stretch so the line still fills the width.' : (fontAxesNow.some((a) => a.tag === 'wdth') ? 'Narrower or wider using the font’s own width setting, so strokes keep their thickness.' : 'Narrower or wider by stretching the letter. Fonts with a width setting (e.g. Roboto Flex, Open Sans) do this without thinning the strokes.')}</small>
-    ${wghtAx ? row('wght', 'Weight', wghtAx.min, wghtAx.max, 1, m.wght ?? fontAxisNow('wght'), '') : ''}
-    ${slntAx ? row('slnt', 'Slant', 0, -slntAx.min, 0.5, -(m.slnt ?? fontAxisNow('slnt')), '°') : ''}
-    ${italAx ? row('ital', 'Italic', italAx.min, italAx.max, 1, m.ital ?? fontAxisNow('ital'), '') : ''}
+    ${isVar ? (wghtAx ? row('wght', 'Weight', wghtAx.min, wghtAx.max, 1, m.wght ?? fontAxisNow('wght'), '') : off('Weight')) : ''}
+    ${isVar ? (slntAx ? row('slnt', 'Slant', 0, -slntAx.min, 0.5, -(m.slnt ?? fontAxisNow('slnt')), '°') : italAx ? row('ital', 'Italic', italAx.min, italAx.max, 1, m.ital ?? fontAxisNow('ital'), '') : itFile ? `<div class="lp-row"><span>Italic</span><button type="button" class="lp-toggle ${(m.ital ?? 0) >= 0.5 ? 'on' : ''}" data-act="ital">${(m.ital ?? 0) >= 0.5 ? 'Italic' : 'Upright'}</button><output></output></div>` : off('Italic')) : ''}
+    ${isVar && (!wghtAx || !wdthAx || !(slntAx || italAx || itFile)) ? `<small class="lp-note">This font has no built-in ${[!wghtAx && 'weight', !wdthAx && 'width', !(slntAx || italAx || itFile) && 'italic'].filter(Boolean).join(', ')}. Variable fonts with weight, width and italic: Roboto Flex, Open Sans, Noto Sans, Roboto, Archivo.</small>` : ''}
     ${row('rot', 'Rotate', -180, 180, 1, m.rot ?? 0, '°')}
     ${row('dx', 'Move ←→', -100, 100, 0.5, m.dx ?? 0, 'mm')}
     ${row('dy', 'Move ↓↑', -100, 100, 0.5, m.dy ?? 0, 'mm')}
@@ -635,7 +643,8 @@ function renderLetterPop() {
   );
   pop.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) =>
     b.addEventListener('click', () => {
-      if (b.dataset.act === 'reset') setLetter([i], null);
+      if (b.dataset.act === 'ital') setLetter([i], { ital: (params.letterMove[String(i)]?.ital ?? 0) >= 0.5 ? null : 1 });
+      else if (b.dataset.act === 'reset') setLetter([i], null);
       else {
         const idx: number[] = [];
         lettersOf().forEach((c, n) => c === ch && idx.push(n));
@@ -923,6 +932,18 @@ function renderAxes() {
   host.appendChild(note);
 }
 
+/** Key of the italic file to use for single italic letters, when the current font needs one. */
+function italicCompanion(): string | undefined {
+  const gf = googleKeyParts(fontKey);
+  if (!gf || gf.italic || !googleHasItalic(gf.id)) return undefined;
+  if (fontAxesNow.some((a) => a.tag === 'ital' || a.tag === 'slnt')) return undefined;
+  const any = Object.values(params.letterMove ?? {}).some((m: any) => (m?.ital ?? 0) >= 0.5);
+  if (!any) return undefined;
+  const key = `gf:${gf.id}:${gf.w}:i`;
+  googleFont(key);
+  return key;
+}
+
 /** Parts of a Google font key "gf:<id>:<weight|var>[:i]". */
 function googleKeyParts(key: string): { id: string; w: string; italic: boolean } | undefined {
   if (!key.startsWith('gf:')) return undefined;
@@ -1199,6 +1220,7 @@ const gfPreview = new IntersectionObserver(
       }
       const f = gfCatalog?.find((m) => m.id === el.dataset.id);
       if (!f) continue;
+      if (f.variable) void showVariableInfo(f, el);
       const css = `gfp-${f.id}`;
       if (gfLoaded.has(css)) {
         el.classList.add('ready');
@@ -1217,6 +1239,35 @@ const gfPreview = new IntersectionObserver(
   },
   { root: gfGrid, rootMargin: '120px' },
 );
+
+// what a variable family can do (weight, width, italic…), from the font service; shown on its card
+const varInfo = new Map<string, Promise<string[]>>();
+function variableInfo(f: GFMeta): Promise<string[]> {
+  let p = varInfo.get(f.id);
+  if (!p) {
+    p = fetch(`https://api.fontsource.org/v1/variable/${f.id}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((j: any) => {
+        const axes = Object.keys(j?.axes ?? j?.variable ?? {});
+        const out: string[] = [];
+        if (axes.includes('wght')) out.push('weight');
+        if (axes.includes('wdth')) out.push('width');
+        if (axes.includes('ital') || axes.includes('slnt') || f.styles.includes('italic')) out.push('italic');
+        return out;
+      })
+      .catch(() => [] as string[]);
+    varInfo.set(f.id, p);
+  }
+  return p;
+}
+async function showVariableInfo(f: GFMeta, el: HTMLElement) {
+  const what = await variableInfo(f);
+  const small = el.querySelector('small');
+  if (!small || !what.length) return;
+  const kind = GF_CATS.find(([v]) => v === f.category)?.[1] ?? f.category;
+  small.textContent = `${kind} · ${what.map((w, i) => (i ? w : w[0].toUpperCase() + w.slice(1))).join(', ')}`;
+  small.title = `This variable font has: ${what.join(', ')}`;
+}
 
 function renderGfCats() {
   const host = $('#gf-cats');

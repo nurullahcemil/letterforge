@@ -23,6 +23,10 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   Per letter (click a letter): Weight / Slant / Italic rows for the font's own axes
   (`letterMove[i].wght|slnt|ital`, drawn per glyph; the letter's slot follows its new width).
   Per-letter Width uses the wdth axis when present, else stretches (all fonts).
+  Per-letter italic on a Google variable font without ital/slnt but with an italic file: the
+  letter is drawn from that file (`italicCompanion()` → build msg `italicKey` → `setItalicFont`).
+  Popup shows missing settings greyed ("Not in this font"); gallery cards of variable fonts list
+  what they have (weight/width/italic) from api.fontsource.org/v1/variable/<id>, fetched on view.
 - Artwork (`src/art.ts`, page side): SVG via three SVGLoader (white fills = holes) or PNG/JPG traced
   with esm-potrace-wasm; `params.art` outlines (1 unit tall) placed by `Builder.artwork`.
 - Downloads: meshoptimizer "Lighter files" (0.02 mm, not the lamp; `src/lighten.ts`); backing DXF

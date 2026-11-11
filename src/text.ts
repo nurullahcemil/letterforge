@@ -255,6 +255,11 @@ function flatten(commands: PathCommand[], tol: number): Vec2[][] {
   return out;
 }
 
+/** The italic companion of a font (its separate italic file), for single italic letters. */
+export function setItalicFont(font: Font, italic: Font | undefined) {
+  (font as any).__italic = italic;
+}
+
 /** Extra fonts (e.g. the latin-ext half of a split webfont) used for characters the main font lacks. */
 export function setFallbacks(font: Font, fallbacks: Font[]) {
   (font as any).__fallbacks = fallbacks;
@@ -471,7 +476,19 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       if (mvL) for (const t of ['wght', 'slnt', 'ital'] as const) if (mvL[t] !== undefined && axisTags.has(t)) ov[t] = mvL[t]!;
       const hasOv = Object.keys(ov).length > 0;
       const realW = w !== 1 && !!wAxis && p.font === font;
-      if (realW || hasOv) {
+      // Italic for one letter when the font has no italic setting but comes with an italic file
+      // (Google fonts): draw that letter from the italic font, at the same weight.
+      const itf: Font | undefined = (font as any).__italic;
+      const wantIt = !!itf && !!mvL && (mvL.ital ?? 0) >= 0.5 && !axisTags.has('ital') && !axisTags.has('slnt');
+      const ig = wantIt ? itf!.charToGlyph(Array.from(ch)[0] ?? ' ') : undefined;
+      if (wantIt && ig && ig.index > 0) {
+        const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
+        const advBase = (advance(font, p.glyph) * fontSize) / font.unitsPerEm;
+        setFontVariation(itf!, { ...base, ...ov });
+        path = ig.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, (itf as any).variation ? itf : undefined);
+        const advIt = (advance(itf!, ig) * fontSize) / itf!.unitsPerEm;
+        extra = (advIt - advBase) * w;
+      } else if (realW || hasOv) {
         const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
         const advBase = advance(font, p.glyph);
         const weighted = hasOv ? { ...base, ...ov } : base;
