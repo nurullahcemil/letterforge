@@ -25,6 +25,8 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   Variable fonts are NEVER stretched (user): per-letter Width = the font's wdth axis value
   (`letterMove[i].wdth`), greyed "Not in this font" without the axis; old letterW factors on a
   variable font become wdth = current·factor. Only non-variable fonts stretch (letterW).
+  Variable-font OUTLINES are drawn by HarfBuzz (`glyphPath`, hb glyphToPath at the current axes):
+  opentype.js's gvar math can leave stroke ends poking out at joins (user saw nubs on M/E).
   Per-letter italic on a Google variable font without ital/slnt but with an italic file: the
   letter is drawn from that file (`italicCompanion()` → build msg `italicKey` → `setItalicFont`).
   Popup shows missing settings greyed ("Not in this font"); gallery cards of variable fonts list

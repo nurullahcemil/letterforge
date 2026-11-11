@@ -161,6 +161,42 @@ export function setFontVariation(font: Font, coords: Record<string, number> | un
   (font as any).__coords = c;
 }
 
+/**
+ * Outline of a glyph at (x, y) (y down, like opentype.js), `size` = em size. Variable fonts are
+ * drawn by HarfBuzz at the font's current axis values: it applies the font's variation data
+ * exactly as browsers do (opentype.js can leave stroke ends poking out at joins on some variable
+ * fonts). Other fonts, or no HarfBuzz: opentype.js.
+ */
+function glyphPath(f: Font, glyph: ReturnType<Font['charToGlyph']>, x: number, y: number, size: number): { commands: PathCommand[] } {
+  const varFont = !!(f.tables as any).fvar;
+  const hf = varFont ? hbFont(f) : undefined;
+  if (hf && glyph.index !== undefined) {
+    try {
+      const d: string = hf.glyphToPath(glyph.index);
+      const s = size / f.unitsPerEm;
+      const cmds: PathCommand[] = [];
+      const re = /([MLQCZ])([^MLQCZ]*)/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(d))) {
+        const n = (m[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) ?? []).map(Number);
+        const X = (i: number) => x + n[i] * s;
+        const Y = (i: number) => y - n[i] * s; // font units are y up
+        switch (m[1].toUpperCase()) {
+          case 'M': cmds.push({ type: 'M', x: X(0), y: Y(1) } as PathCommand); break;
+          case 'L': cmds.push({ type: 'L', x: X(0), y: Y(1) } as PathCommand); break;
+          case 'Q': cmds.push({ type: 'Q', x1: X(0), y1: Y(1), x: X(2), y: Y(3) } as PathCommand); break;
+          case 'C': cmds.push({ type: 'C', x1: X(0), y1: Y(1), x2: X(2), y2: Y(3), x: X(4), y: Y(5) } as PathCommand); break;
+          default: cmds.push({ type: 'Z' } as PathCommand);
+        }
+      }
+      if (cmds.length || !d) return { commands: cmds };
+    } catch {
+      /* fall back to opentype.js */
+    }
+  }
+  return glyph.getPath(x, y, size, undefined, varFont && (f as any).variation ? f : undefined);
+}
+
 /** Advance width of a glyph with the font's current variation applied. */
 function advance(f: Font, glyph: ReturnType<Font['charToGlyph']>): number {
   const hf = (f as any).__coords ? hbFont(f) : undefined;
@@ -469,8 +505,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       // width (a bold letter needs more room).
       let sx = w;
       let extra = 0; // mm the slot grows because of a per-letter weight
-      let path: ReturnType<typeof p.glyph.getPath>;
-      const useFont = (p.font as any).variation ? p.font : undefined;
+      let path: { commands: PathCommand[] };
       // this letter's own axis values (weight, slant, italic) on a variable font
       const mvL = isLetter && p.font === font ? opts.moves?.[String(myNo)] : undefined;
       const ov: Record<string, number> = {};
@@ -493,7 +528,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
         const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
         const advBase = (advance(font, p.glyph) * fontSize) / font.unitsPerEm;
         setFontVariation(itf!, { ...base, ...ov });
-        path = ig.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, (itf as any).variation ? itf : undefined);
+        path = glyphPath(itf!, ig, p.x + shift, baseY - (p.dy ?? 0), fontSize);
         const advIt = (advance(itf!, ig) * fontSize) / itf!.unitsPerEm;
         extra = (advIt - advBase) * wS;
         sx = wS;
@@ -503,14 +538,14 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
         const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
         const advBase = advance(font, p.glyph);
         setFontVariation(font, { ...base, ...ov });
-        path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, font);
+        path = glyphPath(font, p.glyph, p.x + shift, baseY - (p.dy ?? 0), fontSize);
         const advNew = advance(font, p.glyph);
         setFontVariation(font, base);
         sx = wS;
         extra = ((advNew - advBase) * fontSize * wS) / font.unitsPerEm;
       } else {
         sx = wS;
-        path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, useFont);
+        path = glyphPath(p.font, p.glyph, p.x + shift, baseY - (p.dy ?? 0), fontSize);
       }
       const cs = flatten(path.commands, tol);
       const x0 = p.x + shift;
