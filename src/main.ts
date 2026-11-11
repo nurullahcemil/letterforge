@@ -542,7 +542,7 @@ $('.stage').appendChild(pop);
 
 const lettersOf = () => Array.from(params.text).filter((ch) => ch.trim() !== '');
 
-type LetterPatch = { w?: number; dx?: number; dy?: number; rot?: number; wght?: number | null; slnt?: number | null; ital?: number | null };
+type LetterPatch = { w?: number; dx?: number; dy?: number; rot?: number; wght?: number | null; wdth?: number | null; slnt?: number | null; ital?: number | null };
 function setLetter(indices: number[], patch: LetterPatch | null) {
   // never mutate: DEFAULTS shares these objects
   const W = { ...params.letterW };
@@ -561,11 +561,11 @@ function setLetter(indices: number[], patch: LetterPatch | null) {
     const m: Record<string, number | undefined> = { ...M[k] };
     for (const f of ['dx', 'dy', 'rot'] as const) if (patch[f] !== undefined) m[f] = patch[f];
     // the font's own settings for this letter (null = back to the whole text's value)
-    for (const f of ['wght', 'slnt', 'ital'] as const) {
+    for (const f of ['wght', 'wdth', 'slnt', 'ital'] as const) {
       if (patch[f] === null) delete m[f];
       else if (patch[f] !== undefined) m[f] = patch[f]!;
     }
-    for (const f of Object.keys(m)) if (m[f] === undefined || (!['wght', 'slnt', 'ital'].includes(f) && !m[f])) delete m[f];
+    for (const f of Object.keys(m)) if (m[f] === undefined || (!['wght', 'wdth', 'slnt', 'ital'].includes(f) && !m[f])) delete m[f];
     if (!Object.keys(m).length) delete M[k];
     else M[k] = m as any;
   }
@@ -617,8 +617,12 @@ function renderLetterPop() {
     `<label class="lp-row"><span>${label}</span><input type="range" data-k="${key}" min="${min}" max="${max}" step="${step}" value="${val}"><output>${fmtVal(val, unit)}</output></label>`;
   pop.innerHTML = `
     <div class="lp-head"><b class="lp-glyph">${escapeHtml(ch)}</b><span>Letter ${i + 1}</span><button type="button" class="lp-x" aria-label="Close">×</button></div>
-    ${row('w', 'Width', 0.3, 4, 0.05, w, '×')}
-    <small class="lp-note">${fill ? 'The other letters on this line squeeze or stretch so the line still fills the width.' : (fontAxesNow.some((a) => a.tag === 'wdth') ? 'Narrower or wider using the font’s own width setting, so strokes keep their thickness.' : 'Narrower or wider by stretching the letter. Fonts with a width setting (e.g. Roboto Flex, Open Sans) do this without thinning the strokes.')}</small>
+    ${isVar
+      ? wdthAx
+        ? row('wdth', 'Width', wdthAx.min, wdthAx.max, 0.5, m.wdth ?? fontAxisNow('wdth'), '')
+        : off('Width')
+      : `${row('w', 'Width', 0.3, 4, 0.05, w, '×')}
+    <small class="lp-note">${fill ? 'The other letters on this line squeeze or stretch so the line still fills the width.' : 'Narrower or wider by stretching the letter (this font has no width setting of its own).'}</small>`}
     ${isVar ? (wghtAx ? row('wght', 'Weight', wghtAx.min, wghtAx.max, 1, m.wght ?? fontAxisNow('wght'), '') : off('Weight')) : ''}
     ${isVar ? (slntAx ? row('slnt', 'Slant', 0, -slntAx.min, 0.5, -(m.slnt ?? fontAxisNow('slnt')), '°') : italAx ? row('ital', 'Italic', italAx.min, italAx.max, 1, m.ital ?? fontAxisNow('ital'), '') : itFile ? `<div class="lp-row"><span>Italic</span><button type="button" class="lp-toggle ${(m.ital ?? 0) >= 0.5 ? 'on' : ''}" data-act="ital">${(m.ital ?? 0) >= 0.5 ? 'Italic' : 'Upright'}</button><output></output></div>` : off('Italic')) : ''}
     ${isVar && (!wghtAx || !wdthAx || !(slntAx || italAx || itFile)) ? `<small class="lp-note">This font has no built-in ${[!wghtAx && 'weight', !wdthAx && 'width', !(slntAx || italAx || itFile) && 'italic'].filter(Boolean).join(', ')}. Variable fonts with weight, width and italic: Roboto Flex, Open Sans, Noto Sans, Roboto, Archivo.</small>` : ''}
@@ -634,10 +638,10 @@ function renderLetterPop() {
   pop.querySelectorAll<HTMLInputElement>('input[type=range]').forEach((inp) =>
     inp.addEventListener('input', () => {
       const v = parseFloat(inp.value);
-      const k = inp.dataset.k as 'w' | 'rot' | 'dx' | 'dy' | 'wght' | 'slnt' | 'ital';
+      const k = inp.dataset.k as 'w' | 'rot' | 'dx' | 'dy' | 'wght' | 'wdth' | 'slnt' | 'ital';
       // slant is shown leaning right as a positive angle; the font's axis counts it negative
       setLetter([i], { [k]: k === 'slnt' ? -v : v });
-      inp.nextElementSibling!.textContent = fmtVal(v, k === 'w' ? '×' : k === 'rot' || k === 'slnt' ? '°' : k === 'wght' || k === 'ital' ? '' : 'mm');
+      inp.nextElementSibling!.textContent = fmtVal(v, k === 'w' ? '×' : k === 'rot' || k === 'slnt' ? '°' : k === 'wght' || k === 'wdth' || k === 'ital' ? '' : 'mm');
       schedule();
     }),
   );
@@ -649,7 +653,7 @@ function renderLetterPop() {
         const idx: number[] = [];
         lettersOf().forEach((c, n) => c === ch && idx.push(n));
         const mm = params.letterMove[String(i)] ?? {};
-        setLetter(idx, { w: params.letterW[String(i)] ?? 1, wght: mm.wght ?? null, slnt: mm.slnt ?? null, ital: mm.ital ?? null });
+        setLetter(idx, { w: params.letterW[String(i)] ?? 1, wght: mm.wght ?? null, wdth: mm.wdth ?? null, slnt: mm.slnt ?? null, ital: mm.ital ?? null });
       }
       renderLetterPop();
       schedule();

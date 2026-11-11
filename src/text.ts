@@ -59,8 +59,9 @@ export interface LetterMove {
   dx?: number;
   dy?: number;
   rot?: number;
-  /** This letter's own axis values on a variable font: weight, slant (negative = right), italic 0/1. */
+  /** This letter's own axis values on a variable font: weight, width, slant (negative = right), italic 0/1. */
   wght?: number;
+  wdth?: number;
   slnt?: number;
   ital?: number;
   /** Made-up extra thickness for this letter, mm (fonts without a weight axis; done in geometry). */
@@ -473,9 +474,16 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       // this letter's own axis values (weight, slant, italic) on a variable font
       const mvL = isLetter && p.font === font ? opts.moves?.[String(myNo)] : undefined;
       const ov: Record<string, number> = {};
-      if (mvL) for (const t of ['wght', 'slnt', 'ital'] as const) if (mvL[t] !== undefined && axisTags.has(t)) ov[t] = mvL[t]!;
+      if (mvL) for (const t of ['wght', 'wdth', 'slnt', 'ital'] as const) if (mvL[t] !== undefined && axisTags.has(t)) ov[t] = mvL[t]!;
+      // Variable fonts are never stretched: width comes only from the font's own width setting
+      // (an older width factor becomes a width-axis value; without the axis it does nothing).
+      const isVarFont = axisTags.size > 0 && p.font === font;
+      if (isVarFont && w !== 1 && wAxis && ov.wdth === undefined) {
+        const cur = ((font as any).__coords?.wdth as number | undefined) ?? wAxis.def;
+        ov.wdth = Math.min(wAxis.max, Math.max(wAxis.min, cur * w));
+      }
+      const wS = isVarFont ? 1 : w; // stretch factor actually applied
       const hasOv = Object.keys(ov).length > 0;
-      const realW = w !== 1 && !!wAxis && p.font === font;
       // Italic for one letter when the font has no italic setting but comes with an italic file
       // (Google fonts): draw that letter from the italic font, at the same weight.
       const itf: Font | undefined = (font as any).__italic;
@@ -487,21 +495,21 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
         setFontVariation(itf!, { ...base, ...ov });
         path = ig.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, (itf as any).variation ? itf : undefined);
         const advIt = (advance(itf!, ig) * fontSize) / itf!.unitsPerEm;
-        extra = (advIt - advBase) * w;
-      } else if (realW || hasOv) {
+        extra = (advIt - advBase) * wS;
+        sx = wS;
+      } else if (hasOv) {
+        // this letter at its own weight / width / slant: drawn by the font, and its space is the
+        // font's own width for it at those settings
         const base = { ...((font as any).__coords ?? {}) } as Record<string, number>;
         const advBase = advance(font, p.glyph);
-        const weighted = hasOv ? { ...base, ...ov } : base;
-        if (hasOv) setFontVariation(font, weighted);
-        const advW = advance(font, p.glyph);
-        const drawAt = realW ? { ...weighted, wdth: (base.wdth ?? wAxis!.def) * w } : weighted;
-        setFontVariation(font, drawAt);
+        setFontVariation(font, { ...base, ...ov });
         path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, font);
-        const advD = advance(font, p.glyph);
+        const advNew = advance(font, p.glyph);
         setFontVariation(font, base);
-        sx = realW && advD > 0 ? (w * advW) / advD : w;
-        extra = ((advW - advBase) * fontSize * w) / font.unitsPerEm;
+        sx = wS;
+        extra = ((advNew - advBase) * fontSize * wS) / font.unitsPerEm;
       } else {
+        sx = wS;
         path = p.glyph.getPath(p.x + shift, baseY - (p.dy ?? 0), fontSize, undefined, useFont);
       }
       const cs = flatten(path.commands, tol);
@@ -515,7 +523,7 @@ export function layoutText(font: Font, text: string, opts: LayoutOptions): TextL
       if (isLetter && cs.length) owned.push({ i: myNo, from: lineContours.length, to: lineContours.length + cs.length });
       lineContours.push(...cs);
       const next = k < items.length - 1 ? items[k + 1].x : width;
-      offset += (next - p.x) * (w - 1) + extra;
+      offset += (next - p.x) * (wS - 1) + extra;
     });
     if (xs !== 1) for (const c of lineContours) for (const pt of c) pt[0] *= xs;
     if (opts.slant) {

@@ -138,7 +138,7 @@ export interface Params extends LampParams {
   /** Width factor per letter (key = index among the text's non-space characters). */
   letterW: Record<string, number>;
   /** Move (mm) / rotate (degrees) single letters; same keys as letterW. */
-  letterMove: Record<string, { dx?: number; dy?: number; rot?: number; wght?: number; slnt?: number; ital?: number; bold?: number; slant?: number }>;
+  letterMove: Record<string, { dx?: number; dy?: number; rot?: number; wght?: number; wdth?: number; slnt?: number; ital?: number; bold?: number; slant?: number }>;
   // stepped base
   spBase: boolean;
   spBaseT: number;
