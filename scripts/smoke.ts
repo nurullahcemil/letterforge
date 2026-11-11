@@ -18,7 +18,7 @@ const fonts = {
   oswald: 'node_modules/@fontsource/oswald/files/oswald-latin-700-normal.woff',
 };
 const { setFallbacks, setShaper } = await import('../src/text');
-if (process.env.HB) setShaper(await import('harfbuzzjs'));
+if (!process.env.NOHB) setShaper(await import('harfbuzzjs')); // the app always shapes with HarfBuzz
 const raw = (f: string) => { const x = fs.readFileSync(f); return parseFont(x.buffer.slice(x.byteOffset, x.byteOffset + x.byteLength)); };
 const load = (f: string) => { const font = raw(f); const ext = f.replace('-latin-', '-latin-ext-'); if (fs.existsSync(ext)) setFallbacks(font, [raw(ext)]); return font; };
 const cases: [string, Partial<Params>, string][] = [
