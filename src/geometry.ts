@@ -32,6 +32,8 @@ export interface Params extends LampParams {
   backHoleD?: number;
   backT?: number;
   backGuide?: boolean;
+  /** Laser kerf (mm): the cut path moves out by half of it, so the board comes out at true size. */
+  backKerf?: number;
   style: Style;
   text: string;
   capHeight: number;
@@ -1220,11 +1222,15 @@ export class Builder {
     const pieces = board.decompose().length;
     if (pieces > 1) warnings.push(`The wooden backing is in ${pieces} pieces. Make its margin bigger, or use the rectangle shape.`);
     const cutCs = holes.length ? this.k(board.subtract(this.k(W.CrossSection.union(holes)))) : board;
+    // kerf: the laser burns away about its line width, so cut half of it outside the real edge
+    // (the board grows, the holes shrink); the 3D preview keeps the true size
+    const kerf = clampN(p.backKerf ?? 0, 0, 2);
+    const cutPath = kerf > 0.001 ? this.k(cutCs.offset(kerf / 2, 'Round', 2, 64)) : cutCs;
     const b = cutCs.bounds();
     return {
       board: cutCs,
       svg: {
-        cut: cutCs.toPolygons() as [number, number][][],
+        cut: cutPath.toPolygons() as [number, number][][],
         guide: p.backGuide === false ? [] : (foot.toPolygons() as [number, number][][]),
         size: [b.max[0] - b.min[0], b.max[1] - b.min[1]] as [number, number],
         pieces,

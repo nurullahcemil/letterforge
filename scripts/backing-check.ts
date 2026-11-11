@@ -13,3 +13,14 @@ const over = JSON.parse(process.argv[2] ?? '{}');
 const r = b.build(font, { ...DEFAULTS, style: 'planter', text: 'Kraftstories', capHeight: 70, backOn: true, ...over } as any);
 const bk = r.backing;
 console.log(JSON.stringify(over), 'size', bk?.size.map((v) => v.toFixed(1)).join('x'), 'pieces', bk?.pieces, 'loops', bk?.cut.length, 'guide', bk?.guide.length, 'parts', r.parts.length, r.warnings);
+if (bk) {
+  let x0 = Infinity, x1 = -Infinity;
+  for (const q of bk.cut) for (const [x] of q) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+  console.log('cut line width', (x1 - x0).toFixed(2), 'mm');
+  if (process.env.DXF) {
+    const { toBackingDXF } = await import('../src/export');
+    const txt = await (await toBackingDXF(bk)).text();
+    fs.writeFileSync(process.env.DXF, txt);
+    console.log('dxf', txt.length, 'bytes; layers', [...new Set(txt.match(/\n8\n[A-Z]+/g))].map((s) => s.trim().split('\n')[1]).join(','), '; polylines', (txt.match(/POLYLINE/g) ?? []).length);
+  }
+}

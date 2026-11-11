@@ -296,7 +296,8 @@ textarea:focus, input[type='text']:focus, input[type='number']:focus { outline: 
 .lp-actions button { flex: 1; font: inherit; font-size: 12px; padding: 6px 4px; border: 1px solid var(--line); border-radius: 8px; background: none; color: inherit; cursor: pointer; }
 section[hidden] { display: none; }
 
-.backing-dl { width: 100%; margin-top: 10px; }
+.backing-dls { display: flex; gap: 6px; margin-top: 10px; }
+.backing-dl { flex: 1; }
 #backing-note { display: block; margin-top: 6px; }
 .font-axes { margin-top: 8px; }
 .font-axes .note { display: block; margin-top: 2px; }

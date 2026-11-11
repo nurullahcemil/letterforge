@@ -1,7 +1,7 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
-import { toSTL, to3MF, standOnOpenEnd, toBackingSVG } from './export';
+import { toSTL, to3MF, standOnOpenEnd, toBackingSVG, toBackingDXF } from './export';
 import { svgToArtwork, traceImage } from './art';
 import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
@@ -359,6 +359,7 @@ async function run() {
           : 'Nothing to back yet.';
       }
       ($('#dl-backing') as HTMLButtonElement).disabled = !lastBacking;
+      ($('#dl-backing-dxf') as HTMLButtonElement).disabled = !lastBacking;
       viewer.setBed(params.bedSize);
       viewer.setParts(res.parts, refitNext);
       refitNext = false;
@@ -673,6 +674,7 @@ const BACKING_CONTROLS: Control[] = [
   { kind: 'range', key: 'backHoleD', label: 'Hole size', min: 2, max: 12, step: 0.5, unit: 'mm', hint: 'Kept clear of the letters so a screw or nail can reach it.' },
   { kind: 'range', key: 'backT', label: 'Board thickness', min: 1, max: 20, step: 0.5, unit: 'mm', hint: 'For the 3D preview only; the laser file is the outline.' },
   { kind: 'toggle', key: 'backGuide', label: 'Mark where the letters go', hint: 'Adds the letter outlines in blue, to engrave or score as a gluing guide.' },
+  { kind: 'range', key: 'backKerf', label: 'Laser kerf', min: 0, max: 0.5, step: 0.01, unit: 'mm', hint: 'How much the laser burns away (often 0.1–0.2 mm). The cut line moves out by half, so the board comes out at true size.' },
 ];
 
 function renderBacking() {
@@ -683,6 +685,7 @@ function renderBacking() {
   host.appendChild(controlEl({ kind: 'toggle', key: 'backOn', label: 'Make a laser-cut backing', hint: 'A wooden board behind the letters, cut on a laser cutter. Shown under the model in 3D.' }));
   if (params.backOn) BACKING_CONTROLS.filter((c) => c.key !== 'backHoleD' || params.backHoles !== 'none').forEach((c) => host.appendChild(controlEl(c)));
   $('#dl-backing').hidden = !params.backOn;
+  $('#dl-backing-dxf').hidden = !params.backOn;
   if (!params.backOn) $('#backing-note').hidden = true;
 }
 
@@ -1281,6 +1284,10 @@ $('#dl-3mf').addEventListener('click', async () => {
 $('#dl-backing').addEventListener('click', () => {
   if (!lastBacking) return;
   download(toBackingSVG(lastBacking, params.text.trim() || 'Letterforge'), baseName() + '-backing.svg');
+});
+$('#dl-backing-dxf').addEventListener('click', async () => {
+  if (!lastBacking) return;
+  download(await toBackingDXF(lastBacking), baseName() + '-backing.dxf');
 });
 
 $('#dl-stl').addEventListener('click', async () => {

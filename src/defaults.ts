@@ -18,6 +18,7 @@ export const DEFAULTS: Params = {
   backHoleD: 5,
   backT: 3,
   backGuide: true,
+  backKerf: 0,
   text: 'MENU',
   capHeight: 40,
   tracking: 0.02,

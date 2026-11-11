@@ -204,3 +204,32 @@ export function toBackingSVG(b: { cut: [number, number][][]; guide: [number, num
 `;
   return new Blob([svg], { type: 'image/svg+xml' });
 }
+
+/**
+ * Laser-cutter DXF (millimetres) with two layers: CUT (red) = board outline and holes,
+ * GUIDE (blue) = where the letters go. Each outline is one closed polyline. Maker.js is loaded only
+ * when this is used.
+ */
+export async function toBackingDXF(b: { cut: [number, number][][]; guide: [number, number][][] }): Promise<Blob> {
+  const mod: any = await import('makerjs');
+  const mk = mod.default ?? mod;
+  const group = (loops: [number, number][][], layer: string) => {
+    const models: Record<string, any> = {};
+    loops.forEach((q, i) => {
+      const m = new mk.models.ConnectTheDots(true, q.map(([x, y]) => [x, y]));
+      m.layer = layer;
+      models[layer + i] = m;
+    });
+    return { models, layer };
+  };
+  const model = {
+    units: mk.unitType.Millimeter,
+    models: { cut: group(b.cut, 'CUT'), ...(b.guide.length ? { guide: group(b.guide, 'GUIDE') } : {}) },
+  };
+  const dxf: string = mk.exporter.toDXF(model, {
+    units: mk.unitType.Millimeter,
+    usePOLYLINE: true,
+    layerOptions: { CUT: { color: mk.exporter.colors.red }, GUIDE: { color: mk.exporter.colors.blue } },
+  });
+  return new Blob([dxf], { type: 'application/dxf' });
+}
