@@ -16,7 +16,12 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   overhangs > 45° unsupported, walls < 0.8 mm). qrcode, fflate (3MF zip, WOFF1 unpacking).
 - Text shaping: harfbuzzjs in the worker (`setShaper`; kerning, ligatures, Arabic/RTL, variable-font
   spacing), opentype.js for outlines and as fallback. WOFF2 decoded with woff2-encoder/decompress.
-  Variable fonts: `params.fontVar = {key, axes}` → `setFontVariation` (sliders under the fonts).
+  Letter style block (under the fonts, every font): Light/Regular/Bold, Narrow/Normal/Wide,
+  Upright/Italic + sliders. Real setting when the font has it (`params.fontVar = {key, axes}` →
+  `setFontVariation`; Google italic = separate file, key suffix `:i`), otherwise made up:
+  `textBold` (outline offset, mm), `textWidth` (% stretch), `textSlant` (degrees, sheared at the
+  baseline). Never both: switching to a font with the axis converts the made-up value.
+  Per-letter Width uses the font's wdth axis when present (strokes keep thickness).
 - Artwork (`src/art.ts`, page side): SVG via three SVGLoader (white fills = holes) or PNG/JPG traced
   with esm-potrace-wasm; `params.art` outlines (1 unit tall) placed by `Builder.artwork`.
 - Downloads: meshoptimizer "Lighter files" (0.02 mm, not the lamp; `src/lighten.ts`); backing DXF

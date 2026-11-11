@@ -2,6 +2,9 @@ import type { Params } from './geometry';
 
 export const DEFAULTS: Params = {
   style: 'sign',
+  textWidth: 100,
+  textSlant: 0,
+  textBold: 0,
   lightFiles: true,
   artSize: 40,
   artPlace: 'left',

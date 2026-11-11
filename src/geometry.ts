@@ -10,6 +10,11 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Made-up letter style for fonts without these settings: width %, slant degrees, extra
+   * thickness mm (negative = thinner). Real variable-font axes go in fontVar instead. */
+  textWidth?: number;
+  textSlant?: number;
+  textBold?: number;
   /** Downloads: simplify meshes within 0.02 mm (meshoptimizer). */
   lightFiles?: boolean;
   /** Artwork (SVG or traced picture): outlines 1 unit tall, centred on 0, y up (see art.ts). */
@@ -230,6 +235,7 @@ export class Builder {
     try {
       if (p.style === 'lamp') return this.lamp(p, warnings);
       const layout = layoutText(font, p.text || ' ', {
+        ...textStyle(p),
         capHeight: p.capHeight,
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
@@ -239,6 +245,12 @@ export class Builder {
         moves: p.style === 'stepped' || Object.keys(p.letterMove ?? {}).length ? (p.letterMove ?? {}) : undefined,
       });
       let cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
+      // made-up weight: grow (bolder) or shrink (lighter) every outline by half the amount
+      const bold = clampN(p.textBold ?? 0, -3, 6) / 2;
+      if (Math.abs(bold) > 0.005) {
+        cs = this.k(cs.offset(bold, 'Round', 2, 32));
+        layout.lines = this.boldLines(layout.lines, p);
+      }
       if (JOIN_STYLES.has(p.style)) cs = this.joinLetterPieces(cs, layout.glyphs, p, warnings);
       // artwork joins the text shape (flat styles) or becomes one more line (stack, ramp)
       const art = p.style === 'book' ? undefined : this.artwork(p, cs);
@@ -280,6 +292,7 @@ export class Builder {
             // every line the same width, like a block set in a variable-width font
             const b = cs.bounds();
             const l2 = layoutText(font, p.text, {
+              ...textStyle(p),
               capHeight: p.capHeight,
               tracking: p.tracking,
               lineSpacing: p.lineSpacing,
@@ -287,7 +300,7 @@ export class Builder {
               widths: p.letterW,
               moves: p.letterMove,
             });
-            lines = l2.lines;
+            lines = this.boldLines(l2.lines, p);
             this.spots = l2.letterCenters;
           }
           parts = this.stack(lines, p, warnings);
@@ -681,6 +694,13 @@ export class Builder {
   }
 
 
+  /** Made-up weight on per-line outlines (see Params.textBold). */
+  private boldLines(lines: Vec2[][][], p: Params): Vec2[][][] {
+    const bold = clampN(p.textBold ?? 0, -3, 6) / 2;
+    if (Math.abs(bold) <= 0.005) return lines;
+    return lines.map((lc) => this.k(this.k(this.cs(lc)).offset(bold, 'Round', 2, 32)).toPolygons() as Vec2[][]);
+  }
+
   private cs(contours: Vec2[][]): CrossSection {
     return this.k(new this.wasm.CrossSection(contours as MVec2[][], 'NonZero'));
   }
@@ -1073,6 +1093,7 @@ export class Builder {
     const maxH = Math.max(10, outH - 2 * margin);
     const lay = (cap: number) =>
       layoutText(font, p.text || ' ', {
+        ...textStyle(p),
         capHeight: cap,
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
@@ -1107,6 +1128,7 @@ export class Builder {
       const lineTexts = smart ? smart.lines : layout.lineTexts;
       const cap = smart ? smart.cap : layout.capHeight;
       layout = layoutText(font, lineTexts.join('\n'), {
+        ...textStyle(p),
         capHeight: cap,
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
@@ -1127,7 +1149,7 @@ export class Builder {
       );
       if (hi / tall > 3) warnings.push('Some short lines are stretched a lot. Join short words onto one line for a more even look.');
     }
-    const lines = layout.lines;
+    const lines = this.boldLines(layout.lines, p);
     const face = this.rect(0, 0, outW, outH);
     const all = this.cs(lines.flat());
     let letters: Manifold | null = null;
@@ -1529,4 +1551,11 @@ function nearestInside(loops: [number, number][][], t: [number, number]): [numbe
     }
   }
   return best;
+}
+
+/** Made-up slant and width for the text layout (see Params.textWidth / textSlant). */
+function textStyle(p: Params): { slant?: number; xScale?: number } {
+  const w = clampN(p.textWidth ?? 100, 30, 300) / 100;
+  const sl = clampN(p.textSlant ?? 0, -30, 30);
+  return { ...(sl ? { slant: sl } : {}), ...(w !== 1 ? { xScale: w } : {}) };
 }
