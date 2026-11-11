@@ -12,7 +12,15 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   - manifold-3d 3.5.4 (WASM): CrossSection offset/boolean (Clipper2), extrude, warp, Manifold CSG.
   - straight-skeleton 3.0.0 (CGAL WASM) for faceted roofs. Outer ring must be CCW.
   - opentype.js 2.0.0 for glyph outlines (`src/text.ts`).
-- three.js 0.187 viewer (`src/viewer.ts`). qrcode, fflate (3MF zip).
+- three.js 0.187 viewer (`src/viewer.ts`), three-mesh-bvh (fast picking + "Check print" view:
+  overhangs > 45° unsupported, walls < 0.8 mm). qrcode, fflate (3MF zip, WOFF1 unpacking).
+- Text shaping: harfbuzzjs in the worker (`setShaper`; kerning, ligatures, Arabic/RTL, variable-font
+  spacing), opentype.js for outlines and as fallback. WOFF2 decoded with woff2-encoder/decompress.
+  Variable fonts: `params.fontVar = {key, axes}` → `setFontVariation` (sliders under the fonts).
+- Artwork (`src/art.ts`, page side): SVG via three SVGLoader (white fills = holes) or PNG/JPG traced
+  with esm-potrace-wasm; `params.art` outlines (1 unit tall) placed by `Builder.artwork`.
+- Downloads: meshoptimizer "Lighter files" (0.02 mm, not the lamp; `src/lighten.ts`); backing DXF
+  via makerjs (lazy). Lamp 'stone' surface uses simplex-noise.
 - Fonts: 7 bundled @fontsource WOFFs (latin + latin-ext fallback for Turkish etc.),
   Google Fonts via Fontsource CDN, user uploads (TTF/OTF/WOFF, not WOFF2). Google Fonts gallery
   (`#gf-grid`): catalog from api.fontsource.org, popular fonts first, kind chips, each name drawn in
@@ -26,7 +34,7 @@ npm install
 npm run dev            # local dev
 npx tsc --noEmit -p .  # typecheck
 npx vite build
-npx tsx scripts/smoke.ts   # builds every style in Node, prints parts/tris/size/warnings
+npx tsx scripts/smoke.ts   # builds every style in Node (with HarfBuzz; NOHB=1 without), prints parts/tris/size/warnings
 ```
 Regression check used so far: run smoke before and after a change and diff the
 `name parts tris size` lines; they must be identical unless the change is meant to alter output.

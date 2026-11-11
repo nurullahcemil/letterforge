@@ -64,3 +64,13 @@ Messages: `font {key, buffer, ext}`, `build {fontKey, topFontKey, params}`, `mer
 
 ## scripts/smoke.ts
 Builds ~23 named cases in Node (needs `self`/`window` shims, already in the script).
+
+## Added libraries (see DECISIONS 24)
+- `src/text.ts`: `setShaper`/`hasShaper` (HarfBuzz), `parseFont` keeps TTF bytes (`__bytes`, WOFF1
+  unpacked), `isWoff2`, `fontAxes`, `setFontVariation`.
+- `src/worker.ts`: decodes WOFF2, waits for fonts still loading (`loading`), applies `fontVar`,
+  returns `axes` and `shaper` with each result.
+- `src/art.ts`: `svgToArtwork`, `traceImage` (page side). `src/lighten.ts`: meshoptimizer on download.
+- `src/export.ts`: `toBackingSVG`, `toBackingDXF` (makerjs, lazy).
+- `src/viewer.ts`: lazy BVH (`ensureBVH`), `setCheck` / `applyCheck` + `onCheck` legend callback.
+- Scripts: `backing-check.ts` (DXF=path writes a DXF), `stl-check.ts` (STL is a closed solid).

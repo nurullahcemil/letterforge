@@ -70,3 +70,28 @@
     band at the back, inside a wave valley, so the seam is a straight hidden line.
 21. Thick walls at waists/shelves (arcs went nearly flat, so walls were widened to print): bulges
     now never lean past 45° (V waists, matching the original) → one line per layer everywhere.
+22. Seam notch snapped to the nearest valley → zigzag stripe. Now one 0.25 mm crease per band at the
+    same world angle, spliced onto the existing edge (wave shape untouched) → a straight line.
+    Woven base: shoulder flatter than 45° printed as stair steps at the neck → bands continue in a
+    straight 45° line into the neck.
+23. Google Fonts gallery (previews drawn in each font, kinds, Variable filter). Wooden backing for
+    laser cutters (SVG/DXF, holes clear of letters, kerf).
+24. Libraries added (user: "add all beneficial except OpenCascade"):
+    - woff2-encoder (decompress only, in the worker): WOFF2 uploads + Google variable fonts.
+    - opentype.js variation (already there) for outlines at any axis value; `params.fontVar`
+      {key, axes} only applies while that font is selected. Some fonts keep their spacing changes
+      outside HVAR, so advances come from HarfBuzz when it is loaded.
+    - harfbuzzjs: shapes each line (kerning, ligatures, end forms of script fonts, Arabic joining +
+      RTL). HarfBuzz reads only TTF/OTF, so WOFF1 is unpacked (fflate) in `parseFont`; any
+      missing-glyph result where opentype.js has the glyph falls back to opentype.js. Not used when
+      per-letter widths/moves are set (those need one glyph per character). Empty {} edits count
+      as none (bug: bold stack passed {} and lost shaping).
+    - three SVGLoader + esm-potrace-wasm (art.ts, page side): SVG or traced PNG/JPG artwork, white
+      fills = cut-outs, joined with the text (`Builder.artwork`), own line for stack/ramp.
+    - makerjs (lazy): backing DXF with CUT/GUIDE layers. Kerf offsets the cut path by kerf/2.
+    - meshoptimizer (lazy, download only): simplify within 0.02 mm absolute; stays manifold
+      (scripts/stl-check.ts). Not applied to the lamp (bands are separate touching shells).
+    - three-mesh-bvh: lazy BVH for picking; Check print view (overhang > 45° with nothing in a 45°
+      cone below within 1.2 mm; thin < 0.8 mm via inward ray, DoubleSide probe or back faces are
+      missed).
+    - simplex-noise: lamp 'stone' surface, sampled on a cylinder (radius around/2π) → no seam.
