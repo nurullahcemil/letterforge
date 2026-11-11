@@ -22,7 +22,7 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
 - Downloads: meshoptimizer "Lighter files" (0.02 mm, not the lamp; `src/lighten.ts`); backing DXF
   via makerjs (lazy). Lamp 'stone' surface uses simplex-noise.
 - Fonts: 7 bundled @fontsource WOFFs (latin + latin-ext fallback for Turkish etc.),
-  Google Fonts via Fontsource CDN, user uploads (TTF/OTF/WOFF, not WOFF2). Google Fonts gallery
+  Google Fonts via Fontsource CDN (variable ones as WOFF2), user uploads (TTF/OTF/WOFF/WOFF2). Google Fonts gallery
   (`#gf-grid`): catalog from api.fontsource.org, popular fonts first, kind chips, each name drawn in
   its own font (loaded only when scrolled into view, 40 cards then more on scroll); tap = use.
   "Variable" chip filters to variable fonts (Fontsource `variable` flag); cards show "· Variable".
