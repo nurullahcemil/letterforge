@@ -10,6 +10,17 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Artwork (SVG or traced picture): outlines 1 unit tall, centred on 0, y up (see art.ts). */
+  art?: { name: string; contours: [number, number][][]; aspect: number };
+  artSize?: number;
+  artPlace?: 'left' | 'right' | 'above' | 'below' | 'center';
+  artGap?: number;
+  artX?: number;
+  artY?: number;
+  artRot?: number;
+  /** Picture tracing (page only): darkness threshold 0–255 and swap shape/background. */
+  artThreshold?: number;
+  artInvert?: boolean;
   /** Variable font axes for the main font; used only while `key` is the selected font. */
   fontVar?: { key: string; axes: Record<string, number> };
   /** Laser-cut wooden backing (a board behind the letters; SVG for the laser, preview only in 3D). */
@@ -225,6 +236,12 @@ export class Builder {
       });
       let cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
       if (JOIN_STYLES.has(p.style)) cs = this.joinLetterPieces(cs, layout.glyphs, p, warnings);
+      // artwork joins the text shape (flat styles) or becomes one more line (stack, ramp)
+      const art = p.style === 'book' ? undefined : this.artwork(p, cs);
+      if (art) {
+        cs = this.k(cs.add(art));
+        layout.lines.push(art.toPolygons() as Vec2[][]);
+      }
       if (cs.isEmpty()) {
         return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
@@ -1213,6 +1230,37 @@ export class Builder {
         pieces,
       },
     };
+  }
+
+  /** The artwork, sized and placed beside (or over) the text; undefined when there is none. */
+  private artwork(p: Params, text: CrossSection): CrossSection | undefined {
+    const a = p.art;
+    if (!a?.contours?.length) return undefined;
+    const h = clampN(p.artSize ?? 40, 2, 2000);
+    let shape = this.k(new this.wasm.CrossSection(a.contours as MVec2[][], 'NonZero'));
+    shape = this.k(shape.scale([h, h]));
+    if (p.artRot) shape = this.k(shape.rotate(p.artRot));
+    const sb = shape.bounds();
+    const w = sb.max[0] - sb.min[0];
+    const hh = sb.max[1] - sb.min[1];
+    let cx = 0;
+    let cy = 0;
+    if (!text.isEmpty()) {
+      const tb = text.bounds();
+      const tx = (tb.min[0] + tb.max[0]) / 2;
+      const ty = (tb.min[1] + tb.max[1]) / 2;
+      const g = p.artGap ?? 6;
+      switch (p.artPlace ?? 'left') {
+        case 'left': cx = tb.min[0] - g - w / 2; cy = ty; break;
+        case 'right': cx = tb.max[0] + g + w / 2; cy = ty; break;
+        case 'above': cx = tx; cy = tb.max[1] + g + hh / 2; break;
+        case 'below': cx = tx; cy = tb.min[1] - g - hh / 2; break;
+        default: cx = tx; cy = ty;
+      }
+    }
+    const ox = (sb.min[0] + sb.max[0]) / 2;
+    const oy = (sb.min[1] + sb.max[1]) / 2;
+    return this.k(shape.translate([cx - ox + (p.artX ?? 0), cy - oy + (p.artY ?? 0)]));
   }
 
   private splitToBed(parts: WorkPart[], bed: number, warnings: string[]): WorkPart[] {

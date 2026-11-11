@@ -2,6 +2,14 @@ import type { Params } from './geometry';
 
 export const DEFAULTS: Params = {
   style: 'sign',
+  artSize: 40,
+  artPlace: 'left',
+  artGap: 6,
+  artX: 0,
+  artY: 0,
+  artRot: 0,
+  artThreshold: 128,
+  artInvert: false,
   backOn: false,
   backShape: 'outline',
   backMargin: 12,

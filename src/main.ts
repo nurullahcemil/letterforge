@@ -2,6 +2,7 @@ import './style.css';
 import { FONTS } from './fonts';
 import { Viewer } from './viewer';
 import { toSTL, to3MF, standOnOpenEnd, toBackingSVG } from './export';
+import { svgToArtwork, traceImage } from './art';
 import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
@@ -423,7 +424,7 @@ function rangeRow(c: Extract<Control, { kind: 'range' }>) {
     schedule();
   };
   rng.addEventListener('input', () => set(parseFloat(rng.value), rng));
-  num.addEventListener('change', () => set(Math.min(c.max * 4, Math.max(0, parseFloat(num.value))), num));
+  num.addEventListener('change', () => set(Math.min(c.max * 4, Math.max(c.min < 0 ? c.min * 4 : 0, parseFloat(num.value))), num));
   return row;
 }
 
@@ -440,6 +441,7 @@ function controlEl(c: Control): HTMLElement {
         (params as any)[c.key] = b.dataset.v;
         row.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
         if (String(c.key).startsWith('back')) renderBacking();
+        else if (String(c.key).startsWith('art')) renderArt();
         else renderStyleControls();
         schedule(true);
       }),
@@ -684,6 +686,92 @@ function renderBacking() {
   if (!params.backOn) $('#backing-note').hidden = true;
 }
 
+// ---------- artwork (SVG or traced picture), joined with the text ----------
+/** The picture behind a traced artwork, kept on this page so the threshold can be changed. */
+let artSource: { name: string; blob: Blob } | undefined;
+let traceTimer = 0;
+
+const ART_CONTROLS: Control[] = [
+  { kind: 'select', key: 'artPlace', label: 'Place it', options: [['left', 'Left'], ['right', 'Right'], ['above', 'Above'], ['below', 'Below'], ['center', 'On the text']] },
+  { kind: 'range', key: 'artSize', label: 'Artwork height', min: 5, max: 400, step: 1, unit: 'mm' },
+  { kind: 'range', key: 'artGap', label: 'Space to the text', min: -20, max: 80, step: 0.5, unit: 'mm', hint: 'Below 0 it overlaps the text and joins it.' },
+  { kind: 'range', key: 'artX', label: 'Move right', min: -200, max: 200, step: 0.5, unit: 'mm' },
+  { kind: 'range', key: 'artY', label: 'Move up', min: -200, max: 200, step: 0.5, unit: 'mm' },
+  { kind: 'range', key: 'artRot', label: 'Rotate', min: -180, max: 180, step: 1, unit: '°' },
+];
+const TRACE_CONTROLS: Control[] = [
+  { kind: 'range', key: 'artThreshold', label: 'Picture threshold', min: 1, max: 254, step: 1, hint: 'Higher takes in lighter parts of the picture.' },
+  { kind: 'toggle', key: 'artInvert', label: 'Swap shape and background', hint: 'For a light drawing on a dark background.' },
+];
+
+function renderArt() {
+  const host = $('#art-controls');
+  host.innerHTML = '';
+  if (!params.art) return;
+  const head = document.createElement('div');
+  head.className = 'art-head';
+  head.innerHTML = `<b title="${escapeHtml(params.art.name)}">${escapeHtml(params.art.name)}</b><button type="button">Remove</button>`;
+  head.querySelector('button')!.addEventListener('click', () => {
+    params.art = undefined;
+    artSource = undefined;
+    renderArt();
+    schedule(true);
+  });
+  host.appendChild(head);
+  ART_CONTROLS.filter((c) => c.key !== 'artGap' || params.artPlace !== 'center').forEach((c) => host.appendChild(controlEl(c)));
+  if (artSource?.name === params.art.name) {
+    for (const c of TRACE_CONTROLS) {
+      const el = controlEl(c);
+      // a new threshold means tracing the picture again (a moment later, while the slider moves)
+      el.addEventListener('input', () => queueTrace());
+      el.addEventListener('change', () => queueTrace());
+      host.appendChild(el);
+    }
+  }
+}
+
+function queueTrace() {
+  clearTimeout(traceTimer);
+  traceTimer = window.setTimeout(async () => {
+    if (!artSource) return;
+    try {
+      const a = await traceImage(artSource.blob, artSource.name, params.artThreshold ?? 128, !!params.artInvert);
+      params.art = a;
+      schedule(true);
+    } catch (err) {
+      showWarnings([String((err as Error).message ?? err)]);
+    }
+  }, 250);
+}
+
+$('#art-upload').addEventListener('change', async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    setBusy(true);
+    if (/\.svg$/i.test(file.name) || file.type === 'image/svg+xml') {
+      params.art = svgToArtwork(await file.text(), file.name);
+      artSource = undefined;
+    } else {
+      artSource = { name: file.name, blob: file };
+      params.art = await traceImage(file, file.name, params.artThreshold ?? 128, !!params.artInvert);
+    }
+    // start at about the height of the text
+    params.artSize = Math.round(Math.max(10, params.capHeight * 1.2));
+    params.artX = 0;
+    params.artY = 0;
+    params.artRot = 0;
+    renderArt();
+    schedule(true);
+  } catch (err) {
+    showWarnings([String((err as Error).message ?? err)]);
+  } finally {
+    setBusy(false);
+  }
+});
+
 function renderPrinter() {
   const host = $('#printer-controls');
   host.innerHTML = '';
@@ -787,6 +875,7 @@ function refreshUI() {
   renderGeneral();
   renderStyleControls();
   renderBacking();
+  renderArt();
   renderPrinter();
   updateSaveState();
 }

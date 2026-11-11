@@ -300,3 +300,7 @@ section[hidden] { display: none; }
 #backing-note { display: block; margin-top: 6px; }
 .font-axes { margin-top: 8px; }
 .font-axes .note { display: block; margin-top: 2px; }
+.art-box { margin-top: 10px; }
+.art-head { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; font-size: 12.5px; color: var(--ink-2); }
+.art-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-weight: 600; }
+.art-head button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-2); cursor: pointer; }
