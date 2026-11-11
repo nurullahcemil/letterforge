@@ -128,6 +128,7 @@ export const DEFAULTS: Params = {
   lampTexSize: 5,
   lampTexH: 2.13,
   lampTexDepth: 1.5,
+  lampSeed: 7,
   socketD: 41,
   jointD: 65,
   jointFit: 0.35,

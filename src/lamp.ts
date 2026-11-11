@@ -1,3 +1,4 @@
+import { createNoise3D } from 'simplex-noise';
 import type { ManifoldToplevel, CrossSection, Manifold } from 'manifold-3d';
 
 /** Settings of the lamp style (all lengths in mm). */
@@ -25,7 +26,9 @@ export interface LampParams {
   shCorner: number; // % corner rounding (100 = round)
   shTwist: number; // degrees per tier
   lampWall: number;
-  lampTex: 'none' | 'basket' | 'dots' | 'ribs' | 'rings';
+  lampTex: 'none' | 'basket' | 'dots' | 'ribs' | 'rings' | 'stone';
+  /** Variation of the stone (noise) surface. */
+  lampSeed?: number;
   lampTexSize: number; // pattern width (around)
   lampTexH: number; // pattern height (along the surface)
   lampTexDepth: number;
@@ -346,9 +349,34 @@ export function planShape(p: LampParams): (a: number) => number {
  * Surface pattern 0..1 on a grid: u counts dots around, v counts dots along the surface.
  * The mesh has exactly `perDot` points per dot in both directions, so every dot comes out the same.
  */
-function pattern(p: LampParams): ((u: number, v: number) => number) | null {
+/** Small seeded random generator (same stone surface for the same Variation). */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pattern(p: LampParams): ((u: number, v: number, around: number) => number) | null {
   const tau = 2 * Math.PI;
   switch (p.lampTex) {
+    case 'stone': {
+      // organic, hand-made look: two layers of simplex noise. Sampled on a cylinder (radius =
+      // around/2π) so one unit around = one unit of noise and the pattern closes without a seam.
+      const noise = createNoise3D(mulberry32(Math.round(p.lampSeed ?? 7) * 7919 + 1));
+      return (u, v, around) => {
+        const a = (tau * u) / around;
+        const R = around / tau;
+        const x = Math.cos(a) * R;
+        const y = Math.sin(a) * R;
+        const n = 0.7 * noise(x * 0.55, y * 0.55, v * 0.55) + 0.3 * noise(x * 1.3 + 17, y * 1.3, v * 1.3);
+        return clamp(0.5 + 0.55 * n, 0, 1);
+      };
+    }
     case 'basket': {
       // basket weave: a checkerboard of raised blocks with crisp edges. Grid points fall exactly
       // on block edges (value ½ there) and every point inside a block is fully up or down.
@@ -500,7 +528,7 @@ export function shadeWarp(
     mz /= ml;
     let d = 0;
     if (tex && depth > 0) {
-      d = depth * tex(col * c.around, F.s / sizeH) * F.fade *
+      d = depth * tex(col * c.around, F.s / sizeH, c.around) * F.fade *
         smooth(c.hubT + 0.5, c.hubT + 3, F.qz) *
         smooth(fadeOut, fadeOut + 6, F.qr) *
         (c.topR > 0 ? smooth(c.top - 0.5, c.top - 3, F.qz) : 1) *
@@ -915,7 +943,7 @@ export function buildLamp(wasm: ManifoldToplevel, k: Keep, p: LampParams, warnin
             const blend = 1 - smooth(w * 1.25 + 0.6, w * 1.25 + 3, Math.abs(F.t));
             if (blend <= 0) continue;
             const col = Math.atan2(y, x) / (2 * Math.PI);
-            const d = depth * tex(col * aroundB, F.s / sizeH) * F.fade * smooth(notchH + 0.4, notchH + 3, F.qz) * smooth(bodyTop - 1, bodyTop - 8, F.qz) * blend;
+            const d = depth * tex(col * aroundB, F.s / sizeH, aroundB) * F.fade * smooth(notchH + 0.4, notchH + 3, F.qz) * smooth(bodyTop - 1, bodyTop - 8, F.qz) * blend;
             const r2 = r + d * F.nr;
             v[3 * i] = (x / r) * r2;
             v[3 * i + 1] = (y / r) * r2;
