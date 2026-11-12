@@ -1,7 +1,7 @@
 import './style.css';
 import { FONTS } from './fonts';
 import { Viewer, CHECK_OVERHANG_DEG, CHECK_THIN_MM, type CheckResult } from './viewer';
-import { toSTL, to3MF, standOnOpenEnd, toBackingSVG, toBackingDXF } from './export';
+import { toSTL, to3MF, standOnOpenEnd, toBackingSVG, toBackingDXF, layoutOnPlates } from './export';
 import { svgToArtwork, traceImage } from './art';
 import { lighten } from './lighten';
 import type { BuildResult, Params, Part, Style } from './geometry';
@@ -1523,6 +1523,17 @@ function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
   return params.style === 'book' && params.bookOrient === 'standing' ? standOnOpenEnd(meshes) : meshes;
 }
 
+/** True when the parts together are wider or deeper than the bed (minus a 5 mm edge each side). */
+function exceedsBed(meshes: { positions: Float32Array }[], bed: number): boolean {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const m of meshes)
+    for (let i = 0; i < m.positions.length; i += 3) {
+      x0 = Math.min(x0, m.positions[i]); x1 = Math.max(x1, m.positions[i]);
+      y0 = Math.min(y0, m.positions[i + 1]); y1 = Math.max(y1, m.positions[i + 1]);
+    }
+  return x1 - x0 > bed - 10 || y1 - y0 > bed - 10;
+}
+
 function baseName() {
   if (params.style === 'lamp') return 'lamp';
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
@@ -1553,7 +1564,14 @@ $('#dl-3mf').addEventListener('click', async () => {
   const meshes = forExport(printable);
   // the lamp is already as light as it can be (and its bands are separate touching rings)
   const out = params.lightFiles !== false && params.style !== 'lamp' ? await lighten(meshes) : meshes;
-  download(to3MF(out, params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp'), baseName() + '.3mf');
+  // bigger than the bed: every piece its own object, already laid out on as many plates as needed
+  const tooBig = params.style !== 'lamp' && params.style !== 'book' && exceedsBed(out, params.bedSize);
+  const lay = tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
+  download(
+    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp', lay ? { groups: lay.groups, plates: lay.plates } : undefined),
+    baseName() + '.3mf',
+  );
+  if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);
 });
 
 $('#dl-backing').addEventListener('click', () => {
@@ -1578,6 +1596,7 @@ $('#dl-stl').addEventListener('click', async () => {
   let one = forExport([mesh])[0];
   if (params.lightFiles !== false && params.style !== 'lamp') [one] = await lighten([one]);
   download(toSTL(one), baseName() + '.stl');
+  if (params.style !== 'lamp' && exceedsBed([one], params.bedSize)) showWarnings([`This STL is one piece bigger than your ${params.bedSize} mm bed. Download the 3MF instead: it has the pieces laid out on separate plates.`]);
 });
 
 // ---------- accent text (two-text sign) ----------

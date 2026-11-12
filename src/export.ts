@@ -64,18 +64,22 @@ function paintCode(filament: number): string {
 
 /**
  * `separate`: every part is its own object (e.g. lamp shade and base, printed one at a time),
- * instead of parts of one assembled model.
+ * instead of parts of one assembled model. `layout` instead groups parts into objects and puts each
+ * object on a build plate (designs bigger than the bed, split into pieces): `groups[k]` lists part
+ * indices of object k and `plates[k]` its plate (0-based). Bambu Studio reads the plates from
+ * model_settings.config.
  */
-export function to3MF(parts: MeshData[], title: string, separate = false): Blob {
+export function to3MF(parts: MeshData[], title: string, separate = false, layout?: { groups: number[][]; plates: number[] }): Blob {
   const n = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
   // One colour (and one filament slot) per distinct colour, in order of first use.
   // Written as an m:colorgroup: Bambu Studio 2.x reads only that, not basematerials.
   const palette: string[] = [];
   for (const p of parts) if (!palette.includes(p.color.toLowerCase())) palette.push(p.color.toLowerCase());
   const slot = (p: MeshData) => palette.indexOf(p.color.toLowerCase());
+  // which parts make up each printed object
+  const groups: number[][] = layout ? layout.groups : separate ? parts.map((_, i) => [i]) : [parts.map((_, i) => i)];
   let objects = '';
-  const baseId = parts.length + 1;
-  const matId = baseId + 1;
+  const matId = parts.length + groups.length + 1;
   parts.forEach((part, i) => {
     const id = i + 1;
     const vs: string[] = [];
@@ -92,49 +96,65 @@ export function to3MF(parts: MeshData[], title: string, separate = false): Blob 
     }
     objects += `<object id="${id}" name="${esc(part.name)}" type="model" pid="${matId}" pindex="${slot(part)}"><mesh><vertices>${vs.join('')}</vertices><triangles>${ts.join('')}</triangles></mesh></object>\n`;
   });
-  const components = parts.map((_, i) => `<component objectid="${i + 1}"/>`).join('');
+  // an object of one part is that part's mesh; an object of several parts is a component object
+  const objId = (k: number) => (groups[k].length === 1 ? groups[k][0] + 1 : parts.length + k + 1);
+  const groupName = (k: number) => (groups.length === 1 && groups[k].length > 1 ? title : parts[groups[k][0]].name);
+  groups.forEach((g, k) => {
+    if (g.length > 1) objects += `<object id="${objId(k)}" name="${esc(groupName(k))}" type="model"><components>${g.map((i) => `<component objectid="${i + 1}"/>`).join('')}</components></object>\n`;
+  });
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02">
 <metadata name="Title">${esc(title)}</metadata>
 <metadata name="Application">Letterforge</metadata>
 <resources>
 <m:colorgroup id="${matId}">${palette.map((c) => `<m:color color="${c.toUpperCase()}"/>`).join('')}</m:colorgroup>
-${objects}${separate ? '' : `<object id="${baseId}" name="${esc(title)}" type="model"><components>${components}</components></object>\n`}</resources>
-<build>${separate ? parts.map((_, i) => `<item objectid="${i + 1}"/>`).join('') : `<item objectid="${baseId}"/>`}</build>
+${objects}</resources>
+<build>${groups.map((_, k) => `<item objectid="${objId(k)}"/>`).join('')}</build>
 </model>`;
   // Bambu Studio / Orca Slicer read this file even from other apps: it names every part
   // and gives it a filament slot, so a two-colour model opens with two filaments set.
-  const settings = separate
-    ? `<?xml version="1.0" encoding="UTF-8"?>
-<config>
-${parts
+  const objSettings = groups
+    .map(
+      (g, k) => `  <object id="${objId(k)}">
+    <metadata key="name" value="${esc(groupName(k))}"/>
+    <metadata key="extruder" value="${slot(parts[g[0]]) + 1}"/>
+${g
   .map(
-    (p, i) => `  <object id="${i + 1}">
-    <metadata key="name" value="${esc(p.name)}"/>
-    <metadata key="extruder" value="${slot(p) + 1}"/>
-    <part id="${i + 1}" subtype="normal_part">
-      <metadata key="name" value="${esc(p.name)}"/>
-      <metadata key="extruder" value="${slot(p) + 1}"/>
-    </part>
-  </object>`,
-  )
-  .join('\n')}
-</config>
-`
-    : `<?xml version="1.0" encoding="UTF-8"?>
-<config>
-  <object id="${baseId}">
-    <metadata key="name" value="${esc(title)}"/>
-    <metadata key="extruder" value="1"/>
-${parts
-  .map(
-    (p, i) => `    <part id="${i + 1}" subtype="normal_part">
-      <metadata key="name" value="${esc(p.name)}"/>
-      <metadata key="extruder" value="${slot(p) + 1}"/>
+    (i) => `    <part id="${i + 1}" subtype="normal_part">
+      <metadata key="name" value="${esc(parts[i].name)}"/>
+      <metadata key="extruder" value="${slot(parts[i]) + 1}"/>
     </part>`,
   )
   .join('\n')}
-  </object>
+  </object>`,
+    )
+    .join('\n');
+  const plateSettings = layout
+    ? [...new Set(layout.plates)]
+        .sort((x, y) => x - y)
+        .map(
+          (pl) => `  <plate>
+    <metadata key="plater_id" value="${pl + 1}"/>
+    <metadata key="plater_name" value=""/>
+    <metadata key="locked" value="false"/>
+${groups
+  .map((_, k) => k)
+  .filter((k) => layout.plates[k] === pl)
+  .map(
+    (k) => `    <model_instance>
+      <metadata key="object_id" value="${objId(k)}"/>
+      <metadata key="instance_id" value="0"/>
+    </model_instance>`,
+  )
+  .join('\n')}
+  </plate>`,
+        )
+        .join('\n')
+    : '';
+  const settings = `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+${objSettings}
+${plateSettings}
 </config>
 `;
   const files = {
@@ -232,4 +252,89 @@ export async function toBackingDXF(b: { cut: [number, number][][]; guide: [numbe
     layerOptions: { CUT: { color: mk.exporter.colors.red }, GUIDE: { color: mk.exporter.colors.blue } },
   });
   return new Blob([dxf], { type: 'application/dxf' });
+}
+
+/**
+ * Lay out pieces of a design that is bigger than the bed: parts that overlap in plan stay together
+ * (e.g. a QR plate on its sign piece), and each group is packed onto plates of `bed` mm in rows
+ * (5 mm from the edges, 6 mm apart). Plates are placed like Bambu Studio lays them out (a grid,
+ * 1/5 of a bed apart), so each piece lands on its own plate.
+ */
+export function layoutOnPlates<T extends MeshData>(parts: T[], bed: number): { parts: T[]; groups: number[][]; plates: number[] } {
+  const box = (p: MeshData) => {
+    const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < p.positions.length; i += 3) {
+      for (let a = 0; a < 3; a++) {
+        b[a] = Math.min(b[a], p.positions[i + a]);
+        b[a + 3] = Math.max(b[a + 3], p.positions[i + a]);
+      }
+    }
+    return b;
+  };
+  const boxes = parts.map(box);
+  // group parts whose footprints overlap (union-find)
+  const root = parts.map((_, i) => i);
+  const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+  for (let i = 0; i < parts.length; i++)
+    for (let j = i + 1; j < parts.length; j++) {
+      const A = boxes[i], B = boxes[j];
+      // only a different-colour part sitting on a piece goes with it (pieces of one colour are
+      // separate on purpose: that is how the design was split to fit)
+      if (parts[i].color.toLowerCase() === parts[j].color.toLowerCase()) continue;
+      const overlap = Math.min(A[3], B[3]) - Math.max(A[0], B[0]) > 0.5 && Math.min(A[4], B[4]) - Math.max(A[1], B[1]) > 0.5;
+      if (!overlap) continue;
+      const ri = find(i), rj = find(j);
+      const m = [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[3], B[3]), Math.max(A[4], B[4])];
+      if (ri !== rj && m[2] - m[0] <= bed - 10 && m[3] - m[1] <= bed - 10) root[ri] = rj;
+    }
+  const byRoot = new Map<number, number[]>();
+  parts.forEach((_, i) => byRoot.set(find(i), [...(byRoot.get(find(i)) ?? []), i]));
+  const groups = [...byRoot.values()];
+  const gbox = groups.map((g) => {
+    const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    for (const i of g) for (let a = 0; a < 3; a++) {
+      b[a] = Math.min(b[a], boxes[i][a]);
+      b[a + 3] = Math.max(b[a + 3], boxes[i][a + 3]);
+    }
+    return b;
+  });
+  // shelf packing, tallest (in Y) first
+  const margin = 5, gap = 6, usable = bed - 2 * margin;
+  const order = groups.map((_, k) => k).sort((a, b) => gbox[b][4] - gbox[b][1] - (gbox[a][4] - gbox[a][1]));
+  const plates = new Array<number>(groups.length).fill(0);
+  const at: [number, number][] = new Array(groups.length);
+  let plate = 0, x = 0, y = 0, rowH = 0;
+  for (const k of order) {
+    const w = gbox[k][3] - gbox[k][0], h = gbox[k][4] - gbox[k][1];
+    if (x > 0 && x + w > usable) { x = 0; y += rowH + gap; rowH = 0; }
+    if (y > 0 && y + h > usable) { plate++; x = 0; y = 0; rowH = 0; }
+    plates[k] = plate;
+    at[k] = [x, y];
+    x += w + gap;
+    rowH = Math.max(rowH, h);
+  }
+  // plate grid like Bambu Studio: columns = rounded-up square root, 1/5 of a bed between plates
+  const count = plate + 1;
+  const sq = Math.sqrt(count);
+  const cols = sq > Math.round(sq) ? Math.round(sq) + 1 : Math.round(sq);
+  const stride = bed * 1.2;
+  const out = parts.slice();
+  groups.forEach((g, k) => {
+    const pl = plates[k];
+    const ox = (pl % cols) * stride + margin + at[k][0] - gbox[k][0];
+    // rows of pieces go down the plate from its back edge, plates go down in rows too
+    const oy = -Math.floor(pl / cols) * stride + (bed - margin) - at[k][1] - gbox[k][4];
+    const oz = -gbox[k][2];
+    for (const i of g) {
+      const src = parts[i].positions;
+      const q = new Float32Array(src.length);
+      for (let j = 0; j < src.length; j += 3) {
+        q[j] = src[j] + ox;
+        q[j + 1] = src[j + 1] + oy;
+        q[j + 2] = src[j + 2] + oz;
+      }
+      out[i] = { ...parts[i], positions: q };
+    }
+  });
+  return { parts: out, groups, plates };
 }

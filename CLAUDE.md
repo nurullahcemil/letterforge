@@ -72,6 +72,13 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no te
 See the bottom of `docs/DECISIONS.md` for the feature list and history.
 The user prints on a Bambu Lab X1E with Bambu Studio 2.x; 3MF colour import is confirmed working.
 
+## Bigger than the bed (3MF)
+When the printable parts exceed bedSize−10 (not lamp/book), the 3MF download uses `layoutOnPlates`
+(export.ts): each piece is its own object (a different-colour part overlapping a piece, e.g. QR on its
+sign piece, stays with it), shelf-packed onto plates (5 mm edge, 6 mm gap) placed in Bambu's plate
+grid (cols = rounded-up √n, stride 1.2·bed), with `<plate>` entries in model_settings.config.
+STL can't hold plates: a warning points to the 3MF. Check: `npx tsx scripts/plate-check.ts '{...}'`.
+
 ## Wooden backing (side feature, all text styles except book)
 Params `back*`. `Builder.backing()`: footprint = union of `project()` of every kept part (so split
 and dragged parts count), grown by the margin; "outline" bridges gaps (close by max(round, 0.35·cap))
