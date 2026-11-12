@@ -29,6 +29,8 @@ Read this file first. Details: `docs/ARCHITECTURE.md` (code map), `docs/DEPLOY.m
   opentype.js's gvar math can leave stroke ends poking out at joins (user saw nubs on M/E).
   Per-letter italic on a Google variable font without ital/slnt but with an italic file: the
   letter is drawn from that file (`italicCompanion()` → build msg `italicKey` → `setItalicFont`).
+  "Mix letters" (Letter style block): Shuffle letters = random per-letter wght/wdth/italic within the
+  font's ranges (`shuffleLetters`, params mixWght/mixWdth/mixItal/mixAmount %), Clear removes them.
   Popup shows missing settings greyed ("Not in this font"); gallery cards of variable fonts list
   what they have (weight/width/italic) from api.fontsource.org/v1/variable/<id>, fetched on view.
 - Artwork (`src/art.ts`, page side): SVG via three SVGLoader (white fills = holes) or PNG/JPG traced

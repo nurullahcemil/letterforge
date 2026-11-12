@@ -927,6 +927,51 @@ function renderAxes() {
   for (const a of fontAxesNow.filter((x) => !['wght', 'wdth', 'slnt', 'ital'].includes(x.tag)).slice(0, 4)) {
     slider(AXIS_NAMES[a.tag] ?? a.tag, a.min, a.max, a.max - a.min > 20 ? 1 : 0.1, axes[a.tag] ?? a.def, (x) => setAxis(a.tag, x));
   }
+  // ---- mix letters: every letter its own weight / width / italic, picked at random
+  const canItal = !!(ital || slnt || gfItalicFile);
+  if (wght || wdth || canItal) {
+    const head = document.createElement('div');
+    head.className = 'mix-head';
+    head.textContent = 'Mix letters';
+    host.appendChild(head);
+    const chips = document.createElement('div');
+    chips.className = 'mix-chips';
+    const opts: [keyof Params, string, boolean][] = [
+      ['mixWght', 'Weight', !!wght],
+      ['mixWdth', 'Width', !!wdth],
+      ['mixItal', 'Italic', canItal],
+    ];
+    for (const [k, label, ok] of opts) {
+      if (!ok) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (params[k] !== false ? ' on' : '');
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(params[k] !== false));
+      b.addEventListener('click', () => {
+        (params as any)[k] = params[k] === false;
+        renderAxes();
+      });
+      chips.appendChild(b);
+    }
+    host.appendChild(chips);
+    slider('How different', 10, 100, 1, params.mixAmount ?? 70, (x) => (params.mixAmount = x));
+    const row = document.createElement('div');
+    row.className = 'mix-actions';
+    row.innerHTML = '<button type="button" class="primary" data-a="shuffle">Shuffle letters</button><button type="button" class="secondary" data-a="clear">Clear</button>';
+    row.querySelector('[data-a="shuffle"]')!.addEventListener('click', () => {
+      shuffleLetters({ wght: params.mixWght !== false ? wght : undefined, wdth: params.mixWdth !== false ? wdth : undefined, slnt, ital, italFile: gfItalicFile && params.mixItal !== false, italOn: params.mixItal !== false });
+      if (selLetter !== null) renderLetterPop();
+      schedule(true);
+    });
+    row.querySelector('[data-a="clear"]')!.addEventListener('click', () => {
+      const n = lettersOf().length;
+      setLetter([...Array(n).keys()], { wght: null, wdth: null, slnt: null, ital: null });
+      if (selLetter !== null) renderLetterPop();
+      schedule(true);
+    });
+    host.appendChild(row);
+  }
   const missing = [!wght && 'weight', !wdth && 'width', !(ital || slnt || gfItalicFile) && 'italic'].filter(Boolean);
   const note = document.createElement('small');
   note.className = 'note';
@@ -934,6 +979,37 @@ function renderAxes() {
     ? `This variable font has no ${missing.join(' or ')} setting. Click a letter on the model to style it on its own.`
     : 'Click a letter on the model to give it its own weight, width or slant.';
   host.appendChild(note);
+}
+
+/**
+ * Give every letter its own weight / width / italic at random, within the font's own ranges.
+ * "How different" (mixAmount, %) sets how far from the whole text's value a letter may go; italic
+ * letters are picked with a chance that grows with it. Moves and turns of letters are kept.
+ */
+function shuffleLetters(o: { wght?: Axis; wdth?: Axis; slnt?: Axis; ital?: Axis; italFile: boolean; italOn: boolean }) {
+  const amt = Math.min(1, Math.max(0.1, (params.mixAmount ?? 70) / 100));
+  const n = lettersOf().length;
+  const pick = (a: Axis) => {
+    const cur = fontAxisNow(a.tag);
+    const span = Math.max(cur - a.min, a.max - cur) * amt;
+    const v = Math.min(a.max, Math.max(a.min, cur + (Math.random() * 2 - 1) * span));
+    return Math.round(v * 2) / 2;
+  };
+  const italChance = 0.15 + 0.35 * amt;
+  for (let i = 0; i < n; i++) {
+    const patch: LetterPatch = {
+      wght: o.wght ? pick(o.wght) : null,
+      wdth: o.wdth ? pick(o.wdth) : null,
+      slnt: null,
+      ital: null,
+    };
+    if (o.italOn && Math.random() < italChance) {
+      if (o.slnt) patch.slnt = Math.max(o.slnt.min, -12);
+      else if (o.ital) patch.ital = 1;
+      else if (o.italFile) patch.ital = 1;
+    }
+    setLetter([i], patch);
+  }
 }
 
 /** Key of the italic file to use for single italic letters, when the current font needs one. */

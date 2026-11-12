@@ -10,6 +10,11 @@ const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?
 export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
 
 export interface Params extends LampParams {
+  /** Mix letters (variable fonts): which axes to shuffle and how far (%). */
+  mixWght?: boolean;
+  mixWdth?: boolean;
+  mixItal?: boolean;
+  mixAmount?: number;
   /** Made-up letter style for fonts without these settings: width %, slant degrees, extra
    * thickness mm (negative = thinner). Real variable-font axes go in fontVar instead. */
   textWidth?: number;

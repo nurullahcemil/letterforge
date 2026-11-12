@@ -313,3 +313,9 @@ section[hidden] { display: none; }
 .lp-off span { color: var(--ink-3); }
 .lp-toggle { font: inherit; font-size: 12.5px; padding: 4px 12px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); color: var(--ink-2); cursor: pointer; justify-self: start; }
 .lp-toggle.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.mix-head { margin: 14px 0 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.mix-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.mix-chips .chip { font: inherit; font-size: 12px; padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-2); cursor: pointer; }
+.mix-chips .chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.mix-actions { display: flex; gap: 6px; margin: 8px 0 4px; }
+.mix-actions button { flex: 1; }
