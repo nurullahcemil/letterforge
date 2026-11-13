@@ -55,6 +55,21 @@ npx tsx scripts/smoke.ts   # builds every style in Node (with HarfBuzz; NOHB=1 w
 Regression check used so far: run smoke before and after a change and diff the
 `name parts tris size` lines; they must be identical unless the change is meant to alter output.
 
+## Editor layout (user: "settings are hard to understand"; "samples must fit the bed")
+- Sidebar: "Your words" box on top (hidden for no-text styles), then sticky tabs Design / Font /
+  Colours / Print (`showTab`, sections carry `data-tab`; `.tab-off` hides). Design tab = current
+  style card (Change opens the style grid), "Ideas to start from" chips, Size, style settings.
+- Style presets + sample ideas live in `src/presets.ts` (PRESETS, SAMPLES). An idea = DEFAULTS +
+  preset patch + idea patch (colours/bed kept). Every start design and idea must pass
+  `npx tsx scripts/fit-check.ts [style,style]` (no piece over bed−10, not taller than the bed, not
+  cut to fit). Multi-piece styles (lamp, pins apart, concrete, lines, tile) may need several plates.
+- Settings lists can hold `{ kind: 'heading', key: 'style', label }` group titles (empty groups
+  are dropped after filtering).
+- HUD bed check (`updateBedFit`): green "Fits your N mm bed", amber "Prints on N plates" /
+  "Cut into pieces", red "Too big", from the print layout (forExport + layoutOnPlates).
+- Empty text no longer crashes (manifold can't take an empty polygon list); pins waves/ripples
+  build with no text.
+
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),

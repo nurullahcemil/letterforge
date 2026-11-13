@@ -328,7 +328,10 @@ export class Builder {
         widths: p.letterW,
         moves: p.style === 'stepped' || Object.keys(p.letterMove ?? {}).length ? (p.letterMove ?? {}) : undefined,
       });
-      let cs = this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'));
+      // no letters at all (empty text): manifold can't take an empty list, so start from nothing
+      let cs = layout.contours.length
+        ? this.k(new this.wasm.CrossSection(layout.contours as MVec2[][], 'NonZero'))
+        : this.k(this.wasm.CrossSection.square([0, 0]));
       // made-up weight: grow (bolder) or shrink (lighter) every outline by half the amount
       const bold = clampN(p.textBold ?? 0, -3, 6) / 2;
       if (Math.abs(bold) > 0.005) {
@@ -343,7 +346,9 @@ export class Builder {
         cs = this.k(cs.add(art));
         layout.lines.push(art.toPolygons() as Vec2[][]);
       }
-      if (cs.isEmpty()) {
+      // pin art waves and ripples don't need any text
+      const textFree = p.style === 'pins' && (p.pinMode ?? 'wave') !== 'letters';
+      if (cs.isEmpty() && !textFree) {
         return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
       // flat styles keep layout coordinates; book and stack replace these with their own layout

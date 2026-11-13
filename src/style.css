@@ -319,3 +319,41 @@ section[hidden] { display: none; }
 .mix-chips .chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
 .mix-actions { display: flex; gap: 6px; margin: 8px 0 4px; }
 .mix-actions button { flex: 1; }
+
+/* ---------- sidebar tabs, current style, ideas, bed check ---------- */
+.tab-off { display: none !important; }
+.tabs {
+  position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  padding: 8px 0; margin: 4px 0 0; background: var(--panel); border-top: 1px solid var(--line);
+}
+.tabs button {
+  border: 1px solid var(--line); background: transparent; color: var(--ink-2); border-radius: 8px;
+  padding: 8px 4px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.tabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tabs button[hidden] { display: none; }
+.words textarea { min-height: 52px; }
+.style-now { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: start; }
+.style-now .ico { color: var(--accent); width: 48px; }
+.style-now .ico svg { width: 48px; height: 32px; }
+.style-now b { font-size: 15px; }
+.style-now .blurb { margin: 2px 0 0; }
+button.small { padding: 6px 10px; font-size: 12px; }
+.styles[hidden] { display: none; }
+.styles { margin-top: 10px; }
+.ideas-wrap { margin-top: 12px; }
+.ideas-wrap h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); margin: 0 0 6px; font-weight: 600; }
+.ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.idea {
+  border: 1px solid var(--line-2); background: var(--bg); color: var(--ink); border-radius: 999px;
+  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.idea:hover { border-color: var(--accent); color: var(--accent); }
+.ctl-head { margin: 14px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 700; }
+.ctl-head:first-child { margin-top: 2px; }
+.bedfit { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--panel); border: 1px solid var(--line); }
+.bedfit i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.bedfit.ok i { background: #2f9e6a; }
+.bedfit.multi i { background: #e0a526; }
+.bedfit.bad i { background: #d6453d; }
+.bedfit[hidden] { display: none; }

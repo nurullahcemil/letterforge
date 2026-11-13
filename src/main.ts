@@ -7,168 +7,21 @@ import { lighten } from './lighten';
 import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { MOLD_SHAPE_DEFAULTS } from './mold';
+import { PRESETS, SAMPLES } from './presets';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
 
 const defaults: Params = { ...DEFAULTS };
 
-interface StylePreset {
-  label: string;
-  blurb: string;
-  text: string;
-  font: string;
-  patch: Partial<Params>;
-}
-
-const PRESETS: Record<Style, StylePreset> = {
-  sign: {
-    label: 'Table sign',
-    blurb: 'Standing letters on a bar, with an optional QR tile.',
-    text: 'MENU',
-    font: 'archivo',
-    patch: { capHeight: 40, colorA: '#2b2d2f', colorB: '#f4f1ea', tracking: 0.02 },
-  },
-  planter: {
-    label: 'Planter letters',
-    blurb: 'Hollow channel letters to fill with moss or plants.',
-    text: 'grow',
-    font: 'pacifico',
-    patch: { capHeight: 110, colorA: '#f6f5f1', colorB: '#6f9a3a', tracking: 0 },
-  },
-  topo: {
-    label: 'Topographic',
-    blurb: 'Stacked contour layers that step into the letter.',
-    text: 'B',
-    font: 'fredoka',
-    patch: { capHeight: 120, colorA: '#eef3d2', colorB: '#c9df3f', tracking: 0.02, wobble: 4 },
-  },
-  facet: {
-    label: 'Faceted',
-    blurb: 'Low-poly roof ridges, like folded papercraft.',
-    text: 'LOVE',
-    font: 'archivo',
-    patch: { capHeight: 90, colorA: '#2e8b6e', colorB: '#1f6a53', tracking: 0.04 },
-  },
-  keychain: {
-    label: 'Keychain',
-    blurb: 'Name tag with a layered outline and a key-ring hole.',
-    text: 'Olivia',
-    font: 'pacifico',
-    patch: { capHeight: 16, colorA: '#2f6fd6', colorB: '#ffd43b', tracking: 0 },
-  },
-  duo: {
-    label: 'Two-text sign',
-    blurb: 'A bold main text with an accent text on top, in two fonts. Drag either text to place it. Prints standing up; add stem holes to use it as a vase.',
-    text: 'BIRTHDAY',
-    font: 'fredoka',
-    patch: { capHeight: 36, colorA: '#9fd4b4', colorB: '#7cc49b', tracking: -0.04, topDx: 0, topDy: 0 },
-  },
-  stack: {
-    label: 'Bold stack',
-    blurb: 'Chunky stacked lines with rounded edges, for walls and shelves.',
-    text: 'RAISE\nYOUR\nGAME',
-    font: 'archivo',
-    patch: { capHeight: 45, colorA: '#2fd13a', tracking: -0.05, lineSpacing: 0.8 },
-  },
-  stepped: {
-    label: 'Stepped',
-    blurb: 'Letters that step down in sharp tiers, like folded paper. Click a letter to resize, turn or move it.',
-    text: 'A',
-    font: 'oswald',
-    patch: { capHeight: 140, colorA: '#d8232a', colorB: '#f2efe8', tracking: 0.02 },
-  },
-  ramp: {
-    label: 'Ramp relief',
-    blurb: 'Letters that rise into slanted wedges off a plate.',
-    text: 'ON SUCH\nA FULL SEA',
-    font: 'oswald',
-    patch: { capHeight: 30, colorA: '#f2c230', colorB: '#f7f5ef', tracking: 0.04, lineSpacing: 1.3, rMax: 10 },
-  },
-  book: {
-    label: 'Book sleeve',
-    blurb: 'A slipcase sized to your book, open on the spine side, with raised or ramped letters on the front. Drag the text to place it.',
-    text: 'ON SUCH\nA FULL SEA',
-    font: 'oswald',
-    patch: { capHeight: 16, colorA: '#f2efe8', colorB: '#cdbf98', tracking: 0.03, lineSpacing: 1.35, rMin: 0.4, rMax: 10, rLean: 60, rSpan: 'letter', rDir: 'right', textDx: 0, textDy: 0 },
-  },
-  lamp: {
-    label: 'Lamp',
-    blurb: 'A table lamp for an E27 lamp kit (socket, cable, LED bulb): a stacked shade that twists onto a base. Drop the shade on and turn it to lock. Print the shade in a light, translucent colour.',
-    text: '',
-    font: 'archivo',
-    patch: { colorA: '#f3e6cf', colorB: '#d9967a' },
-  },
-  flower: {
-    label: 'Letter flower',
-    blurb: 'Each letter bends into a petal: they meet in the middle and their sides touch, filling a circle. Deep and chunky, as one sculpture. Repeat the word to fill it.',
-    text: 'BLOOM',
-    font: 'archivo',
-    patch: { capHeight: 80, colorA: '#f0642d', tracking: 0, flCount: 12 },
-  },
-  arrow: {
-    label: 'Arrow sign',
-    blurb: 'A shaped board (turning arrow, arrow, rectangle or circle) with block letters that cast a solid shadow, in three colours. Put each letter on its own line to stack them.',
-    text: 'F\nU\nN',
-    font: 'archivo',
-    patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
-  },
-  terrace: {
-    label: 'Terrace planter',
-    blurb: 'A low organic tray with hills of stepped levels, for succulents and moss. Change the hills, levels and heights, or shuffle for a new shape.',
-    text: '',
-    font: 'archivo',
-    patch: { colorA: '#efece4' },
-  },
-  concrete: {
-    label: 'Concrete letters',
-    blurb: 'Molds to cast letters in concrete. Silicone master: print it, pour silicone over, cast in the soft mold. Or print a hard mold with a pocket per letter.',
-    text: 'HOME',
-    font: 'archivo',
-    patch: { capHeight: 90, colorA: '#c9c6bf', tracking: 0.02 },
-  },
-  lines: {
-    label: 'Line letters',
-    blurb: 'Each letter in its own square tile, made of thin standing lines: rings that follow the letter, straight lines around it. Great as a wall alphabet.',
-    text: 'ABCDE\nFGHIJ',
-    font: 'archivo',
-    patch: { colorA: '#3a3a3e', colorB: '#3a3a3e', tracking: 0 },
-  },
-  pins: {
-    label: 'Pin art',
-    blurb: 'A grid of round pins on a plate, rising and falling in waves, ripples or the shape of your letters. Pins and plate in two colours, with a frame.',
-    text: 'HI',
-    font: 'archivo',
-    patch: { capHeight: 90, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04, pinText: 'up' },
-  },
-  pyramid: {
-    label: 'Pyramid tiles',
-    blurb: 'Letters cut into a grid of little pyramids and slopes that catch the light. Shuffle for a new pattern.',
-    text: 'C',
-    font: 'archivo',
-    patch: { capHeight: 120, colorA: '#22b357', tracking: 0.02 },
-  },
-  tile: {
-    label: 'Tile mold',
-    blurb: 'Eight-point stars and crosses that fit together. Print a silicone master to make a soft mold for plaster, concrete or clay, a hard mold, or clay cutters.',
-    text: '',
-    font: 'archivo',
-    patch: { colorA: '#cdd6dd', colorB: '#e8c9a8' },
-  },
-  mold: {
-    label: 'Candle & mold',
-    blurb: 'A candle shape (pleated ball, drop ornament, gem, pillar or tiered tree). Silicone kit: print the master on a base and a box around it, pour silicone, and you have a soft candle mold. Or print a hard mold directly: two-part block, zigzag split or open cup.',
-    text: '',
-    font: 'archivo',
-    patch: { colorA: '#cdd6dd', colorB: '#f2c6a2' },
-  },
-};
 
 type Control =
   | { kind: 'range'; key: keyof Params; label: string; min: number; max: number; step: number; unit?: string; hint?: string }
   | { kind: 'select'; key: keyof Params; label: string; options: [string, string][]; hint?: string }
   | { kind: 'toggle'; key: keyof Params; label: string; hint?: string }
-  | { kind: 'text'; key: keyof Params; label: string; placeholder?: string; hint?: string };
+  | { kind: 'text'; key: keyof Params; label: string; placeholder?: string; hint?: string }
+  /** A small heading that groups the settings below it (key is unused). */
+  | { kind: 'heading'; key: 'style'; label: string; hint?: string };
 
 const STYLE_CONTROLS: Record<Style, Control[]> = {
   sign: [
@@ -271,57 +124,73 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   ],
   lamp: [],
   flower: [
+    { kind: 'heading', key: 'style', label: 'Petals' },
     { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around the circle. 0 = the word once; more repeats it.' },
     { kind: 'range', key: 'flSize', label: 'Size', min: 50, max: 400, step: 1, unit: 'mm', hint: 'Across the whole flower.' },
     { kind: 'range', key: 'flMiddle', label: 'Middle size', min: 8, max: 60, step: 1, unit: '%', hint: 'Where the letters start. The letters get narrower or wider on their own to fit.' },
     { kind: 'range', key: 'flDepth', label: 'Depth', min: 5, max: 200, step: 1, unit: 'mm', hint: 'How deep each letter goes back.' },
   ],
   arrow: [
+    { kind: 'heading', key: 'style', label: 'Board' },
     { kind: 'select', key: 'arShape', label: 'Board', options: [['turn', 'Turning arrow'], ['arrow', 'Arrow'], ['rect', 'Rectangle'], ['circle', 'Circle']] },
     { kind: 'select', key: 'arDir', label: 'Points', options: [['right', 'Right'], ['left', 'Left'], ['up', 'Up'], ['down', 'Down']] },
     { kind: 'range', key: 'arMargin', label: 'Board margin', min: 0, max: 60, step: 1, unit: 'mm' },
     { kind: 'range', key: 'arRound', label: 'Corner rounding', min: 0, max: 30, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'arBoard', label: 'Board thickness', min: 1.2, max: 12, step: 0.2, unit: 'mm' },
+    { kind: 'heading', key: 'style', label: 'Shadow' },
     { kind: 'range', key: 'arShadowLen', label: 'Shadow length', min: 0, max: 20, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'arShadowAng', label: 'Shadow direction', min: 0, max: 359, step: 5, unit: '°', hint: '225 = down and left.' },
     { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
+    { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
   terrace: [
+    { kind: 'heading', key: 'style', label: 'Shape' },
     { kind: 'range', key: 'tgHills', label: 'Hills', min: 1, max: 4, step: 1 },
     { kind: 'range', key: 'tgTiers', label: 'Levels', min: 1, max: 6, step: 1, hint: 'Levels on the biggest hill. Every other hill gets one less.' },
+    { kind: 'heading', key: 'style', label: 'Size' },
     { kind: 'range', key: 'tgW', label: 'Length', min: 80, max: 400, step: 1, unit: 'mm' },
     { kind: 'range', key: 'tgD', label: 'Depth', min: 50, max: 300, step: 1, unit: 'mm' },
     { kind: 'range', key: 'tgStep', label: 'Level step', min: 6, max: 50, step: 0.5, unit: 'mm', hint: 'How far each level steps in. This is the room for plants on each terrace.' },
     { kind: 'range', key: 'tgShift', label: 'Peak off-centre', min: 0, max: 100, step: 5, unit: '%' },
+    { kind: 'heading', key: 'style', label: 'Heights' },
     { kind: 'range', key: 'tgH', label: 'Outer wall', min: 4, max: 60, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'tgRise', label: 'Rise per level', min: 0, max: 60, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'tgWobble', label: 'Organic shape', min: 0, max: 60, step: 1, unit: '%' },
     { kind: 'range', key: 'tgSeed', label: 'Shuffle', min: 1, max: 99, step: 1, hint: 'A new shape with the same settings.' },
+    { kind: 'heading', key: 'style', label: 'Printing' },
     { kind: 'range', key: 'tgWall', label: 'Wall thickness', min: 0.8, max: 4, step: 0.05, unit: 'mm', hint: '1.6 = four lines with a 0.4 mm nozzle.' },
     { kind: 'range', key: 'tgFloor', label: 'Floor thickness', min: 0.8, max: 6, step: 0.2, unit: 'mm' },
   ],
   concrete: [
+    { kind: 'heading', key: 'style', label: 'Mold type' },
     { kind: 'select', key: 'ccMake', label: 'Make', options: [['master', 'Silicone master'], ['mold', 'Hard mold']], hint: 'Silicone master gives the smoothest letters and a mold you can use many times.' },
+    { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'ccDepth', label: 'Letter thickness', min: 5, max: 80, step: 1, unit: 'mm' },
     { kind: 'range', key: 'ccDraft', label: 'Taper', min: 0, max: 8, step: 0.5, unit: '°', hint: 'Slightly slanted sides so the letters come out. 2° is enough for most.' },
+    { kind: 'heading', key: 'style', label: 'Hard mold' },
     { kind: 'select', key: 'ccShape', label: 'Mold shape', options: [['outline', 'Follows the letters'], ['block', 'Rectangle']] },
     { kind: 'range', key: 'ccWall', label: 'Mold wall', min: 1.6, max: 15, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'ccFloor', label: 'Mold floor', min: 1.2, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'heading', key: 'style', label: 'Hanging' },
     { kind: 'toggle', key: 'ccHoles', label: 'Hanging holes', hint: 'A hole through each letter for a screw or nail.' },
     { kind: 'range', key: 'ccHoleD', label: 'Hole size', min: 3, max: 12, step: 0.5, unit: 'mm' },
   ],
   lines: [
+    { kind: 'heading', key: 'style', label: 'Tiles' },
     { kind: 'range', key: 'lnTile', label: 'Tile size', min: 20, max: 200, step: 1, unit: 'mm' },
     { kind: 'range', key: 'lnCols', label: 'Letters per row', min: 0, max: 12, step: 1, hint: '0 = one row per line of text.' },
+    { kind: 'heading', key: 'style', label: 'Lines' },
     { kind: 'range', key: 'lnPitch', label: 'Line spacing', min: 1.5, max: 10, step: 0.1, unit: 'mm' },
     { kind: 'range', key: 'lnFin', label: 'Line thickness', min: 0.4, max: 3, step: 0.05, unit: 'mm', hint: '0.84 = two lines with a 0.4 mm nozzle.' },
     { kind: 'range', key: 'lnHeight', label: 'Letter line height', min: 2, max: 50, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'lnBack', label: 'Background lines', min: 10, max: 150, step: 5, unit: '%', hint: 'Height of the lines around the letter, compared to the letter lines.' },
     { kind: 'range', key: 'lnBase', label: 'Base thickness', min: 0.6, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'heading', key: 'style', label: 'Pattern' },
     { kind: 'range', key: 'lnSeed', label: 'Shuffle', min: 1, max: 99, step: 1, hint: 'Changes the direction of the lines in each tile.' },
   ],
   pins: [
+    { kind: 'heading', key: 'style', label: 'Pattern' },
     { kind: 'select', key: 'pinMode', label: 'Pattern', options: [['wave', 'Waves'], ['ripple', 'Ripples'], ['halo', 'Ring'], ['letters', 'My text']] },
     { kind: 'select', key: 'pinLayout', label: 'Pins in', options: [['grid', 'Rows'], ['rings', 'Circles']] },
     { kind: 'select', key: 'pinTip', label: 'Pin tops', options: [['flat', 'Flat'], ['round', 'Round'], ['tube', 'Tubes']] },
@@ -333,13 +202,16 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'pinAngle', label: 'Wave direction', min: 0, max: 180, step: 5, unit: '°' },
     { kind: 'range', key: 'pinSoft', label: 'Softness', min: 0.5, max: 40, step: 0.5, unit: 'mm', hint: 'How gently the pins slope down at the letter edges.' },
     { kind: 'range', key: 'pinPad', label: 'Margin', min: 0, max: 60, step: 1, unit: 'mm' },
+    { kind: 'heading', key: 'style', label: 'Pins' },
     { kind: 'range', key: 'pinPitch', label: 'Spacing', min: 3, max: 30, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'pinD', label: 'Pin width', min: 1.5, max: 25, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'pinMin', label: 'Shortest pin', min: 0.4, max: 60, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'pinMax', label: 'Tallest pin', min: 1, max: 150, step: 0.5, unit: 'mm' },
     { kind: 'toggle', key: 'pinGrow', label: 'Taller pins are wider' },
+    { kind: 'heading', key: 'style', label: 'Base and frame' },
     { kind: 'range', key: 'pinPlate', label: 'Plate thickness', min: 1, max: 10, step: 0.2, unit: 'mm' },
     { kind: 'toggle', key: 'pinFrame', label: 'Frame around' },
+    { kind: 'heading', key: 'style', label: 'Two colours' },
     { kind: 'toggle', key: 'pinSeparate', label: 'Print pins separately', hint: 'The base gets a hole for every pin, and the pins come as their own piece, so you can print them in another colour and push them in.' },
     { kind: 'range', key: 'pinSocket', label: 'Hole depth', min: 1, max: 10, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'pinFit', label: 'Pin fit', min: 0, max: 0.5, step: 0.05, unit: 'mm', hint: 'Extra room around each pin. 0.15 = snug push fit; more if they are too tight.' },
@@ -353,7 +225,9 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'toggle', key: 'pyRotate', label: 'Turn the grid 45°' },
   ],
   tile: [
+    { kind: 'heading', key: 'style', label: 'What to print' },
     { kind: 'select', key: 'tlMake', label: 'Make', options: [['master', 'Silicone master'], ['tray', 'Hard mold'], ['cutter', 'Clay cutters']], hint: 'Silicone master: pour silicone over it to get a soft mold.' },
+    { kind: 'heading', key: 'style', label: 'Tiles' },
     { kind: 'range', key: 'tlSize', label: 'Star size', min: 20, max: 160, step: 1, unit: 'mm', hint: 'Tip to tip. The crosses match it.' },
     { kind: 'range', key: 'tlThick', label: 'Tile thickness', min: 3, max: 30, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'tlStars', label: 'Stars', min: 0, max: 9, step: 1 },
@@ -362,6 +236,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'tlDraft', label: 'Taper', min: 0, max: 10, step: 0.5, unit: '°', hint: 'Slightly slanted sides so tiles come out easily.' },
   ],
   mold: [
+    { kind: 'heading', key: 'style', label: 'Candle shape' },
     { kind: 'select', key: 'moldShape', label: 'Candle', options: [['ball', 'Ball'], ['drop', 'Drop'], ['gem', 'Gem'], ['pillar', 'Pillar'], ['tree', 'Tree']] },
     { kind: 'range', key: 'moldH', label: 'Height', min: 30, max: 220, step: 1, unit: 'mm' },
     { kind: 'range', key: 'moldD', label: 'Width', min: 30, max: 200, step: 1, unit: 'mm' },
@@ -370,6 +245,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'moldTwist', label: 'Twist', min: -180, max: 180, step: 5, unit: '°', hint: 'Turns the pleats from bottom to top.' },
     { kind: 'range', key: 'moldTiers', label: 'Tiers', min: 1, max: 6, step: 1 },
     { kind: 'range', key: 'moldShrink', label: 'Smaller each tier', min: 0, max: 50, step: 1, unit: '%' },
+    { kind: 'heading', key: 'style', label: 'Mold' },
     { kind: 'select', key: 'moldKind', label: 'Mold', options: [['silicone', 'Silicone kit'], ['two', 'Two-part block'], ['zigzag', 'Zigzag split'], ['open', 'Open cup']] },
     { kind: 'range', key: 'moldWall', label: 'Mold wall', min: 3, max: 15, hint: 'Silicone kit: how thick the silicone is around the candle.', step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'moldZig', label: 'Zigzag height', min: 0, max: 10, step: 0.5, unit: 'mm', hint: 'Teeth that lock the two halves; they line up with the pleats.' },
@@ -378,14 +254,17 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'toggle', key: 'moldBands', label: 'Rubber band grooves' },
     { kind: 'range', key: 'moldWick', label: 'Wick hole', min: 0, max: 6, step: 0.5, unit: 'mm', hint: 'Through the bottom. 0 = none.' },
     { kind: 'range', key: 'moldPour', label: 'Pour hole', min: 6, max: 30, step: 1, unit: 'mm', hint: 'For round tops (ball, drop). Cut the little stub off after.' },
+    { kind: 'heading', key: 'style', label: 'Make and show' },
     { kind: 'select', key: 'moldShow', label: 'Make', options: [['all', 'Mold and candle'], ['mold', 'Mold only'], ['shape', 'Candle only']], hint: 'Candle only: print the shape itself, e.g. to make a silicone mold from it.' },
     { kind: 'select', key: 'moldView', label: 'Show', options: [['open', 'Pulled apart'], ['print', 'As printed']], hint: 'Files are always laid out for printing.' },
   ],
 };
 
 const LAMP_CONTROLS: Control[] = [
+  { kind: 'heading', key: 'style', label: 'View' },
   { kind: 'select', key: 'lampShow', label: 'Make', options: [['both', 'Shade and base'], ['shade', 'Shade only'], ['base', 'Base only']] },
   { kind: 'select', key: 'lampView', label: 'Show', options: [['assembled', 'Put together'], ['print', 'As printed']], hint: 'Files are always laid out for printing.' },
+  { kind: 'heading', key: 'style', label: 'Shade shape' },
   { kind: 'select', key: 'lampTier', label: 'Shade shape', options: [['barrel', 'Round bulges'], ['cone', 'Umbrella tiers']] },
   { kind: 'range', key: 'shTiers', label: 'Tiers', min: 1, max: 6, step: 1 },
   { kind: 'range', key: 'shDia', label: 'Shade size', min: 100, max: 320, step: 1, unit: 'mm', hint: 'Across the corners (the diameter when round).' },
@@ -400,12 +279,14 @@ const LAMP_CONTROLS: Control[] = [
   { kind: 'range', key: 'shSides', label: 'Corners', min: 0, max: 8, step: 1, hint: '0 = round. 3 = triangle.' },
   { kind: 'range', key: 'shCorner', label: 'Corner rounding', min: 0, max: 100, step: 1, unit: '%', hint: '100 = round.' },
   { kind: 'range', key: 'shTwist', label: 'Twist per tier', min: -90, max: 90, step: 1, unit: '°' },
+  { kind: 'heading', key: 'style', label: 'Surface' },
   { kind: 'select', key: 'lampTex', label: 'Surface', options: [['basket', 'Basket weave'], ['dots', 'Knurled dots'], ['ribs', 'Ribs'], ['rings', 'Rings'], ['stone', 'Stone'], ['none', 'Smooth']] },
   { kind: 'range', key: 'lampTexSize', label: 'Pattern width', min: 2.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going around.' },
   { kind: 'range', key: 'lampTexH', label: 'Pattern height', min: 1.5, max: 15, step: 0.5, unit: 'mm', hint: 'Size of one block or dot, going up.' },
   { kind: 'range', key: 'lampTexDepth', label: 'Pattern depth', min: 0.2, max: 3, step: 0.1, unit: 'mm' },
   { kind: 'range', key: 'lampSeed', label: 'Stone variation', min: 1, max: 99, step: 1, hint: 'Shuffles the stone surface.' },
   { kind: 'range', key: 'lampWall', label: 'Wall thickness', min: 0.3, max: 3, step: 0.01, unit: 'mm', hint: 'Match your slicer\'s line width for clean walls: 0.42 = one line with a 0.4 mm nozzle, 0.84 = two lines. In-between sizes add messy gap fill.' },
+  { kind: 'heading', key: 'style', label: 'Base' },
   { kind: 'range', key: 'hubSpokes', label: 'Spokes', min: 2, max: 8, step: 1 },
   { kind: 'range', key: 'baseH', label: 'Base height', min: 50, max: 250, step: 0.5, unit: 'mm', hint: 'Body only; the neck adds to it.' },
   { kind: 'range', key: 'baseD', label: 'Base width', min: 80, max: 200, step: 0.5, unit: 'mm' },
@@ -414,6 +295,7 @@ const LAMP_CONTROLS: Control[] = [
   { kind: 'range', key: 'neckH', label: 'Neck height', min: 18, max: 60, step: 0.5, unit: 'mm', hint: 'The socket sits on top of the neck.' },
   { kind: 'range', key: 'baseFeet', label: 'Feet', min: 0, max: 12, step: 1, hint: '0 = flat bottom. The cable leaves through a gap.' },
   { kind: 'toggle', key: 'baseTex', label: 'Pattern on the base' },
+  { kind: 'heading', key: 'style', label: 'Lamp fitting' },
   { kind: 'range', key: 'socketD', label: 'Socket hole', min: 20, max: 60, step: 0.5, unit: 'mm', hint: 'E27 with a threaded ring: about 41 mm. E27 without thread: 38 mm. Measure yours.' },
   { kind: 'range', key: 'jointD', label: 'Joint size', min: 50, max: 90, step: 0.5, unit: 'mm', hint: 'Neck width where the shade twists on. Keep the same on lamps you want to swap shades between.' },
   { kind: 'range', key: 'jointFit', label: 'Joint fit', min: 0.15, max: 1, step: 0.05, unit: 'mm', hint: 'Gap in the twist lock. Bigger = looser.' },
@@ -554,6 +436,7 @@ async function run() {
         : '';
       showWarnings(res.warnings);
       renderParts(printable);
+      updateBedFit(printable, res.warnings);
       $('#drag-hint').hidden = !printable.some((p: Part) => p.drag);
     }
   } finally {
@@ -615,6 +498,12 @@ function rangeRow(c: Extract<Control, { kind: 'range' }>) {
 }
 
 function controlEl(c: Control): HTMLElement {
+  if (c.kind === 'heading') {
+    const h = document.createElement('div');
+    h.className = 'ctl-head';
+    h.textContent = c.label;
+    return h;
+  }
   if (c.kind === 'range') return rangeRow(c);
   if (c.kind === 'select') {
     const row = document.createElement('div');
@@ -721,7 +610,12 @@ function renderStyleControls() {
   // the lamp and the candle mold have no text, so their text and size sections go away
   const isLamp = noText();
   $('#text-section').hidden = isLamp;
+  // no text, no font: the Font tab goes away
+  ($('#tabs button[data-tab="font"]') as HTMLElement).hidden = isLamp;
+  if (isLamp && currentTab === 'font') showTab('design');
   $('#size-section').hidden = isLamp || params.style === 'flower' || params.style === 'lines'; // the flower has its own Size
+  // drop headings left with nothing under them (their settings were hidden)
+  list = list.filter((c, i) => c.kind !== 'heading' || (list[i + 1] && list[i + 1].kind !== 'heading'));
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -1249,7 +1143,45 @@ function renderFonts() {
   );
 }
 
+// ---------- sidebar tabs: Design / Font / Colours / Print ----------
+let currentTab = 'design';
+function showTab(t: string) {
+  currentTab = t;
+  document.querySelectorAll<HTMLElement>('.panel section[data-tab]').forEach((sec) => sec.classList.toggle('tab-off', sec.dataset.tab !== t));
+  document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+}
+document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab!)));
+showTab('design');
+$('#style-change').addEventListener('click', () => {
+  const grid = $('#styles');
+  grid.hidden = !grid.hidden;
+  $('#style-change').textContent = grid.hidden ? 'Change' : 'Close';
+});
+
+/** Ready-made ideas for the current style: real words that fit the bed. */
+function renderIdeas() {
+  const list = SAMPLES[params.style] ?? [];
+  $('#ideas-wrap').hidden = !list.length;
+  $('#ideas').innerHTML = list.map((d, i) => `<button type="button" class="idea" data-i="${i}">${escapeHtml(d.name)}</button>`).join('');
+  $('#ideas').querySelectorAll<HTMLButtonElement>('button.idea').forEach((b) =>
+    b.addEventListener('click', () => {
+      const d = list[Number(b.dataset.i)];
+      // start from the style's own starting design, then the idea on top
+      const keep = { colorA: params.colorA, colorB: params.colorB, colorC: params.colorC, bedSize: params.bedSize, splitBed: params.splitBed, lightFiles: params.lightFiles };
+      Object.assign(params, DEFAULTS, PRESETS[params.style].patch, keep, d.patch, { style: params.style, letterW: {}, letterMove: {} });
+      params.text = d.text ?? PRESETS[params.style].text;
+      if (d.font) fontKey = d.font;
+      textTouched = true;
+      refreshUI();
+      schedule(true);
+    }),
+  );
+}
+
 function renderStyles() {
+  $('#style-now-ico').innerHTML = ICONS[params.style];
+  $('#style-now-name').textContent = PRESETS[params.style].label;
+  renderIdeas();
   const host = $('#styles');
   host.innerHTML = (Object.keys(PRESETS) as Style[])
     .map(
@@ -1273,6 +1205,8 @@ function applyPreset(s: Style) {
 }
 
 function selectStyle(s: Style) {
+  $('#styles').hidden = true;
+  $('#style-change').textContent = 'Change';
   if (s === params.style) return;
   applyPreset(s);
   refreshUI();
@@ -1719,6 +1653,37 @@ $('#check').addEventListener('click', () => {
     setBusy(false);
   }, 30);
 });
+
+/** Says plainly whether the design prints on the bed: one plate, several plates, or too big. */
+function updateBedFit(printable: Part[], warnings: string[]) {
+  const el = $('#bedfit');
+  if (!printable.length) { el.hidden = true; return; }
+  const bed = params.bedSize;
+  const meshes = forExport(printable);
+  let tooBig = false, tall = false;
+  for (const m of meshes) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < m.positions.length; i += 3) {
+      x0 = Math.min(x0, m.positions[i]); x1 = Math.max(x1, m.positions[i]);
+      y0 = Math.min(y0, m.positions[i + 1]); y1 = Math.max(y1, m.positions[i + 1]);
+      z0 = Math.min(z0, m.positions[i + 2]); z1 = Math.max(z1, m.positions[i + 2]);
+    }
+    if (x1 - x0 > bed - 10 || y1 - y0 > bed - 10) tooBig = true;
+    if (z1 - z0 > bed) tall = true;
+  }
+  const cut = warnings.some((w) => /were cut/.test(w));
+  let plates = 1;
+  if (!tooBig && (exceedsBed(meshes, bed) || pinsApart())) plates = new Set(layoutOnPlates(meshes, bed, pinsApart()).plates).size;
+  el.hidden = false;
+  el.className = 'bedfit ' + (tooBig || tall ? 'bad' : plates > 1 || cut ? 'multi' : 'ok');
+  el.innerHTML = tooBig || tall
+    ? `<i></i>Too big for your ${bed} mm bed. Make it smaller.`
+    : cut
+      ? `<i></i>Cut into pieces to fit your ${bed} mm bed (glue after)`
+      : plates > 1
+        ? `<i></i>Prints on ${plates} plates of your ${bed} mm bed (the 3MF lays them out)`
+        : `<i></i>Fits your ${bed} mm bed`;
+}
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
 function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {

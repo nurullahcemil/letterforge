@@ -52,10 +52,27 @@
           <small id="save-state" class="save-state">Not saved yet</small>
         </header>
 
-        <section id="text-section">
-          <h2>Text</h2>
+        <section id="text-section" class="words">
+          <h2>Your words</h2>
           <label class="sub" id="text-label" for="text" hidden>Main text</label>
           <textarea id="text" rows="2" spellcheck="false" aria-label="Text to make"></textarea>
+          <div id="text2-wrap" class="text2" hidden>
+            <label class="sub" for="text2">Accent text</label>
+            <input id="text2" type="text" spellcheck="false" placeholder="e.g. Happy (leave empty for none)" />
+            <label class="sub" for="font2">Accent font</label>
+            <select id="font2"></select>
+          </div>
+        </section>
+
+        <nav class="tabs" id="tabs" role="tablist">
+          <button type="button" data-tab="design" class="on">Design</button>
+          <button type="button" data-tab="font">Font</button>
+          <button type="button" data-tab="colour">Colours</button>
+          <button type="button" data-tab="print">Print</button>
+        </nav>
+
+        <section id="font-section" data-tab="font">
+          <h2>Font</h2>
           <div id="fonts" class="fonts"></div>
           <div id="font-axes" class="font-axes" hidden></div>
           <div class="gfonts">
@@ -71,31 +88,33 @@
             <label class="upload"><input id="art-upload" type="file" accept=".svg,.png,.jpg,.jpeg,.webp" />Add artwork or a logo (SVG, PNG, JPG)</label>
             <div id="art-controls"></div>
           </div>
-          <div id="text2-wrap" class="text2" hidden>
-            <label class="sub" for="text2">Accent text</label>
-            <input id="text2" type="text" spellcheck="false" placeholder="e.g. Happy (leave empty for none)" />
-            <label class="sub" for="font2">Accent font</label>
-            <select id="font2"></select>
+        </section>
+
+        <section data-tab="design">
+          <h2>Style</h2>
+          <div class="style-now">
+            <span id="style-now-ico" class="ico" aria-hidden="true"></span>
+            <div><b id="style-now-name"></b><p id="style-blurb" class="blurb"></p></div>
+            <button type="button" id="style-change" class="secondary small">Change</button>
+          </div>
+          <div id="styles" class="styles" hidden></div>
+          <div id="ideas-wrap" class="ideas-wrap">
+            <h3>Ideas to start from</h3>
+            <div id="ideas" class="ideas"></div>
           </div>
         </section>
 
-        <section>
-          <h2>Style</h2>
-          <div id="styles" class="styles"></div>
-          <p id="style-blurb" class="blurb"></p>
-        </section>
-
-        <section id="size-section">
+        <section id="size-section" data-tab="design">
           <h2>Size</h2>
           <div id="general-controls"></div>
         </section>
 
-        <section>
+        <section data-tab="design">
           <h2 id="style-title">Settings</h2>
           <div id="style-controls"></div>
         </section>
 
-        <section>
+        <section data-tab="colour">
           <h2>Colours</h2>
           <div class="colors">
             <label><input id="colorA" type="color" /><span id="colorA-label">A</span></label>
@@ -105,14 +124,14 @@
           <small class="note">For two colours, download the <b>3MF</b>: Bambu Studio opens it with each colour on its own filament. An STL can only hold the shape, never colours.</small>
         </section>
 
-        <section id="backing-section">
+        <section id="backing-section" data-tab="print">
           <h2>Wooden backing</h2>
           <div id="backing-controls"></div>
           <div class="backing-dls"><button id="dl-backing" class="secondary backing-dl" type="button" hidden>Laser file (SVG)</button><button id="dl-backing-dxf" class="secondary backing-dl" type="button" hidden>Laser file (DXF)</button></div>
           <small id="backing-note" class="note" hidden></small>
         </section>
 
-        <section>
+        <section data-tab="print">
           <h2>Printer</h2>
           <div id="printer-controls"></div>
         </section>
@@ -124,6 +143,7 @@
         <div id="viewport" class="viewport"></div>
         <div class="hud top">
           <div id="dims" class="dims"></div>
+          <div id="bedfit" class="bedfit" hidden></div>
           <div id="status" class="status"><span></span>Building…</div>
         </div>
         <div id="warnings" class="warnings"></div>
