@@ -104,7 +104,7 @@ const PRESETS: Record<Style, StylePreset> = {
     blurb: 'Each letter bends into a petal: they meet in the middle and their sides touch, filling a circle. Deep and chunky, as one sculpture. Repeat the word to fill it.',
     text: 'BLOOM',
     font: 'archivo',
-    patch: { capHeight: 80, colorA: '#f0642d', tracking: 0, flCount: 15 },
+    patch: { capHeight: 80, colorA: '#f0642d', tracking: 0, flCount: 12 },
   },
   arrow: {
     label: 'Arrow sign',
@@ -252,8 +252,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   flower: [
     { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around the circle. 0 = the word once; more repeats it.' },
     { kind: 'range', key: 'flSize', label: 'Size', min: 50, max: 400, step: 1, unit: 'mm', hint: 'Across the whole flower.' },
-    { kind: 'range', key: 'flBend', label: 'Bend', min: 0, max: 100, step: 5, unit: '%', hint: 'Lower keeps the letters easier to read, with a bigger solid middle. 100 = the letters meet in the centre.' },
-    { kind: 'range', key: 'flRadius', label: 'Middle', min: 0, max: 60, step: 0.5, unit: 'mm', hint: 'Size of the middle where the letters meet.' },
+    { kind: 'range', key: 'flMiddle', label: 'Middle size', min: 8, max: 60, step: 1, unit: '%', hint: 'Where the letters start. The letters get narrower or wider on their own to fit.' },
     { kind: 'range', key: 'flDepth', label: 'Depth', min: 5, max: 200, step: 1, unit: 'mm', hint: 'How deep each letter goes back.' },
   ],
   arrow: [

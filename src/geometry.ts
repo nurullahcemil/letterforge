@@ -17,6 +17,8 @@ export interface Params extends LampParams, MoldParams, TileParams {
   flDepth?: number;
   flCount?: number;
   flBend?: number;
+  /** Letter flower: middle size, % of the radius. */
+  flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
   /** Arrow sign: shaped board, block-shadow letters. */
@@ -891,7 +893,6 @@ export class Builder {
     const gs = glyphs.filter((g, i) => glyphLetter[i] >= 0 && g.length);
     if (!gs.length) return [];
     const n = Math.max(gs.length, Math.min(60, Math.round(p.flCount ?? 0)));
-    const rIn = clampN(p.flRadius ?? 2, 0, 400);
     // every letter is stretched to the same petal length (own ink top and bottom), so short
     // lowercase letters (o, a) don't end early and tall ones (l, h) don't poke out as spikes
     const bx = gs.map((g) => {
@@ -902,32 +903,38 @@ export class Builder {
       }
       return [x0, x1, y0, y1];
     });
-    const len = Math.max(...bx.map(([, , y0, y1]) => y1 - y0));
-    // each letter's slice is as wide as the letter (a thin l stays thin, a wide A gets room)
+    // Conformal (angle-keeping) mapping, like a map projection: x → angle, y → radius growing
+    // exponentially (r = rFoot·e^(k·y), θ = −k·x). Every small piece of a letter keeps its true
+    // shape, so letters stay readable; they only get smaller toward the centre. Each letter is
+    // first scaled to the same height, so every petal reaches the edge.
+    const len = 100; // working height; the flower is scaled to flSize afterwards
+    const sc = bx.map(([, , y0, y1]) => len / Math.max(1e-6, y1 - y0));
     const ws: number[] = [];
-    for (let i = 0; i < n; i++) ws.push(Math.max(1e-3, bx[i % gs.length][1] - bx[i % gs.length][0]));
-    const sumW = ws.reduce((a, b) => a + b, 0);
-    // letters keep their true shape at radius sumW/2π; "Bend" pulls them toward the centre
-    // (100 % = the feet meet in the middle, squeezed; 0 % = true shape at mid-height)
-    const bend = clampN(p.flBend ?? 60, 0, 100) / 100;
-    const rStart = rIn + (1 - bend) * Math.max(0, sumW / (2 * Math.PI) - len / 2);
-    // scale the whole flower to the chosen diameter
-    const kS = clampN(p.flSize ?? 180, 30, 1000) / 2 / (rStart + len);
+    for (let i = 0; i < n; i++) ws.push(Math.max(1e-3, (bx[i % gs.length][1] - bx[i % gs.length][0]) * sc[i % gs.length]));
+    // letters are made narrower (or wider) so the middle comes out at the chosen size:
+    // feet at rFoot = R·m means k·len = ln(1/m) (narrow letters like the photo, few or many)
+    const m = clampN(p.flMiddle ?? 25, 5, 80) / 100;
+    const raw = ws.reduce((a, b) => a + b, 0);
+    const cN = clampN((2 * Math.PI * len) / (raw * Math.log(1 / m)), 0.2, 3);
+    for (let i = 0; i < n; i++) ws[i] *= cN;
+    const sumW = raw * cN;
+    const k = (2 * Math.PI) / sumW;
+    const R = clampN(p.flSize ?? 180, 30, 1000) / 2;
+    const rFoot = R * Math.exp(-k * len);
     const fuse = 0.004;
-    const step = 0.35;
+    const step = 0.5;
     const items: CrossSection[] = [];
     let at = Math.PI / 2 + (Math.PI * ws[0]) / sumW; // first letter centred at the top, then clockwise
     for (let i = 0; i < n; i++) {
       const g = gs[i % gs.length];
-      const [x0, , gy0, gy1] = bx[i % gs.length];
-      const w = ws[i];
-      const slice = (2 * Math.PI * w) / sumW;
+      const [x0, , gy0] = bx[i % gs.length];
+      const s0 = sc[i % gs.length];
+      const slice = ws[i] * k;
       const a0 = at;
       at -= slice;
-      const hs = len / Math.max(1e-6, gy1 - gy0);
       const map = (x: number, y: number): MVec2 => {
-        const a = a0 + fuse - ((x - x0) / w) * (slice + 2 * fuse);
-        const r = (rStart + (y - gy0) * hs) * kS;
+        const a = a0 + fuse - (((x - x0) * s0 * cN) / ws[i]) * (slice + 2 * fuse);
+        const r = rFoot * Math.exp(k * (y - gy0) * s0);
         return [r * Math.cos(a), r * Math.sin(a)];
       };
       const polys: MVec2[][] = g.map((c) => {
@@ -935,15 +942,16 @@ export class Builder {
         for (let j = 0; j < c.length; j++) {
           const [ax, ay] = c[j];
           const [bx2, by] = c[(j + 1) % c.length];
-          const m = Math.max(1, Math.ceil(Math.hypot(bx2 - ax, by - ay) / step));
-          for (let q = 0; q < m; q++) out.push(map(ax + ((bx2 - ax) * q) / m, ay + ((by - ay) * q) / m));
+          const q2 = Math.max(1, Math.ceil((Math.hypot(bx2 - ax, by - ay) * s0) / step));
+          for (let q = 0; q < q2; q++) out.push(map(ax + ((bx2 - ax) * q) / q2, ay + ((by - ay) * q) / q2));
         }
         return out;
       });
       items.push(this.k(new this.wasm.CrossSection(polys, 'NonZero')));
     }
-    // the middle joins every letter's foot
-    items.push(this.circle(0, 0, (rStart + Math.max(1.5, len * 0.04)) * kS));
+    // a small middle joins the feet
+    items.push(this.circle(0, 0, rFoot * 1.12 + clampN(p.flRadius ?? 0, 0, 200)));
+    if (cN <= 0.2 || cN >= 3) warnings.push(cN <= 0.2 ? 'The letters are squeezed very thin. Use fewer petals or a bigger middle.' : 'The letters are stretched wide. Add petals or make the middle smaller.');
     const all = this.k(this.wasm.CrossSection.union(items));
     const pieces = all.decompose();
     pieces.forEach((c) => this.k(c));

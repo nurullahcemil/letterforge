@@ -170,15 +170,12 @@ Check: `npx tsx scripts/mold-check.ts ['{"moldShape":"ball"}']` (every shape × 
 no overlap between halves and candle; must end "all clean").
 
 ## Letter flower / Arrow sign / Pyramid tiles / Tile mold (user photos; own designs)
-- flower (`Builder.flower`): each glyph (letters only, repeated to `flCount`) is BENT into a pie
-  slice as wide as the letter (equal slices made l a solid wedge and squeezed A — user: "should still
-  be readable"); letters start at rStart = flRadius + (1−flBend)·max(0, Σw/2π − len/2) so they
-  keep their shape (solid middle joins them); whole flower scaled to `flSize` diameter (size
-  section hidden). Mapping: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (each glyph's own ink
-  bottom..top stretched to the same petal length; a shared range left lowercase o/a short and l/h
-  as spikes — user screenshot "Aloha"), contours densified to 0.35 mm before bending; small hub disc. User:
-  "letters connect in the center, structure changes, sides fit perfectly" (first version just
-  rotated upright letters around a circle — rejected).
+- flower (`Builder.flower`): CONFORMAL (angle-keeping) bend, like a map projection: θ = −k·x,
+  r = rFoot·e^(k·y), so every bit of a letter keeps its shape (readable; user rejected linear
+  bends twice: "still not reading, change the way we work"). Each glyph scaled to the same height;
+  slice ∝ letter width; letters auto-narrowed/widened (cN) so the feet land at `flMiddle` % of the
+  radius (k·len = ln(1/m)), like the condensed letters in the user's photo; scaled to `flSize`.
+  Check from the top: `npx tsx scripts/flower-svg.ts out.svg '{"text":"BLOOM","flCount":12}'`.
 - pins (`Builder.pins`, "Pin art"): grid of cylinders on a plate (colour B) + frame; height level
   from waves (sine along `pinAngle`), ripples, or text (signed distance to the outline, eased over
   `pinSoft`); `pinGrow` makes tall pins wider. Pins are composed (disjoint), not unioned.
