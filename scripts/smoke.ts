@@ -52,6 +52,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['pins-wave', { style: 'pins', text: 'HI' }, 'archivo'],
   ['pins-wave-text', { style: 'pins', text: 'HI', capHeight: 90, pinText: 'up' }, 'archivo'],
   ['pins-apart', { style: 'pins', text: 'HI', pinText: 'up', pinSeparate: true }, 'archivo'],
+  ['lines', { style: 'lines', text: 'ABCDE\nFGHIJ' }, 'archivo'],
+  ['pins-halo', { style: 'pins', pinMode: 'halo', pinLayout: 'rings', pinHole: 30, pinTip: 'tube' }, 'archivo'],
   ['pins-text', { style: 'pins', text: 'HI', capHeight: 120, pinMode: 'letters' }, 'archivo'],
   ['tile-tray', { style: 'tile', tlMake: 'tray' }, 'archivo'],
   ['tile-cutter', { style: 'tile', tlMake: 'cutter' }, 'archivo'],

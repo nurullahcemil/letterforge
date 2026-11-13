@@ -185,6 +185,16 @@ no overlap between halves and candle; must end "all clean").
   `print` → Part.printMesh: pins stand on the bed in the same pattern, beside the base. STL button
   downloads two files (-base.stl, -pins.stl); 3MF ALWAYS puts the base on plate 1 and the pins on plate 2
   (`layoutOnPlates(..., colorPlates=true)`: each colour starts a new plate; user asked for 2 plates).
+- pins extras: `pinLayout` grid | rings (circles, every other turned half a step), `pinHole` empty
+  middle, `pinMode` 'halo' (tall ring just outside the hole, fading out), `pinTip` flat | round
+  (revolved dome) | tube (revolved, hole from the top). User photos: yellow round-top M, framed
+  ring of tubes.
+- lines (`Builder.lineLetters`, "Line letters", user photo of a fin alphabet): one square tile per
+  character (rows = text lines, wrapped at `lnCols`); letter scaled into the tile; inside: rings
+  `letter.offset(−k·pitch)` minus a `lnFin` inset; outside: straight bars at 0/45/90/135° or
+  concentric squares (seeded per tile), clipped to tile − letter grown. Each tile = own part
+  (Tile n colour B + Letter n colour A) so big sets spread over plates; NOT bed-split (decompose
+  shattered fins into 300+ pieces).
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on

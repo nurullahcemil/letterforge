@@ -9,7 +9,7 @@ import { buildTiles, type TileParams } from './tiles';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines';
 
 export interface Params extends LampParams, MoldParams, TileParams {
   /** Letter flower: letters around a centre like petals. */
@@ -32,8 +32,17 @@ export interface Params extends LampParams, MoldParams, TileParams {
   arShadowT?: number;
   arLetterT?: number;
   colorC?: string;
+  /** Line letters: each letter in its own square tile, made of thin standing fins. */
+  lnTile?: number;
+  lnPitch?: number;
+  lnFin?: number;
+  lnHeight?: number;
+  lnBack?: number;
+  lnBase?: number;
+  lnCols?: number;
+  lnSeed?: number;
   /** Pin art: a grid of round pins whose heights follow a pattern. */
-  pinMode?: 'letters' | 'wave' | 'ripple';
+  pinMode?: 'letters' | 'wave' | 'ripple' | 'halo';
   pinPitch?: number;
   pinD?: number;
   pinMin?: number;
@@ -49,6 +58,10 @@ export interface Params extends LampParams, MoldParams, TileParams {
   pinFrame?: boolean;
   /** Pin art with waves/ripples: your text shows as taller ('up') or shorter ('down') pins. */
   pinText?: 'none' | 'up' | 'down';
+  /** Square grid or circles around the middle; empty hole in the middle (mm); pin tops. */
+  pinLayout?: 'grid' | 'rings';
+  pinHole?: number;
+  pinTip?: 'flat' | 'round' | 'tube';
   /** Print the pins apart from the base: the base gets a hole per pin. */
   pinSeparate?: boolean;
   pinSocket?: number;
@@ -385,12 +398,16 @@ export class Builder {
         case 'pyramid':
           parts = this.pyramid(cs, p, warnings);
           break;
+        case 'lines':
+          this.spots = [];
+          parts = this.lineLetters(font, p, warnings);
+          break;
         case 'pins':
           this.spots = [];
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed) parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -1095,6 +1112,28 @@ export class Builder {
     // centre the grid on the plate
     const gx0 = (x0 + x1) / 2 - ((cols - 1) * pitch) / 2;
     const gy0 = (y0 + y1) / 2 - ((rows - 1) * pitch) / 2;
+    // where the pins stand: a square grid, or circles around the middle
+    const spots: [number, number][] = [];
+    const ccx = (x0 + x1) / 2, ccy = (y0 + y1) / 2;
+    const Rmax = Math.min(x1 - x0, y1 - y0) / 2 - pitch / 2;
+    const holeR = clampN(p.pinHole ?? 0, 0, 1000);
+    if ((p.pinLayout ?? 'grid') === 'rings') {
+      if (holeR < pitch / 2) spots.push([ccx, ccy]);
+      for (let k = 1; k * pitch <= Rmax; k++) {
+        const r = k * pitch;
+        if (r < holeR) continue;
+        const n = Math.max(3, Math.round((2 * Math.PI * r) / pitch));
+        const off = (k % 2) * (Math.PI / n); // every other circle turned half a step
+        for (let i = 0; i < n; i++) spots.push([ccx + r * Math.cos(off + (2 * Math.PI * i) / n), ccy + r * Math.sin(off + (2 * Math.PI * i) / n)]);
+      }
+    } else {
+      for (let i = 0; i < cols; i++)
+        for (let j = 0; j < rows; j++) {
+          const x = gx0 + i * pitch, y = gy0 + j * pitch;
+          if (holeR > 0 && Math.hypot(x - ccx, y - ccy) < holeR) continue;
+          spots.push([x, y]);
+        }
+    }
     const soft = clampN(p.pinSoft ?? 8, 0.1, 200);
     const waves = clampN(p.pinWaves ?? 1.5, 0.1, 50);
     const ang = ((p.pinAngle ?? 30) * Math.PI) / 180;
@@ -1121,7 +1160,14 @@ export class Builder {
         return t * t * (3 - 2 * t);
       }
       let f: number;
-      if (mode === 'ripple') f = 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * Math.hypot(x - cxm, y - cym)) / (span / 2));
+      if (mode === 'halo') {
+        // a tall ring just outside the hole, fading out toward the edge (steeper on the inside)
+        const r = Math.hypot(x - cxm, y - cym);
+        const peak = holeR + pitch * 1.2;
+        const wOut = Math.max(pitch, (Rmax - peak) * 0.45), wIn = Math.max(pitch * 0.6, peak * 0.35);
+        const t = (r - peak) / (r >= peak ? wOut : wIn);
+        f = Math.exp(-t * t);
+      } else if (mode === 'ripple') f = 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * Math.hypot(x - cxm, y - cym)) / (span / 2));
       else {
         const u = (x - cxm) * Math.cos(ang) + (y - cym) * Math.sin(ang);
         f = 0.5 + 0.5 * Math.sin((2 * Math.PI * waves * u) / span);
@@ -1139,19 +1185,33 @@ export class Builder {
     const pins: Manifold[] = [];
     const holes: Manifold[] = [];
     const segs = d > 8 ? 40 : 28;
-    for (let i = 0; i < cols; i++)
-      for (let j = 0; j < rows; j++) {
-        const x = gx0 + i * pitch, y = gy0 + j * pitch;
+    const tip = p.pinTip ?? 'flat';
+    // one pin, length L from z0: flat top, round top, or a tube (hole from the top)
+    const pinAt = (x: number, y: number, z0: number, L: number, r: number, floor: number): Manifold => {
+      if (tip === 'flat') return this.k(W.Manifold.cylinder(L, r, r, segs).translate([x, y, z0]));
+      const pts: [number, number][] = [];
+      if (tip === 'round' && L > r) {
+        pts.push([0, 0], [r, 0], [r, L - r]);
+        for (let a = 1; a < 8; a++) pts.push([r * Math.cos((a * Math.PI) / 16), L - r + r * Math.sin((a * Math.PI) / 16)]);
+        pts.push([0, L]);
+      } else {
+        const ri = r * 0.45;
+        const fl = Math.min(floor, L - 0.6);
+        pts.push([0, 0], [r, 0], [r, L], [ri, L], [ri, fl], [0, fl]);
+      }
+      return this.k(this.k(W.Manifold.revolve([pts as MVec2[]], segs)).translate([x, y, z0]));
+    };
+    for (const [x, y] of spots) {
         const f = level(x, y);
         const h = hMin + (hMax - hMin) * f;
         const r = (p.pinGrow ? d * (0.55 + 0.45 * f) : d) / 2;
         if (sep) {
           // the pin reaches down into its hole (0.2 mm short of the bottom), the hole is a bit wider
           const z0 = plateT - sock + 0.2;
-          pins.push(this.k(W.Manifold.cylinder(h + plateT - z0, r, r, segs).translate([x, y, z0])));
+          pins.push(pinAt(x, y, z0, h + plateT - z0, r, plateT - z0 + 1));
           holes.push(this.k(W.Manifold.cylinder(sock + 1, r + fit, r + fit, segs).translate([x, y, plateT - sock])));
-        } else pins.push(this.k(W.Manifold.cylinder(h + 0.02, r, r, segs).translate([x, y, plateT - 0.02])));
-      }
+        } else pins.push(pinAt(x, y, plateT - 0.02, h + 0.02, r, 1.2));
+    }
     const parts: WorkPart[] = [];
     let plate = this.rect(x0, y0, x1, y1);
     let base = this.extrude(plate, plateT);
@@ -1173,6 +1233,93 @@ export class Builder {
     }
     if (pins.length > 2500) warnings.push(`${pins.length} pins: the file will be big. Make the spacing larger.`);
     if (d >= pitch) warnings.push('The pins touch each other. Make them thinner or the spacing larger.');
+    return parts;
+  }
+
+  /**
+   * Line letters: one square tile per letter. Inside the letter, thin fins follow its outline in
+   * rings (each ring `lnPitch` further in); around it, straight fins in a direction picked per tile
+   * (or squares around the tile). Letter fins colour A, background fins and base colour B.
+   */
+  private lineLetters(font: Font, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    const T = clampN(p.lnTile ?? 60, 15, 300);
+    const pitch = clampN(p.lnPitch ?? 3, 0.8, 20);
+    const fin = clampN(p.lnFin ?? 0.9, 0.4, pitch - 0.3);
+    const H = clampN(p.lnHeight ?? 12, 1, 100);
+    const Hb = H * clampN(p.lnBack ?? 70, 10, 150) / 100;
+    const base = clampN(p.lnBase ?? 2, 0.6, 20);
+    let seed = (Math.round(p.lnSeed ?? 1) * 2654435761) >>> 0;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    // tiles: one row per line of text, wrapped every lnCols letters
+    const cols = Math.round(p.lnCols ?? 0);
+    const rows: string[][] = [];
+    for (const line of (p.text || ' ').split('\n')) {
+      const chars = Array.from(line);
+      if (cols > 0) for (let i = 0; i < chars.length; i += cols) rows.push(chars.slice(i, i + cols));
+      else rows.push(chars);
+    }
+    const parts: WorkPart[] = [];
+    let n = 0;
+    const margin = T * 0.12;
+    rows.forEach((row, r) =>
+      row.forEach((ch, c) => {
+        const cx = c * T + T / 2, cy = -r * T - T / 2;
+        const tile = this.rect(cx - T / 2, cy - T / 2, cx + T / 2, cy + T / 2);
+        const letterParts: CrossSection[] = [];
+        n++;
+        let letter: CrossSection | null = null;
+        if (ch.trim()) {
+          const lay = layoutText(font, ch, { ...textStyle(p), capHeight: 100, tracking: 0, lineSpacing: 1 });
+          let cs = this.k(new W.CrossSection(lay.contours as MVec2[][], 'NonZero'));
+          if (!cs.isEmpty()) {
+            const b = cs.bounds();
+            const sc = (T - 2 * margin) / Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]);
+            cs = this.k(this.k(cs.translate([-(b.min[0] + b.max[0]) / 2, -(b.min[1] + b.max[1]) / 2])).scale([sc, sc]));
+            letter = this.k(cs.translate([cx, cy]));
+          }
+        }
+        // inside the letter: rings that follow its outline
+        if (letter) {
+          for (let k = 0; k < 200; k++) {
+            const outer = this.k(letter.offset(-k * pitch, 'Round', 2, 32));
+            if (outer.isEmpty()) break;
+            letterParts.push(this.k(outer.subtract(this.k(outer.offset(-fin, 'Round', 2, 32)))));
+          }
+        }
+        // around it: straight fins (4 directions) or squares, chosen per tile
+        const room = letter ? this.k(tile.subtract(this.k(letter.offset(pitch - fin, 'Round', 2, 32)))) : tile;
+        const kind = Math.floor(rnd() * 5);
+        let pattern: CrossSection;
+        if (kind === 4) {
+          const rings: CrossSection[] = [];
+          for (let k = 0; k * pitch < T / 2; k++) {
+            const o = T / 2 - k * pitch - fin / 2;
+            if (o <= fin) break;
+            rings.push(this.k(this.rect(cx - o, cy - o, cx + o, cy + o).subtract(this.rect(cx - o + fin, cy - o + fin, cx + o - fin, cy + o - fin))));
+          }
+          pattern = this.k(W.CrossSection.union(rings));
+        } else {
+          const bars: CrossSection[] = [];
+          const L = T * 1.5;
+          for (let k = -Math.ceil(L / pitch); k <= Math.ceil(L / pitch); k++) bars.push(this.rect(-L, k * pitch - fin / 2, L, k * pitch + fin / 2));
+          pattern = this.k(this.k(this.k(W.CrossSection.union(bars)).rotate(kind * 45)).translate([cx, cy]));
+        }
+        // each tile is its own piece (tiles touching side by side), so big alphabets spread over plates
+        const back = this.extrude(this.k(pattern.intersect(room)), Hb, base - OVERLAP);
+        parts.push({ name: `Tile ${n}`, color: p.colorB, m: this.k(this.extrude(tile, base).add(back)) });
+        if (letterParts.length) parts.push({ name: `Letter ${n}`, color: p.colorA, m: this.extrude(this.k(W.CrossSection.union(letterParts)), H, base - OVERLAP) });
+      }),
+    );
+    const wTot = Math.max(...rows.map((r) => r.length)) * T, hTot = rows.length * T;
+    if (wTot > p.bedSize || hTot > p.bedSize) warnings.push(`${Math.round(wTot)} × ${Math.round(hTot)} mm: bigger than your bed. The 3MF puts the tiles on several plates; glue them on a board.`);
+    if (fin < 0.8) warnings.push('Lines thinner than 0.8 mm may not print well. Make them thicker.');
     return parts;
   }
 

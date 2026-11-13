@@ -113,6 +113,13 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
   },
+  lines: {
+    label: 'Line letters',
+    blurb: 'Each letter in its own square tile, made of thin standing lines: rings that follow the letter, straight lines around it. Great as a wall alphabet.',
+    text: 'ABCDE\nFGHIJ',
+    font: 'archivo',
+    patch: { colorA: '#3a3a3e', colorB: '#3a3a3e', tracking: 0 },
+  },
   pins: {
     label: 'Pin art',
     blurb: 'A grid of round pins on a plate, rising and falling in waves, ripples or the shape of your letters. Pins and plate in two colours, with a frame.',
@@ -266,8 +273,21 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  lines: [
+    { kind: 'range', key: 'lnTile', label: 'Tile size', min: 20, max: 200, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'lnCols', label: 'Letters per row', min: 0, max: 12, step: 1, hint: '0 = one row per line of text.' },
+    { kind: 'range', key: 'lnPitch', label: 'Line spacing', min: 1.5, max: 10, step: 0.1, unit: 'mm' },
+    { kind: 'range', key: 'lnFin', label: 'Line thickness', min: 0.4, max: 3, step: 0.05, unit: 'mm', hint: '0.84 = two lines with a 0.4 mm nozzle.' },
+    { kind: 'range', key: 'lnHeight', label: 'Letter line height', min: 2, max: 50, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'lnBack', label: 'Background lines', min: 10, max: 150, step: 5, unit: '%', hint: 'Height of the lines around the letter, compared to the letter lines.' },
+    { kind: 'range', key: 'lnBase', label: 'Base thickness', min: 0.6, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'lnSeed', label: 'Shuffle', min: 1, max: 99, step: 1, hint: 'Changes the direction of the lines in each tile.' },
+  ],
   pins: [
-    { kind: 'select', key: 'pinMode', label: 'Pattern', options: [['wave', 'Waves'], ['ripple', 'Ripples'], ['letters', 'My text']] },
+    { kind: 'select', key: 'pinMode', label: 'Pattern', options: [['wave', 'Waves'], ['ripple', 'Ripples'], ['halo', 'Ring'], ['letters', 'My text']] },
+    { kind: 'select', key: 'pinLayout', label: 'Pins in', options: [['grid', 'Rows'], ['rings', 'Circles']] },
+    { kind: 'select', key: 'pinTip', label: 'Pin tops', options: [['flat', 'Flat'], ['round', 'Round'], ['tube', 'Tubes']] },
+    { kind: 'range', key: 'pinHole', label: 'Empty middle', min: 0, max: 120, step: 1, unit: 'mm', hint: 'A round space with no pins in the middle.' },
     { kind: 'select', key: 'pinText', label: 'Text in the waves', options: [['up', 'Raised'], ['down', 'Sunk'], ['none', 'No text']], hint: 'Your text shows as taller (or shorter) pins inside the pattern. Set its size under Size.' },
     { kind: 'range', key: 'pinW', label: 'Width', min: 40, max: 400, step: 1, unit: 'mm' },
     { kind: 'range', key: 'pinH', label: 'Height', min: 40, max: 400, step: 1, unit: 'mm' },
@@ -517,10 +537,11 @@ function showWarnings(w: string[]) {
 function renderParts(parts: Part[]) {
   const groups = new Map<string, { color: string; count: number; name: string }>();
   for (const p of parts) {
-    const key = p.color + (p.name.startsWith('Letter') ? 'L' : p.name);
+    const tile = /^Tile \d+$/.test(p.name);
+    const key = p.color + (p.name.startsWith('Letter') ? 'L' : tile ? 'T' : p.name);
     const g = groups.get(key);
     if (g) g.count++;
-    else groups.set(key, { color: p.color, count: 1, name: p.name.startsWith('Letter') ? 'Letters' : p.name });
+    else groups.set(key, { color: p.color, count: 1, name: p.name.startsWith('Letter') ? 'Letters' : tile ? 'Tiles' : p.name });
   }
   partsEl.innerHTML = [...groups.values()]
     .map((g) => `<li><i style="background:${g.color}"></i>${escapeHtml(g.name)}${g.count > 1 ? ` <span>×${g.count}</span>` : ''}</li>`)
@@ -644,7 +665,7 @@ function renderStyleControls() {
     });
   }
   if (params.style === 'pins' && !params.pinSeparate) list = list.filter((c) => c.key !== 'pinSocket' && c.key !== 'pinFit');
-  if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !(params.pinMode === 'ripple' && c.key === 'pinAngle'));
+  if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
@@ -661,7 +682,7 @@ function renderStyleControls() {
   // the lamp and the candle mold have no text, so their text and size sections go away
   const isLamp = noText();
   $('#text-section').hidden = isLamp;
-  $('#size-section').hidden = isLamp || params.style === 'flower'; // the flower has its own Size
+  $('#size-section').hidden = isLamp || params.style === 'flower' || params.style === 'lines'; // the flower has its own Size
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
@@ -1254,6 +1275,7 @@ function syncColors() {
     arrow: ['Board', 'Shadow'],
     pyramid: ['Colour', '—'],
     pins: ['Pins', 'Plate'],
+    lines: ['Letter lines', 'Background'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1265,6 +1287,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  lines: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><path d="M8 26L18 6l10 20M11 26L18 12l7 14M14 26l4-8 4 8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M36 4v24M39 4v24M42 4v24M45 4v24" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>`,
   pins: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="40" height="28" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><g fill="currentColor"><circle cx="11" cy="9" r="2.6"/><circle cx="19" cy="9" r="1.8"/><circle cx="27" cy="9" r="1.2"/><circle cx="35" cy="9" r="1.8"/><circle cx="11" cy="16" r="1.8"/><circle cx="19" cy="16" r="1.2"/><circle cx="27" cy="16" r="1.8"/><circle cx="35" cy="16" r="2.6"/><circle cx="11" cy="23" r="1.2"/><circle cx="19" cy="23" r="1.8"/><circle cx="27" cy="23" r="2.6"/><circle cx="35" cy="23" r="1.8"/></g></svg>`,
   flower: `<svg viewBox="0 0 48 32"><g fill="currentColor"><path d="M22 14V3h4v11z"/><path d="M26 18h11v-4H26z" opacity=".7"/><path d="M22 18v11h4V18z" opacity=".5"/><path d="M22 14H11v4h11z" opacity=".85"/><path d="M26 14l8-8 3 3-8 8z" opacity=".6"/><path d="M22 18l-8 8-3-3 8-8z" opacity=".6"/><circle cx="24" cy="16" r="3"/></g></svg>`,
   arrow: `<svg viewBox="0 0 48 32"><path d="M12 2h9v16c0 3 2 4 5 4h6v-5l9 9-9 9v-5h-6c-9 0-14-5-14-13z" fill="currentColor" opacity=".35"/><path d="M14 5h5M14 5v8M14 9h4" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M33 22l5 4-5 4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>`,
