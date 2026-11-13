@@ -113,6 +113,13 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
   },
+  terrace: {
+    label: 'Terrace planter',
+    blurb: 'A low organic tray with hills of stepped levels, for succulents and moss. Change the hills, levels and heights, or shuffle for a new shape.',
+    text: '',
+    font: 'archivo',
+    patch: { colorA: '#efece4' },
+  },
   concrete: {
     label: 'Concrete letters',
     blurb: 'Molds to cast letters in concrete. Silicone master: print it, pour silicone over, cast in the soft mold. Or print a hard mold with a pocket per letter.',
@@ -280,6 +287,20 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  terrace: [
+    { kind: 'range', key: 'tgHills', label: 'Hills', min: 1, max: 4, step: 1 },
+    { kind: 'range', key: 'tgTiers', label: 'Levels', min: 1, max: 6, step: 1, hint: 'Levels on the biggest hill. Every other hill gets one less.' },
+    { kind: 'range', key: 'tgW', label: 'Length', min: 80, max: 400, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'tgD', label: 'Depth', min: 50, max: 300, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'tgStep', label: 'Level step', min: 6, max: 50, step: 0.5, unit: 'mm', hint: 'How far each level steps in. This is the room for plants on each terrace.' },
+    { kind: 'range', key: 'tgShift', label: 'Peak off-centre', min: 0, max: 100, step: 5, unit: '%' },
+    { kind: 'range', key: 'tgH', label: 'Outer wall', min: 4, max: 60, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'tgRise', label: 'Rise per level', min: 0, max: 60, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'tgWobble', label: 'Organic shape', min: 0, max: 60, step: 1, unit: '%' },
+    { kind: 'range', key: 'tgSeed', label: 'Shuffle', min: 1, max: 99, step: 1, hint: 'A new shape with the same settings.' },
+    { kind: 'range', key: 'tgWall', label: 'Wall thickness', min: 0.8, max: 4, step: 0.05, unit: 'mm', hint: '1.6 = four lines with a 0.4 mm nozzle.' },
+    { kind: 'range', key: 'tgFloor', label: 'Floor thickness', min: 0.8, max: 6, step: 0.2, unit: 'mm' },
+  ],
   concrete: [
     { kind: 'select', key: 'ccMake', label: 'Make', options: [['master', 'Silicone master'], ['mold', 'Hard mold']], hint: 'Silicone master gives the smoothest letters and a mold you can use many times.' },
     { kind: 'range', key: 'ccDepth', label: 'Letter thickness', min: 5, max: 80, step: 1, unit: 'mm' },
@@ -403,7 +424,7 @@ const params: Params = { ...defaults };
 /** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
 /** Pin art with the pins printed apart from the base (separate files/objects). */
 const pinsApart = () => params.style === 'pins' && !!params.pinSeparate;
-const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile';
+const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace';
 let fontKey = 'archivo';
 let textTouched = false;
 let fontTouched = false;
@@ -1295,6 +1316,7 @@ function syncColors() {
     pins: ['Pins', 'Plate'],
     lines: ['Letter lines', 'Background'],
     concrete: ['Mold', '—'],
+    terrace: ['Planter', '—'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1302,10 +1324,11 @@ function syncColors() {
   $('#colorB-label').textContent = b;
   ($('#colorC') as HTMLInputElement).value = params.colorC ?? '#f6efe4';
   $('#colorC-wrap').style.display = params.style === 'arrow' ? '' : 'none';
-  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
+  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
 }
 
 const ICONS: Record<Style, string> = {
+  terrace: `<svg viewBox="0 0 48 32"><path d="M3 24c0-6 6-8 12-8s9 3 14 3 16-2 16 5v2H3z" fill="currentColor" opacity=".3"/><path d="M8 22c0-4 4-6 8-6s7 2 7 5M12 20c0-3 2-5 5-5s4 2 4 4M30 22c1-4 4-5 7-5s6 2 6 5M34 21c0-3 2-4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 12l1-4 1 4M38 14l1-3 1 3" stroke="#6f9a3a" stroke-width="1.6" fill="none"/></svg>`,
   concrete: `<svg viewBox="0 0 48 32"><rect x="3" y="6" width="42" height="22" rx="2" fill="currentColor" opacity=".3"/><path d="M9 24V10h7a4 4 0 0 1 0 8H9M24 10v14h7M37 24l5-14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
   lines: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><path d="M8 26L18 6l10 20M11 26L18 12l7 14M14 26l4-8 4 8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M36 4v24M39 4v24M42 4v24M45 4v24" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>`,
   pins: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="40" height="28" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><g fill="currentColor"><circle cx="11" cy="9" r="2.6"/><circle cx="19" cy="9" r="1.8"/><circle cx="27" cy="9" r="1.2"/><circle cx="35" cy="9" r="1.8"/><circle cx="11" cy="16" r="1.8"/><circle cx="19" cy="16" r="1.2"/><circle cx="27" cy="16" r="1.8"/><circle cx="35" cy="16" r="2.6"/><circle cx="11" cy="23" r="1.2"/><circle cx="19" cy="23" r="1.8"/><circle cx="27" cy="23" r="2.6"/><circle cx="35" cy="23" r="1.8"/></g></svg>`,
@@ -1732,6 +1755,7 @@ function baseName() {
   if (params.style === 'lamp') return 'lamp';
   if (params.style === 'mold') return `candle-${params.moldShape}-mold`;
   if (params.style === 'tile') return `star-cross-tiles-${params.tlMake}`;
+  if (params.style === 'terrace') return 'terrace-planter';
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
   return `${t}-${params.style}`;
 }
@@ -1765,7 +1789,7 @@ $('#dl-3mf').addEventListener('click', async () => {
   // pins printed apart: base on one plate, pins on the next (one colour per plate)
   const lay = pinsApart() ? layoutOnPlates(out, params.bedSize, true) : tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
   download(
-    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.text.trim() || 'Letterforge', noText() || pinsApart(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
+    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.style === 'terrace' ? 'Terrace planter' : params.text.trim() || 'Letterforge', noText() || pinsApart(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
     baseName() + '.3mf',
   );
   if (lay && pinsApart()) showWarnings([`The 3MF has the base on plate 1 and the pins on plate 2. Pick a filament per plate in Bambu Studio.`]);

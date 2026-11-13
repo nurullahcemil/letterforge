@@ -6,12 +6,13 @@ import { layoutText, smartLines, type Vec2 } from './text';
 import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
 import { buildMold, type MoldParams } from './mold';
 import { buildTiles, type TileParams } from './tiles';
+import { buildTerrace, type TerraceParams } from './terrace';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace';
 
-export interface Params extends LampParams, MoldParams, TileParams {
+export interface Params extends LampParams, MoldParams, TileParams, TerraceParams {
   /** Letter flower: letters around a centre like petals. */
   flRadius?: number;
   flDepth?: number;
@@ -315,6 +316,7 @@ export class Builder {
       if (p.style === 'lamp') return this.lamp(p, warnings);
       if (p.style === 'mold') return this.mold(p, warnings);
       if (p.style === 'tile') return this.tiles(p, warnings);
+      if (p.style === 'terrace') return this.terrace(p, warnings);
       const layout = layoutText(font, p.text || ' ', {
         ...textStyle(p),
         capHeight: p.capHeight,
@@ -527,6 +529,27 @@ export class Builder {
    * always laid out side by side, each part flat on the bed (printOffset moves a part there).
    * Never bed-split (cuts would show in the light).
    */
+  /** Terrace planter: thin walls on one floor, joined into one piece. */
+  private terrace(p: Params, warnings: string[]): BuildResult {
+    const walls = buildTerrace(this.wasm, (o) => this.k(o), p, warnings);
+    this.kept = [];
+    if (!walls.length) return { parts: [], warnings, size: [0, 0, 0], letters: [] };
+    const m = this.k(this.wasm.Manifold.union(walls.map((w) => w.m)));
+    const g = m.getMesh();
+    const q = new Float32Array((g.vertProperties.length / g.numProp) * 3);
+    for (let i = 0, j = 0; i < g.vertProperties.length; i += g.numProp, j += 3) {
+      q[j] = g.vertProperties[i];
+      q[j + 1] = g.vertProperties[i + 1];
+      q[j + 2] = g.vertProperties[i + 2];
+    }
+    const raw = { positions: q, indices: new Uint32Array(g.triVerts) };
+    this.kept.push({ name: 'Planter', color: p.colorA, raw });
+    const b = m.boundingBox();
+    const size: [number, number, number] = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]];
+    if (size[0] > p.bedSize || size[1] > p.bedSize) warnings.push(`The planter is ${Math.round(size[0])} × ${Math.round(size[1])} mm, bigger than your ${p.bedSize} mm bed. Make it smaller.`);
+    return { parts: [{ name: 'Planter', color: p.colorA, ...raw }], warnings, size, letters: [] };
+  }
+
   /** Tile mold: star and cross tiles (silicone master, hard tray or clay cutters), laid out flat. */
   private tiles(p: Params, warnings: string[]): BuildResult {
     const pieces = buildTiles(this.wasm, (o) => this.k(o), p, warnings);

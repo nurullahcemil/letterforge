@@ -54,6 +54,7 @@ const cases: [string, Partial<Params>, string][] = [
   ['pins-apart', { style: 'pins', text: 'HI', pinText: 'up', pinSeparate: true }, 'archivo'],
   ['concrete', { style: 'concrete', text: 'HOME', capHeight: 90, ccHoles: true }, 'archivo'],
   ['concrete-mold', { style: 'concrete', text: 'HOME', capHeight: 90, ccMake: 'mold', ccHoles: true }, 'archivo'],
+  ['terrace', { style: 'terrace' }, 'archivo'],
   ['lines', { style: 'lines', text: 'ABCDE\nFGHIJ' }, 'archivo'],
   ['pins-halo', { style: 'pins', pinMode: 'halo', pinLayout: 'rings', pinHole: 30, pinTip: 'tube' }, 'archivo'],
   ['pins-text', { style: 'pins', text: 'HI', capHeight: 120, pinMode: 'letters' }, 'archivo'],

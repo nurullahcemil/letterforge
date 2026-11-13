@@ -60,7 +60,8 @@ sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase)
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
 arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
-concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`).
+concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`),
+terrace (no text: terrace planter, `src/terrace.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -202,6 +203,11 @@ no overlap between halves and candle; must end "all clean").
   letter or rectangle) with a MIRRORED pocket (face at the bottom) widening upward. Draft = stacked
   1 mm slabs each offset a bit more (`taper`). Hanging holes: highest vertex of letter.offset(−(r+3))
   per piece (hole through master letter / pin standing in the pocket). Letters spaced by 2·wall+2.
+- terrace (`src/terrace.ts`, "Terrace planter", user photo of a stepped succulent tray): hills =
+  organic blobs (circle + harmonics 2–4, seeded) side by side; tray = union closed by 0.35·R (necks
+  flow); per hill, levels = the blob scaled by 1 − j·step/r, moved toward an off-centre peak, kept
+  inside the level below; every outline is a thin wall standing on the ONE floor (H + j·rise), so no
+  supports. Step auto-shrinks so all levels fit (note shown). One part, unioned.
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on
