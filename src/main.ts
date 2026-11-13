@@ -282,6 +282,9 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'toggle', key: 'pinGrow', label: 'Taller pins are wider' },
     { kind: 'range', key: 'pinPlate', label: 'Plate thickness', min: 1, max: 10, step: 0.2, unit: 'mm' },
     { kind: 'toggle', key: 'pinFrame', label: 'Frame around' },
+    { kind: 'toggle', key: 'pinSeparate', label: 'Print pins separately', hint: 'The base gets a hole for every pin, and the pins come as their own piece, so you can print them in another colour and push them in.' },
+    { kind: 'range', key: 'pinSocket', label: 'Hole depth', min: 1, max: 10, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pinFit', label: 'Pin fit', min: 0, max: 0.5, step: 0.05, unit: 'mm', hint: 'Extra room around each pin. 0.15 = snug push fit; more if they are too tight.' },
   ],
   pyramid: [
     { kind: 'range', key: 'pyCell', label: 'Tile size', min: 4, max: 40, step: 0.5, unit: 'mm' },
@@ -361,6 +364,8 @@ STYLE_CONTROLS.lamp = LAMP_CONTROLS;
 
 const params: Params = { ...defaults };
 /** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
+/** Pin art with the pins printed apart from the base (separate files/objects). */
+const pinsApart = () => params.style === 'pins' && !!params.pinSeparate;
 const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile';
 let fontKey = 'archivo';
 let textTouched = false;
@@ -578,7 +583,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -638,6 +643,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'pins' && !params.pinSeparate) list = list.filter((c) => c.key !== 'pinSocket' && c.key !== 'pinFit');
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !(params.pinMode === 'ripple' && c.key === 'pinAngle'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
@@ -1650,7 +1656,7 @@ $('#check').addEventListener('click', () => {
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
 function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
-  if (params.style === 'lamp' || params.style === 'mold') {
+  if (params.style === 'lamp' || params.style === 'mold' || pinsApart()) {
     return meshes.map((m) => {
       const pm = m as unknown as Part;
       if (pm.printMesh) return { ...m, positions: pm.printMesh.positions, indices: pm.printMesh.indices };
@@ -1715,7 +1721,7 @@ $('#dl-3mf').addEventListener('click', async () => {
   const tooBig = !noText() && params.style !== 'book' && exceedsBed(out, params.bedSize);
   const lay = tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
   download(
-    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.text.trim() || 'Letterforge', noText(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
+    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.text.trim() || 'Letterforge', noText() || pinsApart(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
     baseName() + '.3mf',
   );
   if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);
@@ -1731,6 +1737,30 @@ $('#dl-backing-dxf').addEventListener('click', async () => {
 });
 
 $('#dl-stl').addEventListener('click', async () => {
+  if (pinsApart()) {
+    // two files: the base (with frame) and the pins, each laid out for printing
+    const ms = forExport(lastParts.filter((p) => !p.previewOnly));
+    const join = (list: { positions: Float32Array; indices: Uint32Array }[]) => {
+      let nv = 0, ni = 0;
+      for (const m of list) { nv += m.positions.length; ni += m.indices.length; }
+      const positions = new Float32Array(nv), indices = new Uint32Array(ni);
+      let ov = 0, oi = 0;
+      for (const m of list) {
+        positions.set(m.positions, ov);
+        for (let i = 0; i < m.indices.length; i++) indices[oi + i] = m.indices[i] + ov / 3;
+        ov += m.positions.length; oi += m.indices.length;
+      }
+      return { positions, indices };
+    };
+    for (const [name, list] of [['base', ms.filter((m) => m.name !== 'Pins')], ['pins', ms.filter((m) => m.name === 'Pins')]] as const) {
+      if (!list.length) continue;
+      let one = join(list as any);
+      if (params.lightFiles !== false) [one] = await lighten([one]);
+      download(toSTL(one), `${baseName()}-${name}.stl`);
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return;
+  }
   // One STL with everything. STL can't store colour; use the 3MF for two colours.
   setBusy(true);
   await fullDetailParts();

@@ -49,6 +49,10 @@ export interface Params extends LampParams, MoldParams, TileParams {
   pinFrame?: boolean;
   /** Pin art with waves/ripples: your text shows as taller ('up') or shorter ('down') pins. */
   pinText?: 'none' | 'up' | 'down';
+  /** Print the pins apart from the base: the base gets a hole per pin. */
+  pinSeparate?: boolean;
+  pinSocket?: number;
+  pinFit?: number;
   /** Pyramid-tile letters. */
   pyCell?: number;
   pyHeight?: number;
@@ -235,6 +239,8 @@ interface WorkPart {
   raw?: { positions: Float32Array; indices: Uint32Array };
   previewOnly?: boolean;
   drag?: DragInfo;
+  /** The part as printed, when that differs from the preview (e.g. pins printed separately). */
+  print?: Manifold;
 }
 
 type Deletable = { delete(): void };
@@ -429,7 +435,18 @@ export class Builder {
             if (v > hi[a]) hi[a] = v;
           }
         }
-        out.push({ name: wp.name, color: wp.color, positions, indices, drag: wp.drag });
+        const part: Part = { name: wp.name, color: wp.color, positions, indices, drag: wp.drag };
+        if (wp.print) {
+          const g = wp.print.getMesh();
+          const q = new Float32Array((g.vertProperties.length / g.numProp) * 3);
+          for (let i = 0, j = 0; i < g.vertProperties.length; i += g.numProp, j += 3) {
+            q[j] = g.vertProperties[i];
+            q[j + 1] = g.vertProperties[i + 1];
+            q[j + 2] = g.vertProperties[i + 2];
+          }
+          part.printMesh = { positions: q, indices: new Uint32Array(g.triVerts) };
+        }
+        out.push(part);
       }
       const size: [number, number, number] = out.length
         ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]
@@ -1048,7 +1065,11 @@ export class Builder {
     const d = clampN(p.pinD ?? 6, 1, pitch * 1.5);
     const hMin = clampN(p.pinMin ?? 2, 0.2, 300);
     const hMax = Math.max(hMin, clampN(p.pinMax ?? 30, 0.2, 300));
-    const plateT = clampN(p.pinPlate ?? 3, 0.8, 30);
+    const sep = !!p.pinSeparate;
+    const sock = sep ? clampN(p.pinSocket ?? 3, 1, 20) : 0; // how deep each pin sits in the base
+    const fit = clampN(p.pinFit ?? 0.15, 0, 1); // extra room around each pin in its hole
+    // the base must be thick enough for the holes plus a 1.2 mm floor
+    const plateT = Math.max(clampN(p.pinPlate ?? 3, 0.8, 30), sock + 1.2);
     const mode = p.pinMode ?? 'wave';
     let x0: number, y0: number, x1: number, y1: number;
     let polys = cs.toPolygons() as [number, number][][];
@@ -1116,6 +1137,7 @@ export class Builder {
       return f;
     };
     const pins: Manifold[] = [];
+    const holes: Manifold[] = [];
     const segs = d > 8 ? 40 : 28;
     for (let i = 0; i < cols; i++)
       for (let j = 0; j < rows; j++) {
@@ -1123,16 +1145,31 @@ export class Builder {
         const f = level(x, y);
         const h = hMin + (hMax - hMin) * f;
         const r = (p.pinGrow ? d * (0.55 + 0.45 * f) : d) / 2;
-        pins.push(this.k(W.Manifold.cylinder(h + 0.02, r, r, segs).translate([x, y, plateT - 0.02])));
+        if (sep) {
+          // the pin reaches down into its hole (0.2 mm short of the bottom), the hole is a bit wider
+          const z0 = plateT - sock + 0.2;
+          pins.push(this.k(W.Manifold.cylinder(h + plateT - z0, r, r, segs).translate([x, y, z0])));
+          holes.push(this.k(W.Manifold.cylinder(sock + 1, r + fit, r + fit, segs).translate([x, y, plateT - sock])));
+        } else pins.push(this.k(W.Manifold.cylinder(h + 0.02, r, r, segs).translate([x, y, plateT - 0.02])));
       }
     const parts: WorkPart[] = [];
     let plate = this.rect(x0, y0, x1, y1);
-    parts.push({ name: 'Plate', color: p.colorB, m: this.extrude(plate, plateT) });
-    parts.push({ name: 'Pins', color: p.colorA, m: this.k(W.Manifold.compose(pins)) });
+    let base = this.extrude(plate, plateT);
+    if (sep) base = this.k(base.subtract(this.k(W.Manifold.compose(holes))));
+    parts.push({ name: sep ? 'Base' : 'Plate', color: p.colorB, m: base });
+    const pinsM = this.k(W.Manifold.compose(pins));
+    // printed separately: every pin stands on the bed at its own spot (same layout as the base)
+    // printed separately: the pins stand on the bed in the same pattern, next to the base
+    const besideX = x1 - x0 + 20 + (p.pinFrame ? 6 : 0);
+    parts.push({ name: 'Pins', color: p.colorA, m: pinsM, print: sep ? this.k(pinsM.translate([besideX, 0, -(plateT - sock + 0.2)])) : undefined });
+    if (sep && sock > hMin + 1) warnings.push('Some pins are shorter than their holes are deep, so they will sit low. Make the shortest pin taller.');
     if (p.pinFrame) {
       const t = 3;
       plate = this.k(this.rect(x0 - t, y0 - t, x1 + t, y1 + t).subtract(this.rect(x0, y0, x1, y1)));
-      parts.push({ name: 'Frame', color: p.colorB, m: this.extrude(plate, plateT + hMax + 4) });
+      const frame = this.extrude(plate, plateT + hMax + 4);
+      // printed apart, the frame is part of the base (one piece in one colour)
+      if (sep) parts[0].m = this.k(parts[0].m!.add(frame));
+      else parts.push({ name: 'Frame', color: p.colorB, m: frame });
     }
     if (pins.length > 2500) warnings.push(`${pins.length} pins: the file will be big. Make the spacing larger.`);
     if (d >= pitch) warnings.push('The pins touch each other. Make them thinner or the spacing larger.');
