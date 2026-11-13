@@ -101,10 +101,10 @@ const PRESETS: Record<Style, StylePreset> = {
   },
   flower: {
     label: 'Letter flower',
-    blurb: 'Letters stand around a centre like petals, deep and chunky, as one round sculpture. Repeat the word to fill the circle.',
+    blurb: 'Each letter bends into a petal: they meet in the middle and their sides touch, filling a circle. Deep and chunky, as one sculpture. Repeat the word to fill it.',
     text: 'BLOOM',
     font: 'archivo',
-    patch: { capHeight: 40, colorA: '#f0642d', tracking: 0, flCount: 10 },
+    patch: { capHeight: 80, colorA: '#f0642d', tracking: 0, flCount: 15 },
   },
   arrow: {
     label: 'Arrow sign',
@@ -112,6 +112,13 @@ const PRESETS: Record<Style, StylePreset> = {
     text: 'F\nU\nN',
     font: 'archivo',
     patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
+  },
+  pins: {
+    label: 'Pin art',
+    blurb: 'A grid of round pins on a plate, rising and falling in waves, ripples or the shape of your letters. Pins and plate in two colours, with a frame.',
+    text: 'HI',
+    font: 'archivo',
+    patch: { capHeight: 120, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04 },
   },
   pyramid: {
     label: 'Pyramid tiles',
@@ -243,8 +250,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   ],
   lamp: [],
   flower: [
-    { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around. 0 = the word once; more repeats it.' },
-    { kind: 'range', key: 'flRadius', label: 'Middle', min: 0, max: 60, step: 0.5, unit: 'mm', hint: 'How far from the centre the letters start. It grows on its own so the petals never merge.' },
+    { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around the circle. 0 = the word once; more repeats it.' },
+    { kind: 'range', key: 'flRadius', label: 'Middle', min: 0, max: 60, step: 0.5, unit: 'mm', hint: 'Size of the middle where the letters meet.' },
     { kind: 'range', key: 'flDepth', label: 'Depth', min: 5, max: 200, step: 1, unit: 'mm', hint: 'How deep each letter goes back.' },
   ],
   arrow: [
@@ -257,6 +264,22 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'arShadowAng', label: 'Shadow direction', min: 0, max: 359, step: 5, unit: '°', hint: '225 = down and left.' },
     { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
+  ],
+  pins: [
+    { kind: 'select', key: 'pinMode', label: 'Pattern', options: [['wave', 'Waves'], ['ripple', 'Ripples'], ['letters', 'My text']] },
+    { kind: 'range', key: 'pinW', label: 'Width', min: 40, max: 400, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'pinH', label: 'Height', min: 40, max: 400, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'pinWaves', label: 'Waves', min: 0.25, max: 6, step: 0.25 },
+    { kind: 'range', key: 'pinAngle', label: 'Wave direction', min: 0, max: 180, step: 5, unit: '°' },
+    { kind: 'range', key: 'pinSoft', label: 'Softness', min: 0.5, max: 40, step: 0.5, unit: 'mm', hint: 'How gently the pins slope down at the letter edges.' },
+    { kind: 'range', key: 'pinPad', label: 'Margin', min: 0, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'pinPitch', label: 'Spacing', min: 3, max: 30, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pinD', label: 'Pin width', min: 1.5, max: 25, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pinMin', label: 'Shortest pin', min: 0.4, max: 60, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'pinMax', label: 'Tallest pin', min: 1, max: 150, step: 0.5, unit: 'mm' },
+    { kind: 'toggle', key: 'pinGrow', label: 'Taller pins are wider' },
+    { kind: 'range', key: 'pinPlate', label: 'Plate thickness', min: 1, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'toggle', key: 'pinFrame', label: 'Frame around' },
   ],
   pyramid: [
     { kind: 'range', key: 'pyCell', label: 'Tile size', min: 4, max: 40, step: 0.5, unit: 'mm' },
@@ -613,6 +636,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle'].includes(c.key) : !['pinSoft', 'pinPad'].includes(c.key)) && !(params.pinMode === 'ripple' && c.key === 'pinAngle'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
@@ -1221,6 +1245,7 @@ function syncColors() {
     flower: ['Colour', '—'],
     arrow: ['Board', 'Shadow'],
     pyramid: ['Colour', '—'],
+    pins: ['Pins', 'Plate'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1232,6 +1257,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  pins: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="40" height="28" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><g fill="currentColor"><circle cx="11" cy="9" r="2.6"/><circle cx="19" cy="9" r="1.8"/><circle cx="27" cy="9" r="1.2"/><circle cx="35" cy="9" r="1.8"/><circle cx="11" cy="16" r="1.8"/><circle cx="19" cy="16" r="1.2"/><circle cx="27" cy="16" r="1.8"/><circle cx="35" cy="16" r="2.6"/><circle cx="11" cy="23" r="1.2"/><circle cx="19" cy="23" r="1.8"/><circle cx="27" cy="23" r="2.6"/><circle cx="35" cy="23" r="1.8"/></g></svg>`,
   flower: `<svg viewBox="0 0 48 32"><g fill="currentColor"><path d="M22 14V3h4v11z"/><path d="M26 18h11v-4H26z" opacity=".7"/><path d="M22 18v11h4V18z" opacity=".5"/><path d="M22 14H11v4h11z" opacity=".85"/><path d="M26 14l8-8 3 3-8 8z" opacity=".6"/><path d="M22 18l-8 8-3-3 8-8z" opacity=".6"/><circle cx="24" cy="16" r="3"/></g></svg>`,
   arrow: `<svg viewBox="0 0 48 32"><path d="M12 2h9v16c0 3 2 4 5 4h6v-5l9 9-9 9v-5h-6c-9 0-14-5-14-13z" fill="currentColor" opacity=".35"/><path d="M14 5h5M14 5v8M14 9h4" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M33 22l5 4-5 4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>`,
   pyramid: `<svg viewBox="0 0 48 32"><path d="M14 4h20v8H22v8h12v8H14z" fill="currentColor" opacity=".3"/><path d="M14 4l5 4-5 4M24 4l-5 4 5 4M24 4l5 4 5-4M14 12l5 4-5 4M14 20l5 4-5 4M24 20l5 4 5-4M24 28l5-4 5 4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`,

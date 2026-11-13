@@ -49,6 +49,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['pyramid', { style: 'pyramid', text: 'C', capHeight: 120 }, 'archivo'],
   ['pyramid-45', { style: 'pyramid', text: 'AB', capHeight: 100, pyRotate: true }, 'archivo'],
   ['tile-master', { style: 'tile' }, 'archivo'],
+  ['pins-wave', { style: 'pins', text: 'HI' }, 'archivo'],
+  ['pins-text', { style: 'pins', text: 'HI', capHeight: 120, pinMode: 'letters' }, 'archivo'],
   ['tile-tray', { style: 'tile', tlMake: 'tray' }, 'archivo'],
   ['tile-cutter', { style: 'tile', tlMake: 'cutter' }, 'archivo'],
   ['sign-backing', { backOn: true, backHoles: 'two', backKerf: 0.15 }, 'archivo'],

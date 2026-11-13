@@ -59,7 +59,7 @@ Regression check used so far: run smoke before and after a change and diff the
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
-arrow (arrow sign), pyramid (pyramid-tile letters), tile (no text: star & cross tile mold, `src/tiles.ts`).
+arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), tile (no text: star & cross tile mold, `src/tiles.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -170,9 +170,14 @@ Check: `npx tsx scripts/mold-check.ts ['{"moldShape":"ball"}']` (every shape × 
 no overlap between halves and candle; must end "all clean").
 
 ## Letter flower / Arrow sign / Pyramid tiles / Tile mold (user photos; own designs)
-- flower (`Builder.flower`): each glyph (layout.glyphs, letters only), repeated to `flCount`, foot
-  at radius r0 and turned so its top points out, first letter at the top, clockwise; hub disc.
-  r0 = max(flRadius, Σwidths·0.6/2π) so petals never merge (0.8 made a huge middle disc).
+- flower (`Builder.flower`): each glyph (letters only, repeated to `flCount`) is BENT into an equal
+  pie slice: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (shared y range,
+  r = flRadius + y − yMin), contours densified to 0.35 mm before bending; small hub disc. User:
+  "letters connect in the center, structure changes, sides fit perfectly" (first version just
+  rotated upright letters around a circle — rejected).
+- pins (`Builder.pins`, "Pin art"): grid of cylinders on a plate (colour B) + frame; height level
+  from waves (sine along `pinAngle`), ripples, or text (signed distance to the outline, eased over
+  `pinSoft`); `pinGrow` makes tall pins wider. Pins are composed (disjoint), not unioned.
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on

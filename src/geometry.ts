@@ -9,7 +9,7 @@ import { buildTiles, type TileParams } from './tiles';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins';
 
 export interface Params extends LampParams, MoldParams, TileParams {
   /** Letter flower: letters around a centre like petals. */
@@ -27,6 +27,21 @@ export interface Params extends LampParams, MoldParams, TileParams {
   arShadowT?: number;
   arLetterT?: number;
   colorC?: string;
+  /** Pin art: a grid of round pins whose heights follow a pattern. */
+  pinMode?: 'letters' | 'wave' | 'ripple';
+  pinPitch?: number;
+  pinD?: number;
+  pinMin?: number;
+  pinMax?: number;
+  pinWaves?: number;
+  pinAngle?: number;
+  pinSoft?: number;
+  pinGrow?: boolean;
+  pinPlate?: number;
+  pinPad?: number;
+  pinW?: number;
+  pinH?: number;
+  pinFrame?: boolean;
   /** Pyramid-tile letters. */
   pyCell?: number;
   pyHeight?: number;
@@ -356,6 +371,10 @@ export class Builder {
           break;
         case 'pyramid':
           parts = this.pyramid(cs, p, warnings);
+          break;
+        case 'pins':
+          this.spots = [];
+          parts = this.pins(cs, p, warnings);
           break;
       }
       if (p.splitBed) parts = this.splitToBed(parts, p.bedSize, warnings);
@@ -860,33 +879,57 @@ export class Builder {
   }
 
   /** Letter flower: every letter stands with its foot toward the centre and its top pointing out. */
+  /**
+   * Letter flower: every letter is bent into a pie slice (its width follows the angle, its height
+   * goes outward from the centre), so the letters meet in the middle and their sides touch their
+   * neighbours, filling the whole circle like petals.
+   */
   private flower(glyphs: Vec2[][][], glyphLetter: number[], p: Params, warnings: string[]): WorkPart[] {
     const gs = glyphs.filter((g, i) => glyphLetter[i] >= 0 && g.length);
     if (!gs.length) return [];
     const n = Math.max(gs.length, Math.min(60, Math.round(p.flCount ?? 0)));
-    const css = gs.map((g) => this.k(new this.wasm.CrossSection(g as MVec2[][], 'NonZero')));
-    let widthSum = 0;
-    for (let i = 0; i < n; i++) {
-      const b = css[i % css.length].bounds();
-      widthSum += b.max[0] - b.min[0];
-    }
-    // the feet may overlap a little in the middle, but the petals must stay apart: the middle grows
-    // until the letters, packed at 60 % of their width (feet overlap), fit around it
-    const r0 = Math.max(clampN(p.flRadius ?? 6, 0, 400), (widthSum * 0.6) / (2 * Math.PI));
+    const rIn = clampN(p.flRadius ?? 2, 0, 400);
+    // one shared height range, so every petal is the same length
+    let yMin = Infinity, yMax = -Infinity;
+    const bx = gs.map((g) => {
+      let x0 = Infinity, x1 = -Infinity;
+      for (const c of g) for (const [x, y] of c) {
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+        yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
+      }
+      return [x0, x1];
+    });
+    const slice = (2 * Math.PI) / n;
+    const fuse = Math.min(0.01, slice * 0.04); // neighbours overlap a hair so they join
+    const step = 0.35;
     const items: CrossSection[] = [];
     for (let i = 0; i < n; i++) {
-      let cs = css[i % css.length];
-      const b = cs.bounds();
-      cs = this.k(cs.translate([-(b.min[0] + b.max[0]) / 2, r0 - b.min[1]]));
-      // first letter at the top, then clockwise
-      items.push(this.k(cs.rotate((-360 * i) / n)));
+      const g = gs[i % gs.length];
+      const [x0, x1] = bx[i % gs.length];
+      const w = Math.max(1e-6, x1 - x0);
+      const a0 = Math.PI / 2 + slice / 2 - i * slice; // first letter on top, then clockwise
+      const map = (x: number, y: number): MVec2 => {
+        const a = a0 + fuse - ((x - x0) / w) * (slice + 2 * fuse);
+        const r = rIn + (y - yMin);
+        return [r * Math.cos(a), r * Math.sin(a)];
+      };
+      const polys: MVec2[][] = g.map((c) => {
+        const out: MVec2[] = [];
+        for (let j = 0; j < c.length; j++) {
+          const [ax, ay] = c[j];
+          const [bx2, by] = c[(j + 1) % c.length];
+          const m = Math.max(1, Math.ceil(Math.hypot(bx2 - ax, by - ay) / step));
+          for (let q = 0; q < m; q++) out.push(map(ax + ((bx2 - ax) * q) / m, ay + ((by - ay) * q) / m));
+        }
+        return out;
+      });
+      items.push(this.k(new this.wasm.CrossSection(polys, 'NonZero')));
     }
-    const hubR = r0 + p.capHeight * 0.15;
-    items.push(this.circle(0, 0, hubR));
+    items.push(this.circle(0, 0, rIn + Math.max(1.5, (yMax - yMin) * 0.04)));
     const all = this.k(this.wasm.CrossSection.union(items));
     const pieces = all.decompose();
     pieces.forEach((c) => this.k(c));
-    if (pieces.length > 1) warnings.push('Some letters don\'t touch the middle. Make the hole smaller or the letters bigger.');
+    if (pieces.length > 1) warnings.push('Some letter parts float free (like the dot of an i). Use capital letters or glue them on.');
     return [{ name: 'Flower', color: p.colorA, m: this.extrude(all, clampN(p.flDepth ?? 50, 2, 300)) }];
   }
 
@@ -964,6 +1007,86 @@ export class Builder {
       z += tS;
     }
     parts.push({ name: 'Letters', color: p.colorC ?? '#f6efe4', m: this.extrude(cs, tL, z - OVERLAP) });
+    return parts;
+  }
+
+  /**
+   * Pin art: round pins on a grid, standing on a plate (two colours), heights from a pattern:
+   * letters (tall inside the text, easing down across `pinSoft` mm), waves or ripples.
+   */
+  private pins(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    const pitch = clampN(p.pinPitch ?? 8, 2, 60);
+    const d = clampN(p.pinD ?? 6, 1, pitch * 1.5);
+    const hMin = clampN(p.pinMin ?? 2, 0.2, 300);
+    const hMax = Math.max(hMin, clampN(p.pinMax ?? 30, 0.2, 300));
+    const plateT = clampN(p.pinPlate ?? 3, 0.8, 30);
+    const mode = p.pinMode ?? 'wave';
+    let x0: number, y0: number, x1: number, y1: number;
+    const polys = cs.toPolygons() as [number, number][][];
+    if (mode === 'letters') {
+      const b = cs.bounds();
+      const pad = clampN(p.pinPad ?? 12, 0, 300);
+      x0 = b.min[0] - pad; y0 = b.min[1] - pad; x1 = b.max[0] + pad; y1 = b.max[1] + pad;
+    } else {
+      const w = clampN(p.pinW ?? 200, 20, 1000), h = clampN(p.pinH ?? 200, 20, 1000);
+      x0 = -w / 2; y0 = -h / 2; x1 = w / 2; y1 = h / 2;
+    }
+    const cols = Math.max(1, Math.floor((x1 - x0) / pitch));
+    const rows = Math.max(1, Math.floor((y1 - y0) / pitch));
+    // centre the grid on the plate
+    const gx0 = (x0 + x1) / 2 - ((cols - 1) * pitch) / 2;
+    const gy0 = (y0 + y1) / 2 - ((rows - 1) * pitch) / 2;
+    const soft = clampN(p.pinSoft ?? 8, 0.1, 200);
+    const waves = clampN(p.pinWaves ?? 1.5, 0.1, 50);
+    const ang = ((p.pinAngle ?? 30) * Math.PI) / 180;
+    const span = Math.hypot(x1 - x0, y1 - y0);
+    const cxm = (x0 + x1) / 2, cym = (y0 + y1) / 2;
+    // signed distance to the text outline (positive inside), non-zero fill
+    const sdf = (x: number, y: number) => {
+      let wind = 0, best = Infinity;
+      for (const c of polys)
+        for (let i = 0; i < c.length; i++) {
+          const [ax, ay] = c[i];
+          const [bx, by] = c[(i + 1) % c.length];
+          if (ay <= y) { if (by > y && (bx - ax) * (y - ay) - (x - ax) * (by - ay) > 0) wind++; }
+          else if (by <= y && (bx - ax) * (y - ay) - (x - ax) * (by - ay) < 0) wind--;
+          const ex = bx - ax, ey = by - ay;
+          const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+          best = Math.min(best, Math.hypot(x - ax - t * ex, y - ay - t * ey));
+        }
+      return wind !== 0 ? best : -best;
+    };
+    const level = (x: number, y: number): number => {
+      if (mode === 'letters') {
+        const t = Math.max(0, Math.min(1, (sdf(x, y) + soft) / (2 * soft)));
+        return t * t * (3 - 2 * t);
+      }
+      if (mode === 'ripple') return 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * Math.hypot(x - cxm, y - cym)) / (span / 2));
+      const u = (x - cxm) * Math.cos(ang) + (y - cym) * Math.sin(ang);
+      return 0.5 + 0.5 * Math.sin((2 * Math.PI * waves * u) / span);
+    };
+    const pins: Manifold[] = [];
+    const segs = d > 8 ? 40 : 28;
+    for (let i = 0; i < cols; i++)
+      for (let j = 0; j < rows; j++) {
+        const x = gx0 + i * pitch, y = gy0 + j * pitch;
+        const f = level(x, y);
+        const h = hMin + (hMax - hMin) * f;
+        const r = (p.pinGrow ? d * (0.55 + 0.45 * f) : d) / 2;
+        pins.push(this.k(W.Manifold.cylinder(h + 0.02, r, r, segs).translate([x, y, plateT - 0.02])));
+      }
+    const parts: WorkPart[] = [];
+    let plate = this.rect(x0, y0, x1, y1);
+    parts.push({ name: 'Plate', color: p.colorB, m: this.extrude(plate, plateT) });
+    parts.push({ name: 'Pins', color: p.colorA, m: this.k(W.Manifold.compose(pins)) });
+    if (p.pinFrame) {
+      const t = 3;
+      plate = this.k(this.rect(x0 - t, y0 - t, x1 + t, y1 + t).subtract(this.rect(x0, y0, x1, y1)));
+      parts.push({ name: 'Frame', color: p.colorB, m: this.extrude(plate, plateT + hMax + 4) });
+    }
+    if (pins.length > 2500) warnings.push(`${pins.length} pins: the file will be big. Make the spacing larger.`);
+    if (d >= pitch) warnings.push('The pins touch each other. Make them thinner or the spacing larger.');
     return parts;
   }
 
