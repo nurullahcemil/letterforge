@@ -9,7 +9,7 @@ import { buildTiles, type TileParams } from './tiles';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete';
 
 export interface Params extends LampParams, MoldParams, TileParams {
   /** Letter flower: letters around a centre like petals. */
@@ -32,6 +32,15 @@ export interface Params extends LampParams, MoldParams, TileParams {
   arShadowT?: number;
   arLetterT?: number;
   colorC?: string;
+  /** Concrete letters: silicone master (letters on a base in a box) or a hard mold (letter pockets). */
+  ccMake?: 'master' | 'mold';
+  ccDepth?: number;
+  ccWall?: number;
+  ccFloor?: number;
+  ccDraft?: number;
+  ccShape?: 'outline' | 'block';
+  ccHoles?: boolean;
+  ccHoleD?: number;
   /** Line letters: each letter in its own square tile, made of thin standing fins. */
   lnTile?: number;
   lnPitch?: number;
@@ -312,7 +321,8 @@ export class Builder {
         tracking: p.tracking,
         lineSpacing: p.lineSpacing,
         // stepped tiers grow outward, so keep letters far enough apart that they never fuse
-        gap: p.style === 'stepped' ? 2 * (Math.max(1, Math.round(p.spSteps)) - 1) * p.spInset + 0.8 : 0,
+        // concrete molds need room for a wall between letter pockets
+        gap: p.style === 'concrete' ? 2 * clampN(p.ccWall ?? 4, 1.2, 30) + 2 : p.style === 'stepped' ? 2 * (Math.max(1, Math.round(p.spSteps)) - 1) * p.spInset + 0.8 : 0,
         widths: p.letterW,
         moves: p.style === 'stepped' || Object.keys(p.letterMove ?? {}).length ? (p.letterMove ?? {}) : undefined,
       });
@@ -398,6 +408,10 @@ export class Builder {
         case 'pyramid':
           parts = this.pyramid(cs, p, warnings);
           break;
+        case 'concrete':
+          this.spots = [];
+          parts = this.concrete(cs, p, warnings);
+          break;
         case 'lines':
           this.spots = [];
           parts = this.lineLetters(font, p, warnings);
@@ -407,7 +421,7 @@ export class Builder {
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed && p.style !== 'lines') parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -1233,6 +1247,83 @@ export class Builder {
     }
     if (pins.length > 2500) warnings.push(`${pins.length} pins: the file will be big. Make the spacing larger.`);
     if (d >= pitch) warnings.push('The pins touch each other. Make them thinner or the spacing larger.');
+    return parts;
+  }
+
+  /**
+   * Concrete letters. master: the letters standing on a floor inside a box wall, slightly narrower
+   * at the top (draft); pour silicone over it to get a soft mold. mold: a printed tray with a pocket
+   * per letter, the letter's FRONT at the bottom of the pocket, so the pockets are mirrored and the
+   * cast letters read the right way; pockets widen toward the top (draft) so the concrete releases.
+   * Optional pins leave a hanging hole through each letter.
+   */
+  private concrete(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    const D = clampN(p.ccDepth ?? 20, 3, 150);
+    const wall = clampN(p.ccWall ?? 4, 1.2, 30);
+    const floor = clampN(p.ccFloor ?? 3, 1.2, 20);
+    const grow = D * Math.tan((clampN(p.ccDraft ?? 2, 0, 10) * Math.PI) / 180);
+    const holeR = clampN(p.ccHoleD ?? 6, 2, 20) / 2;
+    // a tapered extrusion: thin slabs, each offset a little more (grow < 0 narrows upward)
+    const taper = (shape: CrossSection, h: number, z0: number, g: number): Manifold => {
+      if (Math.abs(g) < 0.01) return this.extrude(shape, h, z0);
+      const steps = Math.max(1, Math.ceil(h / 1));
+      const slabs: Manifold[] = [];
+      for (let i = 0; i < steps; i++) {
+        const sh = this.k(shape.offset((g * (i + 0.5)) / steps, 'Round', 2, 32));
+        if (sh.isEmpty()) break;
+        slabs.push(this.extrude(sh, h / steps + OVERLAP, z0 + (i * h) / steps));
+      }
+      return this.k(W.Manifold.union(slabs));
+    };
+    // a hanging-hole spot per letter piece: the highest point that leaves 3 mm of concrete around it
+    const spots = (shape: CrossSection): [number, number][] => {
+      const out: [number, number][] = [];
+      const comps = shape.decompose();
+      comps.forEach((c) => this.k(c));
+      for (const c of comps) {
+        const room = this.k(c.offset(-(holeR + 3 + Math.max(0, grow)), 'Round', 2, 32));
+        if (room.isEmpty()) continue;
+        let best: [number, number] | null = null;
+        for (const poly of room.toPolygons() as [number, number][][]) for (const v of poly) if (!best || v[1] > best[1]) best = v;
+        if (best) out.push(best);
+      }
+      return out;
+    };
+    const parts: WorkPart[] = [];
+    const master = (p.ccMake ?? 'master') === 'master';
+    // one mold (or master box) per letter, so every piece fits the bed and can be poured on its own
+    const letters = cs.decompose();
+    letters.forEach((c) => this.k(c));
+    letters.sort((a, c) => a.bounds().min[0] - c.bounds().min[0]);
+    let totalMl = 0;
+    letters.forEach((L, n) => {
+      const b = L.bounds();
+      const cx = (b.min[0] + b.max[0]) / 2;
+      if (master) {
+        const base = 2.4, boxWall = 2.4, margin = 8;
+        let pos = taper(L, D, base - OVERLAP, -grow);
+        if (p.ccHoles) for (const [x, y] of spots(L)) pos = this.k(pos.subtract(this.k(W.Manifold.cylinder(D + 2, holeR, holeR, 32).translate([x, y, base]))));
+        const inner = this.rect(b.min[0] - margin, b.min[1] - margin, b.max[0] + margin, b.max[1] + margin);
+        const outer = this.k(inner.offset(boxWall, 'Round', 2, 24));
+        const box = this.k(this.extrude(outer, base).add(this.extrude(this.k(outer.subtract(inner)), D + 8)));
+        parts.push({ name: `Master ${n + 1}`, color: p.colorA, m: this.k(box.add(pos)) });
+        totalMl += ((b.max[0] - b.min[0] + 2 * margin) * (b.max[1] - b.min[1] + 2 * margin) * (D + 6) - L.area() * D) / 1000;
+      } else {
+        // mirrored, so the face at the bottom of the pocket reads right on the cast letter
+        const m = this.k(this.k(this.k(L.translate([-cx, 0])).scale([-1, 1])).translate([cx, 0]));
+        const trayCS = (p.ccShape ?? 'outline') === 'block'
+          ? this.rect(b.min[0] - wall - grow, b.min[1] - wall - grow, b.max[0] + wall + grow, b.max[1] + wall + grow)
+          : this.k(m.offset(wall + grow, 'Round', 2, 32));
+        let tray = this.extrude(trayCS, floor + D);
+        tray = this.k(tray.subtract(taper(m, D + 1, floor, grow)));
+        if (p.ccHoles) for (const [x, y] of spots(m)) tray = this.k(tray.add(this.k(W.Manifold.cylinder(D + 0.5, holeR, holeR * 0.92, 32).translate([x, y, floor - OVERLAP]))));
+        parts.push({ name: `Mold ${n + 1}`, color: p.colorA, m: tray });
+      }
+    });
+    if (master) warnings.push(`Silicone needed: about ${Math.round(totalMl)} ml in all (6 mm over the letters). Then cast concrete in the silicone molds.`);
+    else warnings.push('Oil the molds, fill them in two goes and tap the sides to let bubbles out. Wait 1–2 days before taking the letters out.');
+    if (p.ccHoles) warnings.push('Each letter gets a hole for a screw or nail to hang it.');
     return parts;
   }
 

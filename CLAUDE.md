@@ -59,7 +59,8 @@ Regression check used so far: run smoke before and after a change and diff the
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
-arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), tile (no text: star & cross tile mold, `src/tiles.ts`).
+arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
+concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -195,6 +196,12 @@ no overlap between halves and candle; must end "all clean").
   concentric squares (seeded per tile), clipped to tile − letter grown. Each tile = own part
   (Tile n colour B + Letter n colour A) so big sets spread over plates; NOT bed-split (decompose
   shattered fins into 300+ pieces).
+- concrete (`Builder.concrete`, "Concrete letters"): ONE PIECE PER LETTER (cs.decompose, sorted
+  left→right; not bed-split) so each fits the bed. master (DEFAULT): letter narrowing upward by
+  `ccDraft` on a 2.4 floor in its own open box (wall D+8) for silicone; mold: tray (follows the
+  letter or rectangle) with a MIRRORED pocket (face at the bottom) widening upward. Draft = stacked
+  1 mm slabs each offset a bit more (`taper`). Hanging holes: highest vertex of letter.offset(−(r+3))
+  per piece (hole through master letter / pin standing in the pocket). Letters spaced by 2·wall+2.
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on

@@ -113,6 +113,13 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
   },
+  concrete: {
+    label: 'Concrete letters',
+    blurb: 'Molds to cast letters in concrete. Silicone master: print it, pour silicone over, cast in the soft mold. Or print a hard mold with a pocket per letter.',
+    text: 'HOME',
+    font: 'archivo',
+    patch: { capHeight: 90, colorA: '#c9c6bf', tracking: 0.02 },
+  },
   lines: {
     label: 'Line letters',
     blurb: 'Each letter in its own square tile, made of thin standing lines: rings that follow the letter, straight lines around it. Great as a wall alphabet.',
@@ -272,6 +279,16 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'arShadowAng', label: 'Shadow direction', min: 0, max: 359, step: 5, unit: '°', hint: '225 = down and left.' },
     { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
+  ],
+  concrete: [
+    { kind: 'select', key: 'ccMake', label: 'Make', options: [['master', 'Silicone master'], ['mold', 'Hard mold']], hint: 'Silicone master gives the smoothest letters and a mold you can use many times.' },
+    { kind: 'range', key: 'ccDepth', label: 'Letter thickness', min: 5, max: 80, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'ccDraft', label: 'Taper', min: 0, max: 8, step: 0.5, unit: '°', hint: 'Slightly slanted sides so the letters come out. 2° is enough for most.' },
+    { kind: 'select', key: 'ccShape', label: 'Mold shape', options: [['outline', 'Follows the letters'], ['block', 'Rectangle']] },
+    { kind: 'range', key: 'ccWall', label: 'Mold wall', min: 1.6, max: 15, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'ccFloor', label: 'Mold floor', min: 1.2, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'toggle', key: 'ccHoles', label: 'Hanging holes', hint: 'A hole through each letter for a screw or nail.' },
+    { kind: 'range', key: 'ccHoleD', label: 'Hole size', min: 3, max: 12, step: 0.5, unit: 'mm' },
   ],
   lines: [
     { kind: 'range', key: 'lnTile', label: 'Tile size', min: 20, max: 200, step: 1, unit: 'mm' },
@@ -537,11 +554,11 @@ function showWarnings(w: string[]) {
 function renderParts(parts: Part[]) {
   const groups = new Map<string, { color: string; count: number; name: string }>();
   for (const p of parts) {
-    const tile = /^Tile \d+$/.test(p.name);
-    const key = p.color + (p.name.startsWith('Letter') ? 'L' : tile ? 'T' : p.name);
+    const tile = /^(Tile|Master|Mold) \d+$/.test(p.name);
+    const key = p.color + (p.name.startsWith('Letter') ? 'L' : tile ? p.name.replace(/ \d+$/, '') : p.name);
     const g = groups.get(key);
     if (g) g.count++;
-    else groups.set(key, { color: p.color, count: 1, name: p.name.startsWith('Letter') ? 'Letters' : tile ? 'Tiles' : p.name });
+    else groups.set(key, { color: p.color, count: 1, name: p.name.startsWith('Letter') ? 'Letters' : tile ? p.name.replace(/ \d+$/, '') + 's' : p.name });
   }
   partsEl.innerHTML = [...groups.values()]
     .map((g) => `<li><i style="background:${g.color}"></i>${escapeHtml(g.name)}${g.count > 1 ? ` <span>×${g.count}</span>` : ''}</li>`)
@@ -604,7 +621,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -664,6 +681,7 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'concrete') list = list.filter((c) => !(params.ccMake === 'master' && ['ccShape', 'ccWall', 'ccFloor'].includes(c.key)) && !(!params.ccHoles && c.key === 'ccHoleD'));
   if (params.style === 'pins' && !params.pinSeparate) list = list.filter((c) => c.key !== 'pinSocket' && c.key !== 'pinFit');
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
@@ -1276,6 +1294,7 @@ function syncColors() {
     pyramid: ['Colour', '—'],
     pins: ['Pins', 'Plate'],
     lines: ['Letter lines', 'Background'],
+    concrete: ['Mold', '—'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1283,10 +1302,11 @@ function syncColors() {
   $('#colorB-label').textContent = b;
   ($('#colorC') as HTMLInputElement).value = params.colorC ?? '#f6efe4';
   $('#colorC-wrap').style.display = params.style === 'arrow' ? '' : 'none';
-  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
+  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
 }
 
 const ICONS: Record<Style, string> = {
+  concrete: `<svg viewBox="0 0 48 32"><rect x="3" y="6" width="42" height="22" rx="2" fill="currentColor" opacity=".3"/><path d="M9 24V10h7a4 4 0 0 1 0 8H9M24 10v14h7M37 24l5-14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
   lines: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><path d="M8 26L18 6l10 20M11 26L18 12l7 14M14 26l4-8 4 8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M36 4v24M39 4v24M42 4v24M45 4v24" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>`,
   pins: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="40" height="28" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><g fill="currentColor"><circle cx="11" cy="9" r="2.6"/><circle cx="19" cy="9" r="1.8"/><circle cx="27" cy="9" r="1.2"/><circle cx="35" cy="9" r="1.8"/><circle cx="11" cy="16" r="1.8"/><circle cx="19" cy="16" r="1.2"/><circle cx="27" cy="16" r="1.8"/><circle cx="35" cy="16" r="2.6"/><circle cx="11" cy="23" r="1.2"/><circle cx="19" cy="23" r="1.8"/><circle cx="27" cy="23" r="2.6"/><circle cx="35" cy="23" r="1.8"/></g></svg>`,
   flower: `<svg viewBox="0 0 48 32"><g fill="currentColor"><path d="M22 14V3h4v11z"/><path d="M26 18h11v-4H26z" opacity=".7"/><path d="M22 18v11h4V18z" opacity=".5"/><path d="M22 14H11v4h11z" opacity=".85"/><path d="M26 14l8-8 3 3-8 8z" opacity=".6"/><path d="M22 18l-8 8-3-3 8-8z" opacity=".6"/><circle cx="24" cy="16" r="3"/></g></svg>`,
