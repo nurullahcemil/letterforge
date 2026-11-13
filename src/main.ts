@@ -101,7 +101,7 @@ const PRESETS: Record<Style, StylePreset> = {
   },
   mold: {
     label: 'Candle & mold',
-    blurb: 'A candle shape (pleated ball, drop ornament, gem, pillar or tiered tree) and a printable mold to pour it in: a two-part block, a zigzag split or an open cup. Pour from the top; the wick goes through the bottom.',
+    blurb: 'A candle shape (pleated ball, drop ornament, gem, pillar or tiered tree). Silicone kit: print the master on a base and a box around it, pour silicone, and you have a soft candle mold. Or print a hard mold directly: two-part block, zigzag split or open cup.',
     text: '',
     font: 'archivo',
     patch: { colorA: '#cdd6dd', colorB: '#f2c6a2' },
@@ -223,8 +223,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'moldTwist', label: 'Twist', min: -180, max: 180, step: 5, unit: '°', hint: 'Turns the pleats from bottom to top.' },
     { kind: 'range', key: 'moldTiers', label: 'Tiers', min: 1, max: 6, step: 1 },
     { kind: 'range', key: 'moldShrink', label: 'Smaller each tier', min: 0, max: 50, step: 1, unit: '%' },
-    { kind: 'select', key: 'moldKind', label: 'Mold', options: [['two', 'Two-part block'], ['zigzag', 'Zigzag split'], ['open', 'Open cup']] },
-    { kind: 'range', key: 'moldWall', label: 'Mold wall', min: 3, max: 15, step: 0.5, unit: 'mm' },
+    { kind: 'select', key: 'moldKind', label: 'Mold', options: [['silicone', 'Silicone kit'], ['two', 'Two-part block'], ['zigzag', 'Zigzag split'], ['open', 'Open cup']] },
+    { kind: 'range', key: 'moldWall', label: 'Mold wall', min: 3, max: 15, hint: 'Silicone kit: how thick the silicone is around the candle.', step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'moldZig', label: 'Zigzag height', min: 0, max: 10, step: 0.5, unit: 'mm', hint: 'Teeth that lock the two halves; they line up with the pleats.' },
     { kind: 'toggle', key: 'moldPins', label: 'Pins to line up the halves' },
     { kind: 'toggle', key: 'moldBolts', label: 'Bolt holes (M4)', hint: 'Clamp the halves with 4 bolts and wing nuts.' },
@@ -555,6 +555,7 @@ function renderStyleControls() {
   if (params.style === 'mold') {
     list = list.filter((c) => {
       if (params.moldShape !== 'tree' && (c.key === 'moldTiers' || c.key === 'moldShrink')) return false;
+      if (params.moldKind === 'silicone' && ['moldShow', 'moldPour'].includes(c.key)) return false;
       if (params.moldShow === 'shape' && ['moldKind', 'moldWall', 'moldZig', 'moldPins', 'moldBolts', 'moldBands', 'moldWick', 'moldPour', 'moldView'].includes(c.key)) return false;
       if (params.moldKind !== 'zigzag' && c.key === 'moldZig') return false;
       if (params.moldKind !== 'two' && ['moldPins', 'moldBolts', 'moldBands'].includes(c.key)) return false;

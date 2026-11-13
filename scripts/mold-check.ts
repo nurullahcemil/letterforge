@@ -9,7 +9,7 @@ const wasm = await Module(); wasm.setup();
 const keep = <T,>(o: T) => o;
 const over = process.argv[2] ? JSON.parse(process.argv[2]) : {};
 const shapes = over.moldShape ? [over.moldShape] : ['tree', 'ball', 'drop', 'gem', 'pillar'];
-const kinds = over.moldKind ? [over.moldKind] : ['two', 'zigzag', 'open'];
+const kinds = over.moldKind ? [over.moldKind] : ['silicone', 'two', 'zigzag', 'open'];
 let bad = 0;
 for (const s of shapes) for (const kd of kinds) {
   const p: any = { ...DEFAULTS, ...MOLD_SHAPE_DEFAULTS[s as 'ball'], moldShape: s, ...over, moldKind: kd, moldDebug: true };

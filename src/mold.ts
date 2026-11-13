@@ -25,7 +25,7 @@ export interface MoldParams {
   moldTwist: number;
   moldTiers: number;
   moldShrink: number;
-  moldKind: 'two' | 'zigzag' | 'open';
+  moldKind: 'silicone' | 'two' | 'zigzag' | 'open';
   moldWall: number;
   moldWick: number;
   moldPour: number;
@@ -43,11 +43,11 @@ export interface MoldParams {
 
 /** Defaults that suit each shape (the UI applies them when the shape changes). */
 export const MOLD_SHAPE_DEFAULTS: Record<MoldParams['moldShape'], Partial<MoldParams>> = {
-  tree: { moldSides: 8, moldDepth: 0, moldTwist: 0, moldH: 110, moldD: 80, moldKind: 'two' },
-  ball: { moldSides: 14, moldDepth: 5, moldTwist: 0, moldH: 70, moldD: 70, moldKind: 'zigzag' },
-  drop: { moldSides: 16, moldDepth: 4, moldTwist: 0, moldH: 95, moldD: 70, moldKind: 'zigzag' },
-  gem: { moldSides: 10, moldDepth: 0, moldTwist: 0, moldH: 70, moldD: 75, moldKind: 'zigzag' },
-  pillar: { moldSides: 12, moldDepth: 3, moldTwist: 0, moldH: 80, moldD: 60, moldKind: 'open' },
+  tree: { moldSides: 8, moldDepth: 0, moldTwist: 0, moldH: 110, moldD: 80, moldKind: 'silicone' },
+  ball: { moldSides: 14, moldDepth: 5, moldTwist: 0, moldH: 70, moldD: 70, moldKind: 'silicone' },
+  drop: { moldSides: 16, moldDepth: 4, moldTwist: 0, moldH: 95, moldD: 70, moldKind: 'silicone' },
+  gem: { moldSides: 10, moldDepth: 0, moldTwist: 0, moldH: 70, moldD: 75, moldKind: 'silicone' },
+  pillar: { moldSides: 12, moldDepth: 3, moldTwist: 0, moldH: 80, moldD: 60, moldKind: 'silicone' },
 };
 
 export interface MoldPiece {
@@ -285,7 +285,7 @@ export function buildMold(wasm: ManifoldToplevel, k: Keep, p: MoldParams, warnin
   const topR = pourProf.filter(([z]) => z >= H - 1e-6).reduce((a, [, r]) => Math.max(a, r), 0);
   const openTop = topR > 1.5; // a flat end at the top is the pour opening
   const pourR = clamp(p.moldPour, 4, 40) / 2;
-  const topZ = openTop && shape !== 'drop' ? H : H + wall;
+  const topZ = openTop && shape !== 'drop' ? H : H + (kind === 'silicone' ? 8 : wall);
 
   // pour channel for shapes without a big flat top, wick hole through the bottom
   let cavity = cav;
@@ -296,6 +296,8 @@ export function buildMold(wasm: ManifoldToplevel, k: Keep, p: MoldParams, warnin
   }
   const wickR = clamp(p.moldWick, 0, 8) / 2;
   if (wickR > 0.2) cavity = k(cavity.add(k(k(wasm.Manifold.cylinder(wall + 4, wickR, wickR, 24)).translate([0, 0, -wall - 1]))));
+
+  if (kind === 'silicone') return siliconeKit(wasm, k, p, { cavity, cav, topZ, R, wall, volume, warnings, segs, shape, pourProf });
 
   const zBot = -wall;
   const blockH = topZ - zBot;
@@ -426,6 +428,45 @@ export function buildMold(wasm: ManifoldToplevel, k: Keep, p: MoldParams, warnin
   }
   const res: MoldResult = { pieces, volume };
   if (p.moldDebug) res.debug = { cavity: cav, halves, profile: pourProf };
+  return res;
+}
+
+/**
+ * Silicone mold kit: the master (candle + pour channel + wick pin) standing upside down on a base
+ * plate, and a box frame that slides down around the plate. Pour silicone into the frame to cover
+ * the master by `wall` mm; the pour end on the plate becomes the mold's opening, the wick pin
+ * leaves the wick hole. Pull it out and cut the silicone open down one side if the shape needs it.
+ */
+function siliconeKit(
+  wasm: ManifoldToplevel, k: Keep, p: MoldParams,
+  o: { cavity: Manifold; cav: Manifold; topZ: number; R: number; wall: number; volume: number; warnings: string[]; segs: number; shape: string; pourProf: ZR[] },
+): MoldResult {
+  const { cavity, topZ, R, wall, warnings, shape } = o;
+  const plateT = 3;
+  // master upside down: the pour end sits on the plate (z = plateT), the wick pin points up
+  const master = k(k(cavity.rotate([180, 0, 0])).translate([0, 0, topZ + plateT - 0.2]));
+  const mb = master.boundingBox();
+  const fill = mb.max[2] - 1; // silicone level: just under the tip of the wick pin
+  const side = 2 * (R + wall);
+  // round box: least silicone around a round candle
+  const plateCS = k(wasm.CrossSection.circle(side / 2, o.segs));
+  const plate = k(plateCS.extrude(plateT));
+  const base = k(plate.add(master));
+  const fit = 0.3;
+  const inner = k(plateCS.offset(fit, 'Round', 2, 24));
+  const frameH = fill + 4;
+  const frame = k(k(k(inner.offset(2.4, 'Round', 2, 24)).subtract(inner)).extrude(frameH));
+  const pieces: MoldPiece[] = [];
+  const show = p.moldShow;
+  pieces.push({ name: 'Master on base', role: 'shape', view: base, print: base });
+  const frameView = p.moldView === 'print' ? frame : k(frame.translate([side + 20, 0, 0]));
+  pieces.push({ name: 'Box walls', role: 'mold', view: frameView, print: frame });
+  void show;
+  const siliconeMl = ((Math.PI * side * side) / 4 * (fill - plateT) - (master.volume() - 0)) / 1000;
+  warnings.push(`Silicone needed: about ${Math.round(siliconeMl)} ml. Slide the walls over the base and seal the gap with clay or hot glue before pouring.`);
+  if (shape === 'tree' || shape === 'gem' || shape === 'drop' || shape === 'ball') warnings.push('After it cures, cut the silicone open down one side (a zigzag cut lines up again best) to get the master out.');
+  const res: MoldResult = { pieces, volume: o.volume };
+  if (p.moldDebug) res.debug = { cavity: o.cav, halves: [frame], profile: o.pourProf };
   return res;
 }
 

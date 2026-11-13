@@ -151,6 +151,10 @@ the UI when the shape changes (sides, pleat depth, size, mold kind).
   (trunk with 2 grooves, tiers that overlap 35 % → ledges).
 - Pour orientation: flat end up (tree/gem/pillar flipped), ball/drop get a pour channel (drop: cone
   from the neck). Wick hole on the axis through the bottom.
+- `silicone` (DEFAULT, user: "you need to make a 3d for the mold making first" — the photos were
+  silicone molds): `siliconeKit` = master (candle + pour channel + wick pin) upside down on a round
+  base plate (pour end on the plate) + a round wall ring that slides over the plate (0.3 fit);
+  silicone covers the master by `moldWall`; note gives the silicone ml.
 - Molds: `two` = block split at y=0 (pins on A, sockets on B at different heights, M4 bolt holes
   through the flanges, band grooves); `zigzag` = round mold split at the widest ring; the candle's
   seam is a flat ring, teeth (peak-to-peak `moldZig`, lined up with the pleats incl. twist) start
