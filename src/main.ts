@@ -308,6 +308,7 @@ const params: Params = { ...defaults };
 const pinsApart = () => params.style === 'pins' && !!params.pinSeparate;
 const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace';
 let fontKey = 'archivo';
+let lastSize: [number, number, number] = [0, 0, 0];
 let textTouched = false;
 let fontTouched = false;
 const customFonts = new Map<string, string>();
@@ -409,6 +410,7 @@ async function run() {
       showWarnings([`Something went wrong: ${res.message}`]);
     } else if (myId === latestBuild) {
       lastParts = res.parts;
+      lastSize = res.size as [number, number, number];
       lastLetters = res.letters ?? [];
       lastBacking = res.backing;
       (window as any).__letterforge.shaper = res.shaper;
@@ -436,7 +438,7 @@ async function run() {
         : '';
       showWarnings(res.warnings);
       renderParts(printable);
-      updateBedFit(printable, res.warnings);
+      updateBedFit(printable, res.warnings, `${fmt(x)} × ${fmt(y)} mm`);
       $('#drag-hint').hidden = !printable.some((p: Part) => p.drag);
     }
   } finally {
@@ -465,9 +467,76 @@ function renderParts(parts: Part[]) {
     else groups.set(key, { color: p.color, count: 1, name: p.name.startsWith('Letter') ? 'Letters' : tile ? p.name.replace(/ \d+$/, '') + 's' : p.name });
   }
   partsEl.innerHTML = [...groups.values()]
-    .map((g) => `<li><i style="background:${g.color}"></i>${escapeHtml(g.name)}${g.count > 1 ? ` <span>×${g.count}</span>` : ''}</li>`)
+    .map((g) => `<li data-color="${g.color}" title="Click to change this colour"><i style="background:${g.color}"></i>${escapeHtml(g.name)}${g.count > 1 ? ` <span>×${g.count}</span>` : ''}</li>`)
     .join('');
+  // tap a part in the list to recolour it (opens the matching colour picker)
+  partsEl.querySelectorAll<HTMLLIElement>('li').forEach((li) =>
+    li.addEventListener('click', () => {
+      const c = (li.dataset.color ?? '').toLowerCase();
+      const key = (['colorA', 'colorB', 'colorC'] as const).find((k) => String(params[k] ?? '').toLowerCase() === c);
+      if (key) ($('#' + key) as HTMLInputElement).click();
+    }),
+  );
 }
+
+// ---------- size handle on the model: drag to make the whole design bigger or smaller ----------
+/** The setting(s) that set each style's overall size; dragging scales them together. */
+function sizeKeys(): (keyof Params)[] {
+  switch (params.style) {
+    case 'flower': return ['flSize'];
+    case 'terrace': return ['tgW', 'tgD'];
+    case 'mold': return ['moldH', 'moldD'];
+    case 'tile': return ['tlSize'];
+    case 'lines': return ['lnTile'];
+    case 'pins': return params.pinMode === 'letters' ? ['capHeight'] : ['pinW', 'pinH'];
+    case 'lamp': case 'book': return [];
+    default: return ['capHeight'];
+  }
+}
+const handle = document.createElement('div');
+handle.className = 'size-handle';
+handle.innerHTML = '<span></span>';
+handle.title = 'Drag to resize';
+handle.hidden = true;
+$('.stage').appendChild(handle);
+let dragSize: { x: number; w: number; px: number; vals: number[] } | null = null;
+function placeHandle() {
+  const keys = sizeKeys();
+  const box = keys.length && (currentStep === 'size' || currentStep === 'shape') && lastParts.length ? viewer.screenBox() : null;
+  if (!box || dragSize) { if (!dragSize) handle.hidden = true; requestAnimationFrame(placeHandle); return; }
+  const st = ($('.stage') as HTMLElement).getBoundingClientRect();
+  handle.hidden = false;
+  handle.style.left = `${Math.min(st.width - 40, box.x1 - st.left + 14)}px`;
+  handle.style.top = `${(box.y0 + box.y1) / 2 - st.top}px`;
+  (handle.firstElementChild as HTMLElement).textContent = `${Math.round(lastSize[0])} mm ↔`;
+  requestAnimationFrame(placeHandle);
+}
+requestAnimationFrame(placeHandle);
+handle.addEventListener('pointerdown', (e) => {
+  const box = viewer.screenBox();
+  if (!box) return;
+  handle.setPointerCapture(e.pointerId);
+  dragSize = { x: e.clientX, w: lastSize[0], px: Math.max(20, box.x1 - box.x0), vals: sizeKeys().map((k) => Number(params[k])) };
+  e.preventDefault();
+});
+handle.addEventListener('pointermove', (e) => {
+  if (!dragSize) return;
+  // the right edge follows the pointer: scale = new width / old width (on screen)
+  const f = Math.max(0.2, Math.min(5, (dragSize.px + (e.clientX - dragSize.x) * 2) / dragSize.px));
+  sizeKeys().forEach((k, i) => ((params as any)[k] = Math.round(dragSize!.vals[i] * f * 2) / 2));
+  (handle.firstElementChild as HTMLElement).textContent = `${Math.round(dragSize.w * f)} mm ↔`;
+  handle.style.left = `${parseFloat(handle.style.left) + 0}px`;
+  schedule();
+});
+const endDrag = () => {
+  if (!dragSize) return;
+  dragSize = null;
+  renderGeneral();
+  renderStyleControls();
+  schedule(true);
+};
+handle.addEventListener('pointerup', endDrag);
+handle.addEventListener('pointercancel', endDrag);
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -547,6 +616,17 @@ function controlEl(c: Control): HTMLElement {
   return row;
 }
 
+/** Settings most people never need: shown only after "More options". */
+const ADVANCED = new Set<string>([
+  'qrRelief', 'floor', 'rim', 'seed', 'openCenter', 'cap', 'ringWall', 'kcTier', 'holeWall', 'holeDepth', 'stRound',
+  'spJoin', 'spBaseShape', 'rPad', 'rPlateT', 'bookClear', 'bookWall', 'bookMargin', 'bookAlign',
+  'lampWall', 'hubSpokes', 'jointD', 'jointFit', 'socketD', 'lampSeed', 'baseFeet', 'baseRound', 'baseTaper', 'lampTexH', 'shCorner',
+  'moldWall', 'moldWick', 'moldPour', 'moldPins', 'moldBolts', 'moldBands', 'moldZig',
+  'arRound', 'arBoard', 'arShadowT', 'arLetterT', 'pyBase', 'pinSocket', 'pinFit', 'pinPlate', 'pinSoft', 'pinPad',
+  'lnBase', 'lnFin', 'ccFloor', 'ccWall', 'ccHoleD', 'tgWall', 'tgFloor', 'tgWobble', 'tlWall', 'tlDraft',
+]);
+let showAdvanced = false;
+
 function renderStyleControls() {
   const host = $('#style-controls');
   host.innerHTML = '';
@@ -611,12 +691,26 @@ function renderStyleControls() {
   const isLamp = noText();
   $('#text-section').hidden = isLamp;
   // no text, no font: the Font tab goes away
-  ($('#tabs button[data-tab="font"]') as HTMLElement).hidden = isLamp;
-  if (isLamp && currentTab === 'font') showTab('design');
+  renderStepbar();
   $('#size-section').hidden = isLamp || params.style === 'flower' || params.style === 'lines'; // the flower has its own Size
-  // drop headings left with nothing under them (their settings were hidden)
-  list = list.filter((c, i) => c.kind !== 'heading' || (list[i + 1] && list[i + 1].kind !== 'heading'));
-  list.forEach((c) => host.appendChild(controlEl(c)));
+  // basic settings first; the rarely needed ones sit behind "More options"
+  const adv = list.filter((c) => c.kind !== 'heading' && ADVANCED.has(c.key as string));
+  let basic = list.filter((c) => !adv.includes(c));
+  // drop headings left with nothing under them (their settings were hidden or moved)
+  basic = basic.filter((c, i) => c.kind !== 'heading' || (basic[i + 1] && basic[i + 1].kind !== 'heading'));
+  basic.forEach((c) => host.appendChild(controlEl(c)));
+  if (adv.length) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'more-opts';
+    more.textContent = (showAdvanced ? 'Fewer options' : `More options (${adv.length})`);
+    more.addEventListener('click', () => {
+      showAdvanced = !showAdvanced;
+      renderStyleControls();
+    });
+    host.appendChild(more);
+    if (showAdvanced) adv.forEach((c) => host.appendChild(controlEl(c)));
+  }
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }
 
@@ -1144,14 +1238,71 @@ function renderFonts() {
 }
 
 // ---------- sidebar tabs: Design / Font / Colours / Print ----------
-let currentTab = 'design';
-function showTab(t: string) {
-  currentTab = t;
-  document.querySelectorAll<HTMLElement>('.panel section[data-tab]').forEach((sec) => sec.classList.toggle('tab-off', sec.dataset.tab !== t));
-  document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+// ---------- step-by-step configurator: Idea → Words → Font → Shape → Size → Colours & print ----------
+type StepId = 'idea' | 'words' | 'font' | 'shape' | 'size' | 'finish';
+const STEPS: { id: StepId; label: string; title: string; help: string; view: 'angle' | 'front' | 'top' }[] = [
+  { id: 'idea', label: 'Idea', title: 'What are you making?', help: 'Pick a style, or start from one of the ideas.', view: 'angle' },
+  { id: 'words', label: 'Words', title: 'Your words', help: 'Type what it should say. Each line is a new line on the model.', view: 'front' },
+  { id: 'font', label: 'Font', title: 'Font', help: 'Tap a font to try it. Click a letter on the model to change just that letter.', view: 'front' },
+  { id: 'shape', label: 'Shape', title: 'Shape', help: 'The main choices for this style. More options are at the bottom.', view: 'angle' },
+  { id: 'size', label: 'Size', title: 'Size', help: 'Drag the handle on the model or use the sliders. The bed is drawn to scale.', view: 'top' },
+  { id: 'finish', label: 'Finish', title: 'Colours and printing', help: 'Pick colours, check your printer, then download.', view: 'angle' },
+];
+let currentStep: StepId = 'idea';
+/** Steps that have something to show for this style (no-text styles skip Words and Font). */
+function liveSteps() {
+  return STEPS.filter((st) => {
+    if ((st.id === 'words' || st.id === 'font') && noText()) return false;
+    if (st.id === 'size' && ($('#size-section') as HTMLElement).hidden) return false;
+    return true;
+  });
 }
-document.querySelectorAll<HTMLButtonElement>('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab!)));
-showTab('design');
+function renderStepbar() {
+  const steps = liveSteps();
+  if (!steps.some((st) => st.id === currentStep)) currentStep = 'shape';
+  const at = steps.findIndex((st) => st.id === currentStep);
+  $('#stepbar').innerHTML = steps
+    .map((st, i) => `<button type="button" data-s="${st.id}" class="${i < at ? 'done' : i === at ? 'on' : ''}"><i></i><span>${st.label}</span></button>`)
+    .join('');
+  $('#stepbar').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.addEventListener('click', () => showStep(b.dataset.s as StepId)));
+  const st = steps[at];
+  $('#step-count').textContent = `Step ${at + 1} of ${steps.length}`;
+  $('#step-title').textContent = st.title;
+  $('#step-help').textContent = st.help;
+  document.querySelectorAll<HTMLElement>('.panel section[data-step]').forEach((sec) => sec.classList.toggle('tab-off', sec.dataset.step !== currentStep));
+  const back = $('#step-back') as HTMLButtonElement;
+  const next = $('#step-next') as HTMLButtonElement;
+  back.hidden = at === 0;
+  back.textContent = at > 0 ? `Back: ${steps[at - 1].label}` : 'Back';
+  next.textContent = at < steps.length - 1 ? `Next: ${steps[at + 1].label}` : 'Download 3MF';
+}
+function showStep(id: StepId, moveCamera = true) {
+  const changed = id !== currentStep;
+  currentStep = id;
+  renderStepbar();
+  ($('.panel') as HTMLElement).scrollTop = 0;
+  const st = STEPS.find((x) => x.id === id)!;
+  if (changed && moveCamera) viewer.setView(st.view);
+}
+$('#step-back').addEventListener('click', () => {
+  const steps = liveSteps();
+  const at = steps.findIndex((st) => st.id === currentStep);
+  if (at > 0) showStep(steps[at - 1].id);
+});
+$('#step-next').addEventListener('click', () => {
+  const steps = liveSteps();
+  const at = steps.findIndex((st) => st.id === currentStep);
+  if (at < steps.length - 1) showStep(steps[at + 1].id);
+  else ($('#dl-3mf') as HTMLButtonElement).click();
+});
+
+/** Your choices so far, shown on the model like an order summary. */
+function renderSummary(sizeText: string, plates: string) {
+  const fontName = FONTS.find((f) => f.key === fontKey)?.label ?? fontKey.replace(/^gf:/, '').split(':')[0];
+  const colours = new Set(lastParts.filter((p) => !p.previewOnly).map((p) => p.color.toLowerCase())).size;
+  const items = [PRESETS[params.style].label, noText() ? '' : fontName, sizeText, plates, colours > 1 ? `${colours} colours` : '1 colour'].filter(Boolean);
+  $('#summary').innerHTML = items.map((t) => `<span>${escapeHtml(t)}</span>`).join('');
+}
 $('#style-change').addEventListener('click', () => {
   const grid = $('#styles');
   grid.hidden = !grid.hidden;
@@ -1655,9 +1806,9 @@ $('#check').addEventListener('click', () => {
 });
 
 /** Says plainly whether the design prints on the bed: one plate, several plates, or too big. */
-function updateBedFit(printable: Part[], warnings: string[]) {
+function updateBedFit(printable: Part[], warnings: string[], sizeText = '') {
   const el = $('#bedfit');
-  if (!printable.length) { el.hidden = true; return; }
+  if (!printable.length) { el.hidden = true; $('#summary').innerHTML = ''; return; }
   const bed = params.bedSize;
   const meshes = forExport(printable);
   let tooBig = false, tall = false;
@@ -1683,6 +1834,7 @@ function updateBedFit(printable: Part[], warnings: string[]) {
       : plates > 1
         ? `<i></i>Prints on ${plates} plates of your ${bed} mm bed (the 3MF lays them out)`
         : `<i></i>Fits your ${bed} mm bed`;
+  renderSummary(sizeText, tooBig || tall ? 'too big' : plates > 1 ? `${plates} plates` : '1 plate');
 }
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
@@ -1962,6 +2114,7 @@ function newDesign(style: Style) {
   textTouched = false;
   fontTouched = false;
   Object.assign(params, DEFAULTS);
+  currentStep = 'idea'; // a new design starts at the first step
   closeLetter();
   applyPreset(style);
   nameEl.value = 'Untitled design';
@@ -1983,6 +2136,7 @@ async function openDesign(id: string) {
   textTouched = true;
   fontTouched = true;
   Object.assign(params, DEFAULTS, d.params);
+  currentStep = 'shape'; // a saved design opens on its settings
   closeLetter();
   fontKey = d.fontKey;
   nameEl.value = d.name;

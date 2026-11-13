@@ -299,12 +299,18 @@ export class Viewer {
   }
 
   private lastHeight = 0;
+  /** Camera direction used by fit(): a 3/4 view, straight at the front, or from above. */
+  private viewDir = new THREE.Vector3(0.15, 0.85, 1);
+  setView(v: 'angle' | 'front' | 'top') {
+    this.viewDir = v === 'front' ? new THREE.Vector3(0, 0.25, 1) : v === 'top' ? new THREE.Vector3(0, 1, 0.08) : new THREE.Vector3(0.15, 0.85, 1);
+    this.fit();
+  }
   private lastFitR = 0;
 
   fit(radius = this.lastFitR || this.lastRadius, height = this.lastHeight) {
     this.lastHeight = height;
     const dist = (radius / Math.tan((this.camera.fov * Math.PI) / 360)) * 1.25 + 10;
-    const dir = new THREE.Vector3(0.15, 0.85, 1).normalize();
+    const dir = this.viewDir.clone().normalize();
     this.controls.target.set(0, height * 0.35, 0);
     this.camera.position.copy(dir.multiplyScalar(dist)).add(this.controls.target);
     this.camera.near = Math.max(0.5, dist / 200);
@@ -323,6 +329,22 @@ export class Viewer {
     const p = box.getCenter(new THREE.Vector3()).project(this.camera);
     const r = this.renderer.domElement.getBoundingClientRect();
     return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  }
+
+  /** The whole model's outline on screen (CSS px, page coordinates), or null when there is none. */
+  screenBox(): { x0: number; y0: number; x1: number; y1: number } | null {
+    if (!this.model.children.length) return null;
+    this.model.updateMatrixWorld();
+    const box = new THREE.Box3().setFromObject(this.model);
+    if (box.isEmpty()) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const p = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(this.camera);
+      const sx = r.left + ((p.x + 1) / 2) * r.width, sy = r.top + ((1 - p.y) / 2) * r.height;
+      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    }
+    return { x0, y0, x1, y1 };
   }
 
   /** Picture of the whole model from the default angle, leaving the user's camera as it was. */
