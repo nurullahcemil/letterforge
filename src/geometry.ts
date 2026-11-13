@@ -1382,15 +1382,21 @@ export class Builder {
     const parts: WorkPart[] = [];
     let n = 0;
     const margin = T * 0.12;
+    // per-letter keys count non-space characters across the whole text (same as everywhere else)
+    let li = 0;
     rows.forEach((row, r) =>
       row.forEach((ch, c) => {
         const cx = c * T + T / 2, cy = -r * T - T / 2;
+        const key = ch.trim() ? li++ : -1;
+        if (key >= 0) this.spots.push({ i: key, x: cx, y: cy });
         const tile = this.rect(cx - T / 2, cy - T / 2, cx + T / 2, cy + T / 2);
         const letterParts: CrossSection[] = [];
         n++;
         let letter: CrossSection | null = null;
         if (ch.trim()) {
-          const lay = layoutText(font, ch, { ...textStyle(p), capHeight: 100, tracking: 0, lineSpacing: 1 });
+          // the letter's own settings (weight, width, italic of a variable font; turn) apply here too
+          const mv = p.letterMove?.[String(key)];
+          const lay = layoutText(font, ch, { ...textStyle(p), capHeight: 100, tracking: 0, lineSpacing: 1, moves: mv ? { '0': { ...mv, dx: 0, dy: 0 } } : undefined, widths: p.letterW?.[String(key)] ? { '0': p.letterW[String(key)] } : undefined });
           let cs = this.k(new W.CrossSection(lay.contours as MVec2[][], 'NonZero'));
           if (!cs.isEmpty()) {
             const b = cs.bounds();

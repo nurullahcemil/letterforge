@@ -196,7 +196,8 @@ no overlap between halves and candle; must end "all clean").
   `letter.offset(−k·pitch)` minus a `lnFin` inset; outside: straight bars at 0/45/90/135° or
   concentric squares (seeded per tile), clipped to tile − letter grown. Each tile = own part
   (Tile n colour B + Letter n colour A) so big sets spread over plates; NOT bed-split (decompose
-  shattered fins into 300+ pieces).
+  shattered fins into 300+ pieces). Per-letter settings (variable-font wght/wdth/ital, Mix letters)
+  apply per tile: letterMove[key] passed as moves {"0": ...}; tile centres are the click spots.
 - concrete (`Builder.concrete`, "Concrete letters"): ONE PIECE PER LETTER (cs.decompose, sorted
   left→right; not bed-split) so each fits the bed. master (DEFAULT): letter narrowing upward by
   `ccDraft` on a 2.4 floor in its own open box (wall D+8) for silicone; mold: tray (follows the
