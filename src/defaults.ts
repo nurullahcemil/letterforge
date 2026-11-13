@@ -173,6 +173,7 @@ export const DEFAULTS: Params = {
   pinW: 200,
   pinH: 200,
   pinFrame: true,
+  pinText: 'none',
   pyCell: 12,
   pyHeight: 6,
   pyBase: 3,

@@ -47,6 +47,8 @@ export interface Params extends LampParams, MoldParams, TileParams {
   pinW?: number;
   pinH?: number;
   pinFrame?: boolean;
+  /** Pin art with waves/ripples: your text shows as taller ('up') or shorter ('down') pins. */
+  pinText?: 'none' | 'up' | 'down';
   /** Pyramid-tile letters. */
   pyCell?: number;
   pyHeight?: number;
@@ -1049,7 +1051,16 @@ export class Builder {
     const plateT = clampN(p.pinPlate ?? 3, 0.8, 30);
     const mode = p.pinMode ?? 'wave';
     let x0: number, y0: number, x1: number, y1: number;
-    const polys = cs.toPolygons() as [number, number][][];
+    let polys = cs.toPolygons() as [number, number][][];
+    const textOn = mode === 'letters' || (p.pinText ?? 'none') !== 'none';
+    if (mode !== 'letters' && textOn) {
+      // the text sits in the middle of the plate
+      const b = cs.bounds();
+      const ox = (b.min[0] + b.max[0]) / 2, oy = (b.min[1] + b.max[1]) / 2;
+      polys = polys.map((c) => c.map(([x, y]) => [x - ox, y - oy] as [number, number]));
+      const w = clampN(p.pinW ?? 200, 20, 1000), h = clampN(p.pinH ?? 200, 20, 1000);
+      if (b.max[0] - b.min[0] > w || b.max[1] - b.min[1] > h) warnings.push('The text is bigger than the pin area. Make the letters smaller or the area bigger.');
+    }
     if (mode === 'letters') {
       const b = cs.bounds();
       const pad = clampN(p.pinPad ?? 12, 0, 300);
@@ -1088,9 +1099,21 @@ export class Builder {
         const t = Math.max(0, Math.min(1, (sdf(x, y) + soft) / (2 * soft)));
         return t * t * (3 - 2 * t);
       }
-      if (mode === 'ripple') return 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * Math.hypot(x - cxm, y - cym)) / (span / 2));
-      const u = (x - cxm) * Math.cos(ang) + (y - cym) * Math.sin(ang);
-      return 0.5 + 0.5 * Math.sin((2 * Math.PI * waves * u) / span);
+      let f: number;
+      if (mode === 'ripple') f = 0.5 + 0.5 * Math.cos((2 * Math.PI * waves * Math.hypot(x - cxm, y - cym)) / (span / 2));
+      else {
+        const u = (x - cxm) * Math.cos(ang) + (y - cym) * Math.sin(ang);
+        f = 0.5 + 0.5 * Math.sin((2 * Math.PI * waves * u) / span);
+      }
+      if (textOn) {
+        // inside the letters the pins go all the way up (or down), easing over the softness
+        let t = Math.max(0, Math.min(1, (sdf(x, y) + soft) / (2 * soft)));
+        t = t * t * (3 - 2 * t);
+        const target = p.pinText === 'down' ? 0 : 1;
+        // the waves only use part of the height, so the letters stand out from them
+        f = (p.pinText === 'down' ? 0.55 + 0.45 * f : 0.45 * f) * (1 - t) + target * t;
+      }
+      return f;
     };
     const pins: Manifold[] = [];
     const segs = d > 8 ? 40 : 28;

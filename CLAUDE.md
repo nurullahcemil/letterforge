@@ -178,7 +178,8 @@ no overlap between halves and candle; must end "all clean").
   Check from the top: `npx tsx scripts/flower-svg.ts out.svg '{"text":"BLOOM","flCount":12}'`.
 - pins (`Builder.pins`, "Pin art"): grid of cylinders on a plate (colour B) + frame; height level
   from waves (sine along `pinAngle`), ripples, or text (signed distance to the outline, eased over
-  `pinSoft`); `pinGrow` makes tall pins wider. Pins are composed (disjoint), not unioned.
+  `pinSoft`); `pinGrow` makes tall pins wider. `pinText` up/down puts the (centred) text into the
+  waves/ripples: waves squeezed to 0–45 % (or 55–100 %) of the height, letters go to full (or none). Pins are composed (disjoint), not unioned.
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on

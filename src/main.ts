@@ -118,7 +118,7 @@ const PRESETS: Record<Style, StylePreset> = {
     blurb: 'A grid of round pins on a plate, rising and falling in waves, ripples or the shape of your letters. Pins and plate in two colours, with a frame.',
     text: 'HI',
     font: 'archivo',
-    patch: { capHeight: 120, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04 },
+    patch: { capHeight: 90, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04, pinText: 'up' },
   },
   pyramid: {
     label: 'Pyramid tiles',
@@ -268,6 +268,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   ],
   pins: [
     { kind: 'select', key: 'pinMode', label: 'Pattern', options: [['wave', 'Waves'], ['ripple', 'Ripples'], ['letters', 'My text']] },
+    { kind: 'select', key: 'pinText', label: 'Text in the waves', options: [['up', 'Raised'], ['down', 'Sunk'], ['none', 'No text']], hint: 'Your text shows as taller (or shorter) pins inside the pattern. Set its size under Size.' },
     { kind: 'range', key: 'pinW', label: 'Width', min: 40, max: 400, step: 1, unit: 'mm' },
     { kind: 'range', key: 'pinH', label: 'Height', min: 40, max: 400, step: 1, unit: 'mm' },
     { kind: 'range', key: 'pinWaves', label: 'Waves', min: 0.25, max: 6, step: 0.25 },
@@ -637,7 +638,7 @@ function renderStyleControls() {
       return true;
     });
   }
-  if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle'].includes(c.key) : !['pinSoft', 'pinPad'].includes(c.key)) && !(params.pinMode === 'ripple' && c.key === 'pinAngle'));
+  if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !(params.pinMode === 'ripple' && c.key === 'pinAngle'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
