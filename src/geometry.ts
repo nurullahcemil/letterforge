@@ -5,12 +5,35 @@ import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
 import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
 import { buildMold, type MoldParams } from './mold';
+import { buildTiles, type TileParams } from './tiles';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile';
 
-export interface Params extends LampParams, MoldParams {
+export interface Params extends LampParams, MoldParams, TileParams {
+  /** Letter flower: letters around a centre like petals. */
+  flRadius?: number;
+  flDepth?: number;
+  flCount?: number;
+  /** Arrow sign: shaped board, block-shadow letters. */
+  arShape?: 'turn' | 'arrow' | 'rect' | 'circle';
+  arDir?: 'right' | 'left' | 'up' | 'down';
+  arMargin?: number;
+  arRound?: number;
+  arBoard?: number;
+  arShadowLen?: number;
+  arShadowAng?: number;
+  arShadowT?: number;
+  arLetterT?: number;
+  colorC?: string;
+  /** Pyramid-tile letters. */
+  pyCell?: number;
+  pyHeight?: number;
+  pyBase?: number;
+  pyMix?: number;
+  pySeed?: number;
+  pyRotate?: boolean;
   /** Mix letters (variable fonts): which axes to shuffle and how far (%). */
   mixWght?: boolean;
   mixWdth?: boolean;
@@ -241,6 +264,7 @@ export class Builder {
     try {
       if (p.style === 'lamp') return this.lamp(p, warnings);
       if (p.style === 'mold') return this.mold(p, warnings);
+      if (p.style === 'tile') return this.tiles(p, warnings);
       const layout = layoutText(font, p.text || ' ', {
         ...textStyle(p),
         capHeight: p.capHeight,
@@ -322,6 +346,16 @@ export class Builder {
           break;
         case 'ramp':
           parts = this.ramp(cs, layout.lines, p, warnings);
+          break;
+        case 'flower':
+          this.spots = [];
+          parts = this.flower(layout.glyphs, layout.glyphLetter, p, warnings);
+          break;
+        case 'arrow':
+          parts = this.arrowSign(cs, p, warnings);
+          break;
+        case 'pyramid':
+          parts = this.pyramid(cs, p, warnings);
           break;
       }
       if (p.splitBed) parts = this.splitToBed(parts, p.bedSize, warnings);
@@ -419,6 +453,39 @@ export class Builder {
    * always laid out side by side, each part flat on the bed (printOffset moves a part there).
    * Never bed-split (cuts would show in the light).
    */
+  /** Tile mold: star and cross tiles (silicone master, hard tray or clay cutters), laid out flat. */
+  private tiles(p: Params, warnings: string[]): BuildResult {
+    const pieces = buildTiles(this.wasm, (o) => this.k(o), p, warnings);
+    this.kept = [];
+    const out: Part[] = [];
+    let x = 0;
+    for (const pc of pieces) {
+      const b = pc.m.boundingBox();
+      const m = this.k(pc.m.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]]));
+      x += b.max[0] - b.min[0] + 10;
+      const g = m.getMesh();
+      const q = new Float32Array((g.vertProperties.length / g.numProp) * 3);
+      for (let i = 0, j = 0; i < g.vertProperties.length; i += g.numProp, j += 3) {
+        q[j] = g.vertProperties[i];
+        q[j + 1] = g.vertProperties[i + 1];
+        q[j + 2] = g.vertProperties[i + 2];
+      }
+      const raw = { positions: q, indices: new Uint32Array(g.triVerts) };
+      const color = pc.role === 'tile' ? p.colorB : p.colorA;
+      this.kept.push({ name: pc.name, color, raw });
+      out.push({ name: pc.name, color, ...raw });
+    }
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const o of out)
+      for (let i = 0; i < o.positions.length; i += 3)
+        for (let a = 0; a < 3; a++) {
+          lo[a] = Math.min(lo[a], o.positions[i + a]);
+          hi[a] = Math.max(hi[a], o.positions[i + a]);
+        }
+    const size: [number, number, number] = out.length ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] : [0, 0, 0];
+    return { parts: out, warnings, size, letters: [] };
+  }
+
   /** Candle & mold: pieces shown pulled apart (or as printed); files always use the print layout. */
   private mold(p: Params, warnings: string[]): BuildResult {
     const { pieces, volume } = buildMold(this.wasm, (o) => this.k(o), p, warnings);
@@ -790,6 +857,160 @@ export class Builder {
 
   private circle(x: number, y: number, r: number): CrossSection {
     return this.k(this.wasm.CrossSection.circle(r, 48).translate([x, y]));
+  }
+
+  /** Letter flower: every letter stands with its foot toward the centre and its top pointing out. */
+  private flower(glyphs: Vec2[][][], glyphLetter: number[], p: Params, warnings: string[]): WorkPart[] {
+    const gs = glyphs.filter((g, i) => glyphLetter[i] >= 0 && g.length);
+    if (!gs.length) return [];
+    const n = Math.max(gs.length, Math.min(60, Math.round(p.flCount ?? 0)));
+    const css = gs.map((g) => this.k(new this.wasm.CrossSection(g as MVec2[][], 'NonZero')));
+    let widthSum = 0;
+    for (let i = 0; i < n; i++) {
+      const b = css[i % css.length].bounds();
+      widthSum += b.max[0] - b.min[0];
+    }
+    // the feet may overlap a little in the middle, but the petals must stay apart: the middle grows
+    // until the letters, packed at 60 % of their width (feet overlap), fit around it
+    const r0 = Math.max(clampN(p.flRadius ?? 6, 0, 400), (widthSum * 0.6) / (2 * Math.PI));
+    const items: CrossSection[] = [];
+    for (let i = 0; i < n; i++) {
+      let cs = css[i % css.length];
+      const b = cs.bounds();
+      cs = this.k(cs.translate([-(b.min[0] + b.max[0]) / 2, r0 - b.min[1]]));
+      // first letter at the top, then clockwise
+      items.push(this.k(cs.rotate((-360 * i) / n)));
+    }
+    const hubR = r0 + p.capHeight * 0.15;
+    items.push(this.circle(0, 0, hubR));
+    const all = this.k(this.wasm.CrossSection.union(items));
+    const pieces = all.decompose();
+    pieces.forEach((c) => this.k(c));
+    if (pieces.length > 1) warnings.push('Some letters don\'t touch the middle. Make the hole smaller or the letters bigger.');
+    return [{ name: 'Flower', color: p.colorA, m: this.extrude(all, clampN(p.flDepth ?? 50, 2, 300)) }];
+  }
+
+  /** Arrow sign: a shaped board, a block "shadow" of the letters, and the letters on top. */
+  private arrowSign(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    const b = cs.bounds();
+    const m = clampN(p.arMargin ?? 14, 0, 200);
+    const x0 = b.min[0] - m, x1 = b.max[0] + m, y0 = b.min[1] - m, y1 = b.max[1] + m;
+    const w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const rr = clampN(p.arRound ?? 6, 0, Math.min(w, h) / 2 - 0.1);
+    const rounded = (ax: number, ay: number, bx: number, by: number, r: number) =>
+      r > 0.05 ? this.k(this.rect(ax + r, ay + r, bx - r, by - r).offset(r, 'Round', 2, 48)) : this.rect(ax, ay, bx, by);
+    const tri = (pts: [number, number][]) => this.k(new W.CrossSection([pts as MVec2[]], 'Positive'));
+    const dir = p.arDir ?? 'right';
+    let board: CrossSection;
+    switch (p.arShape ?? 'turn') {
+      case 'rect':
+        board = rounded(x0, y0, x1, y1, rr);
+        break;
+      case 'circle':
+        board = this.circle(cx, cy, Math.hypot(w, h) / 2);
+        break;
+      case 'arrow': {
+        const body = rounded(x0, y0, x1, y1, rr);
+        let head: CrossSection;
+        if (dir === 'right' || dir === 'left') {
+          const s = dir === 'right' ? 1 : -1;
+          const xe = dir === 'right' ? x1 : x0;
+          head = tri([[xe - s * 0.5, cy - h * 0.8], [xe + s * h * 0.8, cy], [xe - s * 0.5, cy + h * 0.8]]);
+        } else {
+          const s = dir === 'up' ? 1 : -1;
+          const ye = dir === 'up' ? y1 : y0;
+          head = tri([[cx - w * 0.8, ye - s * 0.5], [cx, ye + s * w * 0.8], [cx + w * 0.8, ye - s * 0.5]]);
+        }
+        board = this.k(body.add(head));
+        break;
+      }
+      default: {
+        // a bar down past the text that turns into an arm with an arrow head
+        const aw = Math.max(w * 0.7, 10);
+        const yb = y0 - aw;
+        const armL = w * 0.9;
+        const xa = x1 + armL;
+        const R = w;
+        const bar = this.rect(x0, yb + R, x1, y1);
+        const arm = this.rect(x0 + R, yb, xa, yb + aw);
+        const corner = this.k(this.circle(x0 + R, yb + R, R).intersect(this.rect(x0, yb, x0 + R, yb + R)));
+        let body = this.k(W.CrossSection.union([bar, arm, corner]));
+        const f = aw * 0.3; // soften the inner corner
+        body = this.k(this.k(body.offset(f, 'Round', 2, 48)).offset(-f, 'Round', 2, 48));
+        if (rr > 0.05) body = this.k(this.k(body.offset(-rr, 'Round', 2, 48)).offset(rr, 'Round', 2, 48));
+        const yc = yb + aw / 2;
+        const head = tri([[xa - 0.5, yc - aw * 0.95], [xa + aw, yc], [xa - 0.5, yc + aw * 0.95]]);
+        board = this.k(body.add(head));
+        if (dir === 'left') board = this.k(this.k(board.translate([-cx, 0])).scale([-1, 1]).translate([cx, 0]));
+        if (dir === 'up' || dir === 'down') warnings.push('The turning arrow points left or right. Use the straight arrow for up or down.');
+      }
+    }
+    const tB = clampN(p.arBoard ?? 4, 0.8, 30);
+    const tS = clampN(p.arShadowT ?? 4, 0, 40);
+    const tL = clampN(p.arLetterT ?? 3, 0.4, 40);
+    const len = clampN(p.arShadowLen ?? 5, 0, 60);
+    const a = ((p.arShadowAng ?? 225) * Math.PI) / 180;
+    const parts: WorkPart[] = [{ name: 'Board', color: p.colorA, m: this.extrude(board, tB) }];
+    let z = tB;
+    if (tS > 0.05) {
+      // the letters swept toward the shadow direction: the side of a block letter
+      const steps = Math.max(1, Math.ceil(len / 0.4));
+      const copies: CrossSection[] = [];
+      for (let i = 0; i <= steps; i++) copies.push(this.k(cs.translate([(Math.cos(a) * len * i) / steps, (Math.sin(a) * len * i) / steps])));
+      let sh = this.k(W.CrossSection.union(copies));
+      sh = this.k(sh.intersect(board));
+      parts.push({ name: 'Shadow', color: p.colorB, m: this.extrude(sh, tS, z - OVERLAP) });
+      z += tS;
+    }
+    parts.push({ name: 'Letters', color: p.colorC ?? '#f6efe4', m: this.extrude(cs, tL, z - OVERLAP) });
+    return parts;
+  }
+
+  /** Pyramid-tile letters: the letter cut into squares, each a pyramid or a slope, on a base. */
+  private pyramid(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    const cell = clampN(p.pyCell ?? 12, 3, 80);
+    const h = clampN(p.pyHeight ?? 6, 0.4, 60);
+    const base = clampN(p.pyBase ?? 3, 0.8, 30);
+    const mix = clampN(p.pyMix ?? 40, 0, 100) / 100;
+    let seed = (Math.round(p.pySeed ?? 3) * 2654435761) >>> 0;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const rot = p.pyRotate ? 45 : 0;
+    const g = rot ? this.k(cs.rotate(-rot)) : cs;
+    const b = g.bounds();
+    const cells: Manifold[] = [];
+    const z0 = base - 0.01;
+    const z1 = base + h;
+    for (let gx = Math.floor(b.min[0] / cell); gx * cell < b.max[0]; gx++)
+      for (let gy = Math.floor(b.min[1] / cell); gy * cell < b.max[1]; gy++) {
+        const x = gx * cell, y = gy * cell;
+        const r = rnd(), d = Math.floor(rnd() * 4);
+        const sq = this.rect(x, y, x + cell, y + cell);
+        if (this.k(g.intersect(sq)).area() < cell * cell * 0.005) continue;
+        const c: [number, number][] = [[x, y], [x + cell, y], [x + cell, y + cell], [x, y + cell]];
+        const pts: [number, number, number][] = c.map(([u, v]) => [u, v, z0]);
+        if (r < mix) pts.push([x + cell / 2, y + cell / 2, z1]);
+        else {
+          // a slope: one side up high, the opposite side down at the base
+          const hi = [c[d], c[(d + 1) % 4]];
+          for (const [u, v] of hi) pts.push([u, v, z1]);
+        }
+        cells.push(this.k(W.Manifold.hull(pts)));
+      }
+    if (!cells.length) return [];
+    let tops = this.k(W.Manifold.union(cells));
+    if (rot) tops = this.k(tops.rotate([0, 0, rot]));
+    tops = this.k(tops.intersect(this.extrude(cs, z1 + 1)));
+    const body = this.k(this.extrude(cs, base).add(tops));
+    void warnings; // every slope faces up, so nothing needs supports
+    return [{ name: 'Letters', color: p.colorA, m: body }];
   }
 
   private keychain(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {

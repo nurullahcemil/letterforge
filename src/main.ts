@@ -99,6 +99,34 @@ const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { colorA: '#f3e6cf', colorB: '#d9967a' },
   },
+  flower: {
+    label: 'Letter flower',
+    blurb: 'Letters stand around a centre like petals, deep and chunky, as one round sculpture. Repeat the word to fill the circle.',
+    text: 'BLOOM',
+    font: 'archivo',
+    patch: { capHeight: 40, colorA: '#f0642d', tracking: 0, flCount: 10 },
+  },
+  arrow: {
+    label: 'Arrow sign',
+    blurb: 'A shaped board (turning arrow, arrow, rectangle or circle) with block letters that cast a solid shadow, in three colours. Put each letter on its own line to stack them.',
+    text: 'F\nU\nN',
+    font: 'archivo',
+    patch: { capHeight: 32, colorA: '#f2b632', colorB: '#b98552', colorC: '#f6efe4', tracking: 0, lineSpacing: 1.25 },
+  },
+  pyramid: {
+    label: 'Pyramid tiles',
+    blurb: 'Letters cut into a grid of little pyramids and slopes that catch the light. Shuffle for a new pattern.',
+    text: 'C',
+    font: 'archivo',
+    patch: { capHeight: 120, colorA: '#22b357', tracking: 0.02 },
+  },
+  tile: {
+    label: 'Tile mold',
+    blurb: 'Eight-point stars and crosses that fit together. Print a silicone master to make a soft mold for plaster, concrete or clay, a hard mold, or clay cutters.',
+    text: '',
+    font: 'archivo',
+    patch: { colorA: '#cdd6dd', colorB: '#e8c9a8' },
+  },
   mold: {
     label: 'Candle & mold',
     blurb: 'A candle shape (pleated ball, drop ornament, gem, pillar or tiered tree). Silicone kit: print the master on a base and a box around it, pour silicone, and you have a soft candle mold. Or print a hard mold directly: two-part block, zigzag split or open cup.',
@@ -214,6 +242,39 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'select', key: 'bookOrient', label: 'Print orientation', options: [['standing', 'Standing'], ['lying', 'Lying flat']] },
   ],
   lamp: [],
+  flower: [
+    { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around. 0 = the word once; more repeats it.' },
+    { kind: 'range', key: 'flRadius', label: 'Middle', min: 0, max: 60, step: 0.5, unit: 'mm', hint: 'How far from the centre the letters start. It grows on its own so the petals never merge.' },
+    { kind: 'range', key: 'flDepth', label: 'Depth', min: 5, max: 200, step: 1, unit: 'mm', hint: 'How deep each letter goes back.' },
+  ],
+  arrow: [
+    { kind: 'select', key: 'arShape', label: 'Board', options: [['turn', 'Turning arrow'], ['arrow', 'Arrow'], ['rect', 'Rectangle'], ['circle', 'Circle']] },
+    { kind: 'select', key: 'arDir', label: 'Points', options: [['right', 'Right'], ['left', 'Left'], ['up', 'Up'], ['down', 'Down']] },
+    { kind: 'range', key: 'arMargin', label: 'Board margin', min: 0, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'arRound', label: 'Corner rounding', min: 0, max: 30, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'arBoard', label: 'Board thickness', min: 1.2, max: 12, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'arShadowLen', label: 'Shadow length', min: 0, max: 20, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'arShadowAng', label: 'Shadow direction', min: 0, max: 359, step: 5, unit: '°', hint: '225 = down and left.' },
+    { kind: 'range', key: 'arShadowT', label: 'Shadow thickness', min: 0, max: 15, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
+  ],
+  pyramid: [
+    { kind: 'range', key: 'pyCell', label: 'Tile size', min: 4, max: 40, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pyHeight', label: 'Tile height', min: 1, max: 25, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pyBase', label: 'Base thickness', min: 1, max: 15, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'pyMix', label: 'Pyramids vs slopes', min: 0, max: 100, step: 5, unit: '%', hint: '100 = all pyramids, 0 = all slopes.' },
+    { kind: 'range', key: 'pySeed', label: 'Shuffle', min: 1, max: 99, step: 1 },
+    { kind: 'toggle', key: 'pyRotate', label: 'Turn the grid 45°' },
+  ],
+  tile: [
+    { kind: 'select', key: 'tlMake', label: 'Make', options: [['master', 'Silicone master'], ['tray', 'Hard mold'], ['cutter', 'Clay cutters']], hint: 'Silicone master: pour silicone over it to get a soft mold.' },
+    { kind: 'range', key: 'tlSize', label: 'Star size', min: 20, max: 160, step: 1, unit: 'mm', hint: 'Tip to tip. The crosses match it.' },
+    { kind: 'range', key: 'tlThick', label: 'Tile thickness', min: 3, max: 30, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'tlStars', label: 'Stars', min: 0, max: 9, step: 1 },
+    { kind: 'range', key: 'tlCrosses', label: 'Crosses', min: 0, max: 9, step: 1 },
+    { kind: 'range', key: 'tlWall', label: 'Space between', min: 3, max: 20, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'tlDraft', label: 'Taper', min: 0, max: 10, step: 0.5, unit: '°', hint: 'Slightly slanted sides so tiles come out easily.' },
+  ],
   mold: [
     { kind: 'select', key: 'moldShape', label: 'Candle', options: [['ball', 'Ball'], ['drop', 'Drop'], ['gem', 'Gem'], ['pillar', 'Pillar'], ['tree', 'Tree']] },
     { kind: 'range', key: 'moldH', label: 'Height', min: 30, max: 220, step: 1, unit: 'mm' },
@@ -275,7 +336,7 @@ STYLE_CONTROLS.lamp = LAMP_CONTROLS;
 
 const params: Params = { ...defaults };
 /** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
-const noText = () => params.style === 'lamp' || params.style === 'mold';
+const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile';
 let fontKey = 'archivo';
 let textTouched = false;
 let fontTouched = false;
@@ -552,6 +613,8 @@ function renderStyleControls() {
       return true;
     });
   }
+  if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
+  if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
     list = list.filter((c) => {
       if (params.moldShape !== 'tree' && (c.key === 'moldTiers' || c.key === 'moldShrink')) return false;
@@ -1155,14 +1218,24 @@ function syncColors() {
     ramp: ['Plate', 'Letters'],
     lamp: ['Shade', 'Base'],
     mold: ['Mold', 'Candle'],
+    flower: ['Colour', '—'],
+    arrow: ['Board', 'Shadow'],
+    pyramid: ['Colour', '—'],
+    tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
   $('#colorA-label').textContent = a;
   $('#colorB-label').textContent = b;
-  $('#colorB-wrap').style.display = ['facet', 'stack'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
+  ($('#colorC') as HTMLInputElement).value = params.colorC ?? '#f6efe4';
+  $('#colorC-wrap').style.display = params.style === 'arrow' ? '' : 'none';
+  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
 }
 
 const ICONS: Record<Style, string> = {
+  flower: `<svg viewBox="0 0 48 32"><g fill="currentColor"><path d="M22 14V3h4v11z"/><path d="M26 18h11v-4H26z" opacity=".7"/><path d="M22 18v11h4V18z" opacity=".5"/><path d="M22 14H11v4h11z" opacity=".85"/><path d="M26 14l8-8 3 3-8 8z" opacity=".6"/><path d="M22 18l-8 8-3-3 8-8z" opacity=".6"/><circle cx="24" cy="16" r="3"/></g></svg>`,
+  arrow: `<svg viewBox="0 0 48 32"><path d="M12 2h9v16c0 3 2 4 5 4h6v-5l9 9-9 9v-5h-6c-9 0-14-5-14-13z" fill="currentColor" opacity=".35"/><path d="M14 5h5M14 5v8M14 9h4" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M33 22l5 4-5 4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>`,
+  pyramid: `<svg viewBox="0 0 48 32"><path d="M14 4h20v8H22v8h12v8H14z" fill="currentColor" opacity=".3"/><path d="M14 4l5 4-5 4M24 4l-5 4 5 4M24 4l5 4 5-4M14 12l5 4-5 4M14 20l5 4-5 4M24 20l5 4 5-4M24 28l5-4 5 4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  tile: `<svg viewBox="0 0 48 32"><path d="M16 4l3 5h5l-3 5 3 5h-5l-3 5-3-5H8l3-5-3-5h5z" fill="currentColor"/><path d="M28 8h6l2-4 2 4h6l-4 4 4 4h-6l-2 4-2-4h-6l4-4z" fill="currentColor" opacity=".45"/></svg>`,
   mold: `<svg viewBox="0 0 48 32"><path d="M4 6h15v22H4zM29 6h15v22H29z" fill="currentColor" opacity=".3"/><path d="M19 9a7 8 0 0 0 0 16M29 9a7 8 0 0 1 0 16" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M24 9l-3 4 3 4-3 4 3 4 3-4-3-4 3-4z" fill="currentColor"/><path d="M24 4v5" stroke="currentColor" stroke-width="1.4"/></svg>`,
   lamp: `<svg viewBox="0 0 48 32"><path d="M24 2c-6 4-12 7-14 10 3 1 6 0 8 0-5 3-10 6-12 9 6 1 12 0 18 0s12 1 18 0c-2-3-7-6-12-9 2 0 5 1 8 0-2-3-8-6-14-10z" fill="currentColor" opacity=".35" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 22h10l1 8H18z" fill="currentColor"/></svg>`,
   keychain: `<svg viewBox="0 0 48 32"><path d="M9 8h30a8 8 0 0 1 0 16H9a8 8 0 0 1 0-16z" fill="currentColor" opacity=".3"/><circle cx="9" cy="16" r="2.6" fill="var(--bg)"/><path d="M17 21c2-7 4-10 6-10s1 5-1 7m5 3c1-4 3-7 5-7 1 0 1 3-1 5m4 2c1-3 2-5 4-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`,
@@ -1190,7 +1263,7 @@ textEl.addEventListener('input', () => {
   schedule(true);
 });
 
-for (const id of ['colorA', 'colorB'] as const) {
+for (const id of ['colorA', 'colorB', 'colorC'] as const) {
   const el = $(`#${id}`) as HTMLInputElement;
   el.addEventListener('input', () => {
     params[id] = el.value;
@@ -1581,6 +1654,7 @@ function exceedsBed(meshes: { positions: Float32Array }[], bed: number): boolean
 function baseName() {
   if (params.style === 'lamp') return 'lamp';
   if (params.style === 'mold') return `candle-${params.moldShape}-mold`;
+  if (params.style === 'tile') return `star-cross-tiles-${params.tlMake}`;
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
   return `${t}-${params.style}`;
 }
@@ -1613,7 +1687,7 @@ $('#dl-3mf').addEventListener('click', async () => {
   const tooBig = !noText() && params.style !== 'book' && exceedsBed(out, params.bedSize);
   const lay = tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
   download(
-    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.text.trim() || 'Letterforge', noText(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
+    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.text.trim() || 'Letterforge', noText(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
     baseName() + '.3mf',
   );
   if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);

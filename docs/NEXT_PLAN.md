@@ -1,4 +1,4 @@
-# Next four styles (user photos, "build all four"; own designs, never copies)
+# Next four styles — BUILT (see CLAUDE.md) (user photos, "build all four"; own designs, never copies)
 
 1. `flower` — Letter flower: each letter of the text (optionally repeated to fill the circle) stands
    with its bottom toward the centre, turned so its top points outward, evenly spaced around; all

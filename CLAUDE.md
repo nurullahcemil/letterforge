@@ -58,7 +58,8 @@ Regression check used so far: run smoke before and after a change and diff the
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),
-mold (no text: candle shape + printable candle mold, `src/mold.ts`).
+mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
+arrow (arrow sign), pyramid (pyramid-tile letters), tile (no text: star & cross tile mold, `src/tiles.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -167,3 +168,19 @@ the UI when the shape changes (sides, pleat depth, size, mold kind).
 - Wax needed = candle volume × 0.9 g/ml, shown as a note.
 Check: `npx tsx scripts/mold-check.ts ['{"moldShape":"ball"}']` (every shape × kind: valid pieces,
 no overlap between halves and candle; must end "all clean").
+
+## Letter flower / Arrow sign / Pyramid tiles / Tile mold (user photos; own designs)
+- flower (`Builder.flower`): each glyph (layout.glyphs, letters only), repeated to `flCount`, foot
+  at radius r0 and turned so its top points out, first letter at the top, clockwise; hub disc.
+  r0 = max(flRadius, Σwidths·0.6/2π) so petals never merge (0.8 made a huge middle disc).
+- arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
+  → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
+  `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on
+  top in `colorC` (third colour input, shown only for this style).
+- pyramid (`Builder.pyramid`): square grid (optionally turned 45°), each cell a hull: pyramid or a
+  slope rising to one random side (`pyMix`, seeded), clipped to the letters, on a base slab. All
+  slopes face up, so no supports.
+- tile (`src/tiles.ts`): stars at lattice points i+j even (spacing L = size/√2): square ∪ square
+  turned 45°; cross = diamond around (L,0) minus 4 stars (areas sum to 2L², checked). Make:
+  master (DEFAULT: positive tiles tapered by `tlDraft` in an open box for silicone), tray (hard
+  mold with tapered pockets), cutter (0.9 blade + 3 mm rim per shape).
