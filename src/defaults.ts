@@ -174,7 +174,7 @@ export const DEFAULTS: Params = {
   pinH: 200,
   pinFrame: true,
   pinText: 'none',
-  pinSeparate: false,
+  pinSeparate: true,
   pinSocket: 3,
   pinFit: 0.15,
   pyCell: 12,
