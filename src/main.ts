@@ -1719,12 +1719,14 @@ $('#dl-3mf').addEventListener('click', async () => {
   const out = params.lightFiles !== false && params.style !== 'lamp' ? await lighten(meshes) : meshes;
   // bigger than the bed: every piece its own object, already laid out on as many plates as needed
   const tooBig = !noText() && params.style !== 'book' && exceedsBed(out, params.bedSize);
-  const lay = tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
+  // pins printed apart: base on one plate, pins on the next (one colour per plate)
+  const lay = pinsApart() ? layoutOnPlates(out, params.bedSize, true) : tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
   download(
     to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.style === 'tile' ? 'Tile mold' : params.text.trim() || 'Letterforge', noText() || pinsApart(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
     baseName() + '.3mf',
   );
-  if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);
+  if (lay && pinsApart()) showWarnings([`The 3MF has the base on plate 1 and the pins on plate 2. Pick a filament per plate in Bambu Studio.`]);
+  else if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);
 });
 
 $('#dl-backing').addEventListener('click', () => {

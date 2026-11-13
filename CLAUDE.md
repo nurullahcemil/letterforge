@@ -183,7 +183,8 @@ no overlap between halves and candle; must end "all clean").
   `pinSeparate` (two-colour printing): base (+ frame, merged) gets a hole per pin (r + `pinFit`,
   `pinSocket` deep, base ≥ socket + 1.2); pins reach 0.2 mm short of the hole bottom; WorkPart
   `print` → Part.printMesh: pins stand on the bed in the same pattern, beside the base. STL button
-  downloads two files (-base.stl, -pins.stl); 3MF has them as separate objects (plates if too big).
+  downloads two files (-base.stl, -pins.stl); 3MF ALWAYS puts the base on plate 1 and the pins on plate 2
+  (`layoutOnPlates(..., colorPlates=true)`: each colour starts a new plate; user asked for 2 plates).
 - arrow (`Builder.arrowSign`): board around text bounds + margin: turn (bar → quarter-disc corner
   → arm → head; mirrored for left), arrow (head on any side), rect, circle. Shadow = letters swept
   `arShadowLen` toward `arShadowAng` (union of copies every 0.4 mm) ∩ board, colour B; letters on

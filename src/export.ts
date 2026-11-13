@@ -260,7 +260,8 @@ export async function toBackingDXF(b: { cut: [number, number][][]; guide: [numbe
  * (5 mm from the edges, 6 mm apart). Plates are placed like Bambu Studio lays them out (a grid,
  * 1/5 of a bed apart), so each piece lands on its own plate.
  */
-export function layoutOnPlates<T extends MeshData>(parts: T[], bed: number): { parts: T[]; groups: number[][]; plates: number[] } {
+/** `colorPlates`: every colour starts its own plate (e.g. pin art base on plate 1, pins on plate 2). */
+export function layoutOnPlates<T extends MeshData>(parts: T[], bed: number, colorPlates = false): { parts: T[]; groups: number[][]; plates: number[] } {
   const box = (p: MeshData) => {
     const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
     for (let i = 0; i < p.positions.length; i += 3) {
@@ -300,12 +301,16 @@ export function layoutOnPlates<T extends MeshData>(parts: T[], bed: number): { p
   });
   // shelf packing, tallest (in Y) first
   const margin = 5, gap = 6, usable = bed - 2 * margin;
-  const order = groups.map((_, k) => k).sort((a, b) => gbox[b][4] - gbox[b][1] - (gbox[a][4] - gbox[a][1]));
+  const gcol = groups.map((g) => (colorPlates ? parts[g[0]].color.toLowerCase() : ''));
+  const colors = [...new Set(gcol)];
+  const order = groups.map((_, k) => k).sort((a, b) => colors.indexOf(gcol[a]) - colors.indexOf(gcol[b]) || gbox[b][4] - gbox[b][1] - (gbox[a][4] - gbox[a][1]));
   const plates = new Array<number>(groups.length).fill(0);
   const at: [number, number][] = new Array(groups.length);
   let plate = 0, x = 0, y = 0, rowH = 0;
+  let lastCol = gcol[order[0]];
   for (const k of order) {
     const w = gbox[k][3] - gbox[k][0], h = gbox[k][4] - gbox[k][1];
+    if (gcol[k] !== lastCol) { plate++; x = 0; y = 0; rowH = 0; lastCol = gcol[k]; }
     if (x > 0 && x + w > usable) { x = 0; y += rowH + gap; rowH = 0; }
     if (y > 0 && y + h > usable) { plate++; x = 0; y = 0; rowH = 0; }
     plates[k] = plate;

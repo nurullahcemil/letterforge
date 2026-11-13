@@ -14,8 +14,9 @@ const f = fs.readFileSync(process.env.FONT ?? 'node_modules/@fontsource/archivo-
 const font = T.parseFont(f.buffer.slice(f.byteOffset, f.byteOffset + f.byteLength) as ArrayBuffer);
 const p = { ...DEFAULTS, ...JSON.parse(process.argv[2] ?? '{}') } as any;
 const r = b.build(font, p);
-const parts = r.parts.filter((x: any) => !x.previewOnly);
-const lay = layoutOnPlates(parts, p.bedSize);
+// as printed (pins printed apart stand beside the base), like forExport in the app
+const parts = r.parts.filter((x: any) => !x.previewOnly).map((x: any) => (x.printMesh ? { ...x, ...x.printMesh } : x));
+const lay = layoutOnPlates(parts, p.bedSize, !!p.pinSeparate && p.style === 'pins');
 const sq = Math.sqrt(new Set(lay.plates).size), cols = sq > Math.round(sq) ? Math.round(sq) + 1 : Math.round(sq);
 let bad = 0;
 lay.groups.forEach((g, k) => {
