@@ -889,28 +889,30 @@ export class Builder {
     if (!gs.length) return [];
     const n = Math.max(gs.length, Math.min(60, Math.round(p.flCount ?? 0)));
     const rIn = clampN(p.flRadius ?? 2, 0, 400);
-    // one shared height range, so every petal is the same length
-    let yMin = Infinity, yMax = -Infinity;
+    // every letter is stretched to the same petal length (own ink top and bottom), so short
+    // lowercase letters (o, a) don't end early and tall ones (l, h) don't poke out as spikes
     const bx = gs.map((g) => {
-      let x0 = Infinity, x1 = -Infinity;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const c of g) for (const [x, y] of c) {
         x0 = Math.min(x0, x); x1 = Math.max(x1, x);
-        yMin = Math.min(yMin, y); yMax = Math.max(yMax, y);
+        y0 = Math.min(y0, y); y1 = Math.max(y1, y);
       }
-      return [x0, x1];
+      return [x0, x1, y0, y1];
     });
+    const len = Math.max(...bx.map(([, , y0, y1]) => y1 - y0));
     const slice = (2 * Math.PI) / n;
     const fuse = Math.min(0.01, slice * 0.04); // neighbours overlap a hair so they join
     const step = 0.35;
     const items: CrossSection[] = [];
     for (let i = 0; i < n; i++) {
       const g = gs[i % gs.length];
-      const [x0, x1] = bx[i % gs.length];
+      const [x0, x1, gy0, gy1] = bx[i % gs.length];
       const w = Math.max(1e-6, x1 - x0);
+      const hs = len / Math.max(1e-6, gy1 - gy0);
       const a0 = Math.PI / 2 + slice / 2 - i * slice; // first letter on top, then clockwise
       const map = (x: number, y: number): MVec2 => {
         const a = a0 + fuse - ((x - x0) / w) * (slice + 2 * fuse);
-        const r = rIn + (y - yMin);
+        const r = rIn + (y - gy0) * hs;
         return [r * Math.cos(a), r * Math.sin(a)];
       };
       const polys: MVec2[][] = g.map((c) => {
@@ -925,7 +927,7 @@ export class Builder {
       });
       items.push(this.k(new this.wasm.CrossSection(polys, 'NonZero')));
     }
-    items.push(this.circle(0, 0, rIn + Math.max(1.5, (yMax - yMin) * 0.04)));
+    items.push(this.circle(0, 0, rIn + Math.max(1.5, len * 0.04)));
     const all = this.k(this.wasm.CrossSection.union(items));
     const pieces = all.decompose();
     pieces.forEach((c) => this.k(c));

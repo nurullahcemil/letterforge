@@ -171,8 +171,9 @@ no overlap between halves and candle; must end "all clean").
 
 ## Letter flower / Arrow sign / Pyramid tiles / Tile mold (user photos; own designs)
 - flower (`Builder.flower`): each glyph (letters only, repeated to `flCount`) is BENT into an equal
-  pie slice: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (shared y range,
-  r = flRadius + y − yMin), contours densified to 0.35 mm before bending; small hub disc. User:
+  pie slice: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (each glyph's own ink
+  bottom..top stretched to the same petal length; a shared range left lowercase o/a short and l/h
+  as spikes — user screenshot "Aloha"), contours densified to 0.35 mm before bending; small hub disc. User:
   "letters connect in the center, structure changes, sides fit perfectly" (first version just
   rotated upright letters around a circle — rejected).
 - pins (`Builder.pins`, "Pin art"): grid of cylinders on a plate (colour B) + frame; height level
