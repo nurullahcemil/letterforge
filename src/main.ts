@@ -251,6 +251,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   lamp: [],
   flower: [
     { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around the circle. 0 = the word once; more repeats it.' },
+    { kind: 'range', key: 'flSize', label: 'Size', min: 50, max: 400, step: 1, unit: 'mm', hint: 'Across the whole flower.' },
+    { kind: 'range', key: 'flBend', label: 'Bend', min: 0, max: 100, step: 5, unit: '%', hint: 'Lower keeps the letters easier to read, with a bigger solid middle. 100 = the letters meet in the centre.' },
     { kind: 'range', key: 'flRadius', label: 'Middle', min: 0, max: 60, step: 0.5, unit: 'mm', hint: 'Size of the middle where the letters meet.' },
     { kind: 'range', key: 'flDepth', label: 'Depth', min: 5, max: 200, step: 1, unit: 'mm', hint: 'How deep each letter goes back.' },
   ],
@@ -653,7 +655,7 @@ function renderStyleControls() {
   // the lamp and the candle mold have no text, so their text and size sections go away
   const isLamp = noText();
   $('#text-section').hidden = isLamp;
-  $('#size-section').hidden = isLamp;
+  $('#size-section').hidden = isLamp || params.style === 'flower'; // the flower has its own Size
   list.forEach((c) => host.appendChild(controlEl(c)));
   $('#style-title').textContent = PRESETS[params.style].label + ' settings';
 }

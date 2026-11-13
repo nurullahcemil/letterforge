@@ -170,8 +170,11 @@ Check: `npx tsx scripts/mold-check.ts ['{"moldShape":"ball"}']` (every shape × 
 no overlap between halves and candle; must end "all clean").
 
 ## Letter flower / Arrow sign / Pyramid tiles / Tile mold (user photos; own designs)
-- flower (`Builder.flower`): each glyph (letters only, repeated to `flCount`) is BENT into an equal
-  pie slice: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (each glyph's own ink
+- flower (`Builder.flower`): each glyph (letters only, repeated to `flCount`) is BENT into a pie
+  slice as wide as the letter (equal slices made l a solid wedge and squeezed A — user: "should still
+  be readable"); letters start at rStart = flRadius + (1−flBend)·max(0, Σw/2π − len/2) so they
+  keep their shape (solid middle joins them); whole flower scaled to `flSize` diameter (size
+  section hidden). Mapping: x → angle (clockwise, neighbours overlap a hair to fuse), y → radius (each glyph's own ink
   bottom..top stretched to the same petal length; a shared range left lowercase o/a short and l/h
   as spikes — user screenshot "Aloha"), contours densified to 0.35 mm before bending; small hub disc. User:
   "letters connect in the center, structure changes, sides fit perfectly" (first version just

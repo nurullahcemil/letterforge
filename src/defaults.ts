@@ -146,6 +146,8 @@ export const DEFAULTS: Params = {
   flRadius: 2,
   flDepth: 50,
   flCount: 0,
+  flBend: 75,
+  flSize: 180,
   arShape: 'turn',
   arDir: 'right',
   arMargin: 14,

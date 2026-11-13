@@ -16,6 +16,9 @@ export interface Params extends LampParams, MoldParams, TileParams {
   flRadius?: number;
   flDepth?: number;
   flCount?: number;
+  flBend?: number;
+  /** Letter flower diameter (mm). */
+  flSize?: number;
   /** Arrow sign: shaped board, block-shadow letters. */
   arShape?: 'turn' | 'arrow' | 'rect' | 'circle';
   arDir?: 'right' | 'left' | 'up' | 'down';
@@ -900,19 +903,31 @@ export class Builder {
       return [x0, x1, y0, y1];
     });
     const len = Math.max(...bx.map(([, , y0, y1]) => y1 - y0));
-    const slice = (2 * Math.PI) / n;
-    const fuse = Math.min(0.01, slice * 0.04); // neighbours overlap a hair so they join
+    // each letter's slice is as wide as the letter (a thin l stays thin, a wide A gets room)
+    const ws: number[] = [];
+    for (let i = 0; i < n; i++) ws.push(Math.max(1e-3, bx[i % gs.length][1] - bx[i % gs.length][0]));
+    const sumW = ws.reduce((a, b) => a + b, 0);
+    // letters keep their true shape at radius sumW/2π; "Bend" pulls them toward the centre
+    // (100 % = the feet meet in the middle, squeezed; 0 % = true shape at mid-height)
+    const bend = clampN(p.flBend ?? 60, 0, 100) / 100;
+    const rStart = rIn + (1 - bend) * Math.max(0, sumW / (2 * Math.PI) - len / 2);
+    // scale the whole flower to the chosen diameter
+    const kS = clampN(p.flSize ?? 180, 30, 1000) / 2 / (rStart + len);
+    const fuse = 0.004;
     const step = 0.35;
     const items: CrossSection[] = [];
+    let at = Math.PI / 2 + (Math.PI * ws[0]) / sumW; // first letter centred at the top, then clockwise
     for (let i = 0; i < n; i++) {
       const g = gs[i % gs.length];
-      const [x0, x1, gy0, gy1] = bx[i % gs.length];
-      const w = Math.max(1e-6, x1 - x0);
+      const [x0, , gy0, gy1] = bx[i % gs.length];
+      const w = ws[i];
+      const slice = (2 * Math.PI * w) / sumW;
+      const a0 = at;
+      at -= slice;
       const hs = len / Math.max(1e-6, gy1 - gy0);
-      const a0 = Math.PI / 2 + slice / 2 - i * slice; // first letter on top, then clockwise
       const map = (x: number, y: number): MVec2 => {
         const a = a0 + fuse - ((x - x0) / w) * (slice + 2 * fuse);
-        const r = rIn + (y - gy0) * hs;
+        const r = (rStart + (y - gy0) * hs) * kS;
         return [r * Math.cos(a), r * Math.sin(a)];
       };
       const polys: MVec2[][] = g.map((c) => {
@@ -927,7 +942,8 @@ export class Builder {
       });
       items.push(this.k(new this.wasm.CrossSection(polys, 'NonZero')));
     }
-    items.push(this.circle(0, 0, rIn + Math.max(1.5, len * 0.04)));
+    // the middle joins every letter's foot
+    items.push(this.circle(0, 0, (rStart + Math.max(1.5, len * 0.04)) * kS));
     const all = this.k(this.wasm.CrossSection.union(items));
     const pieces = all.decompose();
     pieces.forEach((c) => this.k(c));
