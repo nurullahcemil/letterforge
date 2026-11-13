@@ -6,6 +6,7 @@ import { svgToArtwork, traceImage } from './art';
 import { lighten } from './lighten';
 import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
+import { MOLD_SHAPE_DEFAULTS } from './mold';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
@@ -97,6 +98,13 @@ const PRESETS: Record<Style, StylePreset> = {
     text: '',
     font: 'archivo',
     patch: { colorA: '#f3e6cf', colorB: '#d9967a' },
+  },
+  mold: {
+    label: 'Candle & mold',
+    blurb: 'A candle shape (pleated ball, drop ornament, gem, pillar or tiered tree) and a printable mold to pour it in: a two-part block, a zigzag split or an open cup. Pour from the top; the wick goes through the bottom.',
+    text: '',
+    font: 'archivo',
+    patch: { colorA: '#cdd6dd', colorB: '#f2c6a2' },
   },
 };
 
@@ -206,6 +214,26 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'select', key: 'bookOrient', label: 'Print orientation', options: [['standing', 'Standing'], ['lying', 'Lying flat']] },
   ],
   lamp: [],
+  mold: [
+    { kind: 'select', key: 'moldShape', label: 'Candle', options: [['ball', 'Ball'], ['drop', 'Drop'], ['gem', 'Gem'], ['pillar', 'Pillar'], ['tree', 'Tree']] },
+    { kind: 'range', key: 'moldH', label: 'Height', min: 30, max: 220, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'moldD', label: 'Width', min: 30, max: 200, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'moldSides', label: 'Pleats / sides', min: 3, max: 40, step: 1 },
+    { kind: 'range', key: 'moldDepth', label: 'Pleat depth', min: 0, max: 15, step: 0.5, unit: 'mm', hint: '0 = flat sides (facets).' },
+    { kind: 'range', key: 'moldTwist', label: 'Twist', min: -180, max: 180, step: 5, unit: '°', hint: 'Turns the pleats from bottom to top.' },
+    { kind: 'range', key: 'moldTiers', label: 'Tiers', min: 1, max: 6, step: 1 },
+    { kind: 'range', key: 'moldShrink', label: 'Smaller each tier', min: 0, max: 50, step: 1, unit: '%' },
+    { kind: 'select', key: 'moldKind', label: 'Mold', options: [['two', 'Two-part block'], ['zigzag', 'Zigzag split'], ['open', 'Open cup']] },
+    { kind: 'range', key: 'moldWall', label: 'Mold wall', min: 3, max: 15, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'moldZig', label: 'Zigzag height', min: 0, max: 10, step: 0.5, unit: 'mm', hint: 'Teeth that lock the two halves; they line up with the pleats.' },
+    { kind: 'toggle', key: 'moldPins', label: 'Pins to line up the halves' },
+    { kind: 'toggle', key: 'moldBolts', label: 'Bolt holes (M4)', hint: 'Clamp the halves with 4 bolts and wing nuts.' },
+    { kind: 'toggle', key: 'moldBands', label: 'Rubber band grooves' },
+    { kind: 'range', key: 'moldWick', label: 'Wick hole', min: 0, max: 6, step: 0.5, unit: 'mm', hint: 'Through the bottom. 0 = none.' },
+    { kind: 'range', key: 'moldPour', label: 'Pour hole', min: 6, max: 30, step: 1, unit: 'mm', hint: 'For round tops (ball, drop). Cut the little stub off after.' },
+    { kind: 'select', key: 'moldShow', label: 'Make', options: [['all', 'Mold and candle'], ['mold', 'Mold only'], ['shape', 'Candle only']], hint: 'Candle only: print the shape itself, e.g. to make a silicone mold from it.' },
+    { kind: 'select', key: 'moldView', label: 'Show', options: [['open', 'Pulled apart'], ['print', 'As printed']], hint: 'Files are always laid out for printing.' },
+  ],
 };
 
 const LAMP_CONTROLS: Control[] = [
@@ -246,6 +274,8 @@ const LAMP_CONTROLS: Control[] = [
 STYLE_CONTROLS.lamp = LAMP_CONTROLS;
 
 const params: Params = { ...defaults };
+/** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
+const noText = () => params.style === 'lamp' || params.style === 'mold';
 let fontKey = 'archivo';
 let textTouched = false;
 let fontTouched = false;
@@ -351,7 +381,7 @@ async function run() {
       lastLetters = res.letters ?? [];
       lastBacking = res.backing;
       (window as any).__letterforge.shaper = res.shaper;
-      const ax: Axis[] = params.style === 'lamp' ? [] : (res.axes ?? []);
+      const ax: Axis[] = noText() ? [] : (res.axes ?? []);
       if (JSON.stringify(ax) !== JSON.stringify(fontAxesNow)) {
         fontAxesNow = ax;
         renderAxes();
@@ -445,6 +475,7 @@ function controlEl(c: Control): HTMLElement {
     row.querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
         (params as any)[c.key] = b.dataset.v;
+        if (c.key === 'moldShape') Object.assign(params, MOLD_SHAPE_DEFAULTS[b.dataset.v as Params['moldShape']]);
         row.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
         if (String(c.key).startsWith('back')) renderBacking();
         else if (String(c.key).startsWith('art')) renderArt();
@@ -521,8 +552,18 @@ function renderStyleControls() {
       return true;
     });
   }
-  // the lamp has no text, so its text and size sections go away
-  const isLamp = params.style === 'lamp';
+  if (params.style === 'mold') {
+    list = list.filter((c) => {
+      if (params.moldShape !== 'tree' && (c.key === 'moldTiers' || c.key === 'moldShrink')) return false;
+      if (params.moldShow === 'shape' && ['moldKind', 'moldWall', 'moldZig', 'moldPins', 'moldBolts', 'moldBands', 'moldWick', 'moldPour', 'moldView'].includes(c.key)) return false;
+      if (params.moldKind !== 'zigzag' && c.key === 'moldZig') return false;
+      if (params.moldKind !== 'two' && ['moldPins', 'moldBolts', 'moldBands'].includes(c.key)) return false;
+      if (c.key === 'moldPour' && params.moldShape !== 'ball' && params.moldShape !== 'drop') return false;
+      return true;
+    });
+  }
+  // the lamp and the candle mold have no text, so their text and size sections go away
+  const isLamp = noText();
   $('#text-section').hidden = isLamp;
   $('#size-section').hidden = isLamp;
   list.forEach((c) => host.appendChild(controlEl(c)));
@@ -718,7 +759,7 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = params.style === 'lamp' || params.style === 'book';
+  sec.hidden = noText() || params.style === 'book';
   const host = $('#backing-controls');
   host.innerHTML = '';
   host.appendChild(controlEl({ kind: 'toggle', key: 'backOn', label: 'Make a laser-cut backing', hint: 'A wooden board behind the letters, cut on a laser cutter. Shown under the model in 3D.' }));
@@ -838,7 +879,7 @@ function renderAxes() {
   const gf = googleKeyParts(fontKey);
   const gfItalicFile = !!gf && gf.w === 'var' && googleHasItalic(gf.id);
   // only variable fonts: every setting here is the font's own (nothing made up)
-  host.hidden = params.style === 'lamp' || !(fontAxesNow.length || gf?.w === 'var');
+  host.hidden = noText() || !(fontAxesNow.length || gf?.w === 'var');
   // made-up styling from an earlier version is no longer offered: clear it
   if ((params.textBold ?? 0) !== 0 || (params.textWidth ?? 100) !== 100 || (params.textSlant ?? 0) !== 0) {
     params.textBold = 0;
@@ -1112,6 +1153,7 @@ function syncColors() {
     stepped: ['Letters', 'Base'],
     ramp: ['Plate', 'Letters'],
     lamp: ['Shade', 'Base'],
+    mold: ['Mold', 'Candle'],
   };
   const [a, b] = labels[params.style];
   $('#colorA-label').textContent = a;
@@ -1120,6 +1162,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  mold: `<svg viewBox="0 0 48 32"><path d="M4 6h15v22H4zM29 6h15v22H29z" fill="currentColor" opacity=".3"/><path d="M19 9a7 8 0 0 0 0 16M29 9a7 8 0 0 1 0 16" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M24 9l-3 4 3 4-3 4 3 4 3-4-3-4 3-4z" fill="currentColor"/><path d="M24 4v5" stroke="currentColor" stroke-width="1.4"/></svg>`,
   lamp: `<svg viewBox="0 0 48 32"><path d="M24 2c-6 4-12 7-14 10 3 1 6 0 8 0-5 3-10 6-12 9 6 1 12 0 18 0s12 1 18 0c-2-3-7-6-12-9 2 0 5 1 8 0-2-3-8-6-14-10z" fill="currentColor" opacity=".35" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M19 22h10l1 8H18z" fill="currentColor"/></svg>`,
   keychain: `<svg viewBox="0 0 48 32"><path d="M9 8h30a8 8 0 0 1 0 16H9a8 8 0 0 1 0-16z" fill="currentColor" opacity=".3"/><circle cx="9" cy="16" r="2.6" fill="var(--bg)"/><path d="M17 21c2-7 4-10 6-10s1 5-1 7m5 3c1-4 3-7 5-7 1 0 1 3-1 5m4 2c1-3 2-5 4-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>`,
   duo: `<svg viewBox="0 0 48 32"><path d="M4 18h40v10H4z" fill="currentColor" opacity=".4"/><path d="M8 17c3-9 6-12 8-10s-2 7-4 9m8 1c2-6 4-9 6-8 2 2-1 6-3 8m7 0c2-5 5-8 7-7 1 2-1 5-3 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M38 5l3 3-3 3M41 8h-6" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/></svg>`,
@@ -1505,7 +1548,7 @@ $('#check').addEventListener('click', () => {
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
 function forExport<T extends { positions: Float32Array }>(meshes: T[]): T[] {
-  if (params.style === 'lamp') {
+  if (params.style === 'lamp' || params.style === 'mold') {
     return meshes.map((m) => {
       const pm = m as unknown as Part;
       if (pm.printMesh) return { ...m, positions: pm.printMesh.positions, indices: pm.printMesh.indices };
@@ -1536,6 +1579,7 @@ function exceedsBed(meshes: { positions: Float32Array }[], bed: number): boolean
 
 function baseName() {
   if (params.style === 'lamp') return 'lamp';
+  if (params.style === 'mold') return `candle-${params.moldShape}-mold`;
   const t = params.text.trim().replace(/\s+/g, '-').replace(/[^\w-]/g, '').slice(0, 24) || 'letters';
   return `${t}-${params.style}`;
 }
@@ -1550,8 +1594,8 @@ function download(blob: Blob, name: string) {
 
 /** The lamp preview is built lighter; downloads rebuild it at full detail first. */
 async function fullDetailParts(): Promise<Part[]> {
-  if (params.style !== 'lamp') return lastParts;
-  const res = await call({ type: 'build', fontKey, params: { ...params, lampFine: true } });
+  if (params.style !== 'lamp' && params.style !== 'mold') return lastParts;
+  const res = await call({ type: 'build', fontKey, params: { ...params, lampFine: true, moldFine: true } });
   return res.type === 'result' ? res.parts : lastParts;
 }
 
@@ -1565,10 +1609,10 @@ $('#dl-3mf').addEventListener('click', async () => {
   // the lamp is already as light as it can be (and its bands are separate touching rings)
   const out = params.lightFiles !== false && params.style !== 'lamp' ? await lighten(meshes) : meshes;
   // bigger than the bed: every piece its own object, already laid out on as many plates as needed
-  const tooBig = params.style !== 'lamp' && params.style !== 'book' && exceedsBed(out, params.bedSize);
+  const tooBig = !noText() && params.style !== 'book' && exceedsBed(out, params.bedSize);
   const lay = tooBig ? layoutOnPlates(out, params.bedSize) : undefined;
   download(
-    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.text.trim() || 'Letterforge', params.style === 'lamp', lay ? { groups: lay.groups, plates: lay.plates } : undefined),
+    to3MF(lay ? lay.parts : out, params.style === 'lamp' ? 'Lamp' : params.style === 'mold' ? 'Candle mold' : params.text.trim() || 'Letterforge', noText(), lay ? { groups: lay.groups, plates: lay.plates } : undefined),
     baseName() + '.3mf',
   );
   if (lay) showWarnings([`Too big for one ${params.bedSize} mm bed: the 3MF has ${lay.groups.length} pieces on ${new Set(lay.plates).size} plates. Slice all plates in Bambu Studio.`]);
@@ -1596,7 +1640,7 @@ $('#dl-stl').addEventListener('click', async () => {
   let one = forExport([mesh])[0];
   if (params.lightFiles !== false && params.style !== 'lamp') [one] = await lighten([one]);
   download(toSTL(one), baseName() + '.stl');
-  if (params.style !== 'lamp' && exceedsBed([one], params.bedSize)) showWarnings([`This STL is one piece bigger than your ${params.bedSize} mm bed. Download the 3MF instead: it has the pieces laid out on separate plates.`]);
+  if (!noText() && exceedsBed([one], params.bedSize)) showWarnings([`This STL is one piece bigger than your ${params.bedSize} mm bed. Download the 3MF instead: it has the pieces laid out on separate plates.`]);
 });
 
 // ---------- accent text (two-text sign) ----------

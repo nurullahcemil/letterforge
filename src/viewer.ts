@@ -277,9 +277,11 @@ export class Viewer {
     this.sun.position.set(-radius * 1.2, radius * 3 + 200, radius * 1.5 + 100);
     this.sun.shadow.camera.updateProjectionMatrix();
     if (refit || this.lastRadius === 0 || radius > this.lastRadius * 1.6 || radius < this.lastRadius * 0.5) {
-      this.fit(radius, size.z);
+      // tall, narrow models (candle molds) need more room than their width suggests
+      this.fit(Math.max(radius, size.z * 0.62), size.z);
     }
     this.lastRadius = radius;
+    this.lastFitR = Math.max(radius, size.z * 0.62);
     this.needsRender = true;
   }
 
@@ -296,7 +298,11 @@ export class Viewer {
     this.needsRender = true;
   }
 
-  fit(radius = this.lastRadius, height = 0) {
+  private lastHeight = 0;
+  private lastFitR = 0;
+
+  fit(radius = this.lastFitR || this.lastRadius, height = this.lastHeight) {
+    this.lastHeight = height;
     const dist = (radius / Math.tan((this.camera.fov * Math.PI) / 360)) * 1.25 + 10;
     const dir = new THREE.Vector3(0.15, 0.85, 1).normalize();
     this.controls.target.set(0, height * 0.35, 0);

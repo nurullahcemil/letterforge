@@ -1,4 +1,4 @@
-# Candle & mold style — build plan (user: "All at once")
+# Candle & mold style — build plan (user: "All at once") — BUILT, see CLAUDE.md for what shipped
 
 User sent photos: two-part candle mold of a tiered faceted tree (block halves, corner bolt holes,
 side slots), pleated ball (sharp meridian pleats, some twisted), cylindrical mold split along a

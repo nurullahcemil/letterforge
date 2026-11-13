@@ -57,7 +57,8 @@ Regression check used so far: run smoke before and after a change and diff the
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
-stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`).
+stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),
+mold (no text: candle shape + printable candle mold, `src/mold.ts`).
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.
@@ -138,3 +139,27 @@ corners), 3 round bulges, waist ≈ 0.8; base body 117 + neck 24.5, Ø121.5; nec
 Other checks: `scripts/lamp-holes.ts` (folds/holes, must say clean), `scripts/lamp-wall.ts`
 (wall thickness), `scripts/lamp-check.ts` (validity), `scripts/lamp-slice.ts` (SVG slices),
 `scripts/lamp-time.ts` (speed).
+
+## Candle & mold style
+Own parametric designs (user sent photos of tree / pleated ball / zigzag-split / drop molds; never
+copy those). `src/mold.ts`, `Builder.mold()`. Params `mold*`; `MOLD_SHAPE_DEFAULTS` are applied by
+the UI when the shape changes (sides, pleat depth, size, mold kind).
+- Candle = lathe mesh built directly: profile (z, r); each ring has 2·sides points, even = ridge r,
+  odd = r·cos(π/n) − depth·r/R (depth 0 = flat facets). Rings turn with `moldTwist`. r = 0 → one
+  pole vertex (bottom pole fan must be wound (pole, i+1, i) — got this wrong once: "Not manifold").
+  Shapes: ball, drop (tip, rim at 0.42, neck for a cap), gem (table, girdle, point), pillar, tree
+  (trunk with 2 grooves, tiers that overlap 35 % → ledges).
+- Pour orientation: flat end up (tree/gem/pillar flipped), ball/drop get a pour channel (drop: cone
+  from the neck). Wick hole on the axis through the bottom.
+- Molds: `two` = block split at y=0 (pins on A, sockets on B at different heights, M4 bolt holes
+  through the flanges, band grooves); `zigzag` = round mold split at the widest ring; the candle's
+  seam is a flat ring, teeth (peak-to-peak `moldZig`, lined up with the pleats incl. twist) start
+  1.5 mm outside it (`polarSolid` region); `open` = one cup (warns when it would get stuck).
+- Preview "Pulled apart" (two-part halves turned to open left/right on screen) or "As printed";
+  files always use the print layout (`Part.printMesh`, like the lamp): halves parting face up,
+  zigzag top flipped, candle standing; 3MF has each piece as its own object.
+- Band grooves: cut with `cs.offset(1) − cs.offset(−2)`; cutting `cs − cs.offset(−2)` (shared outer
+  edge) left slivers (genus jumped by 4).
+- Wax needed = candle volume × 0.9 g/ml, shown as a note.
+Check: `npx tsx scripts/mold-check.ts ['{"moldShape":"ball"}']` (every shape × kind: valid pieces,
+no overlap between halves and candle; must end "all clean").

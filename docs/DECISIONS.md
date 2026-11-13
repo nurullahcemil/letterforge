@@ -95,3 +95,8 @@
       cone below within 1.2 mm; thin < 0.8 mm via inward ray, DoubleSide probe or back faces are
       missed).
     - simplex-noise: lamp 'stone' surface, sampled on a cylinder (radius around/2π) → no seam.
+25. Candle & mold style (user: "can I make a 3d model for these kind of molds?" → "All at once").
+    Own parametric shapes and molds (see CLAUDE.md "Candle & mold style"). Zigzag split keeps the
+    candle's seam flat at the widest ring and puts the locking teeth in the mold body only, so the
+    teeth never make undercuts on the candle. Viewer "Fit view" now remembers the model height and
+    fits tall, narrow models (molds) by height too.

@@ -4,12 +4,13 @@ import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
 import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
+import { buildMold, type MoldParams } from './mold';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold';
 
-export interface Params extends LampParams {
+export interface Params extends LampParams, MoldParams {
   /** Mix letters (variable fonts): which axes to shuffle and how far (%). */
   mixWght?: boolean;
   mixWdth?: boolean;
@@ -239,6 +240,7 @@ export class Builder {
     let parts: WorkPart[] = [];
     try {
       if (p.style === 'lamp') return this.lamp(p, warnings);
+      if (p.style === 'mold') return this.mold(p, warnings);
       const layout = layoutText(font, p.text || ' ', {
         ...textStyle(p),
         capHeight: p.capHeight,
@@ -417,6 +419,52 @@ export class Builder {
    * always laid out side by side, each part flat on the bed (printOffset moves a part there).
    * Never bed-split (cuts would show in the light).
    */
+  /** Candle & mold: pieces shown pulled apart (or as printed); files always use the print layout. */
+  private mold(p: Params, warnings: string[]): BuildResult {
+    const { pieces, volume } = buildMold(this.wasm, (o) => this.k(o), p, warnings);
+    this.kept = [];
+    const out: Part[] = [];
+    const toMesh = (m: Manifold) => {
+      const g = m.getMesh();
+      const q = new Float32Array((g.vertProperties.length / g.numProp) * 3);
+      for (let i = 0, j = 0; i < g.vertProperties.length; i += g.numProp, j += 3) {
+        q[j] = g.vertProperties[i];
+        q[j + 1] = g.vertProperties[i + 1];
+        q[j + 2] = g.vertProperties[i + 2];
+      }
+      return { positions: q, indices: new Uint32Array(g.triVerts) };
+    };
+    const lo = [Infinity, Infinity, Infinity];
+    const hi = [-Infinity, -Infinity, -Infinity];
+    let x = 0;
+    for (const pc of pieces) {
+      const b = pc.print.boundingBox();
+      const w = b.max[0] - b.min[0];
+      const d = b.max[1] - b.min[1];
+      if (w > p.bedSize || d > p.bedSize || b.max[2] - b.min[2] > p.bedSize) warnings.push(`${pc.name} is ${Math.round(w)} × ${Math.round(d)} × ${Math.round(b.max[2] - b.min[2])} mm, larger than your ${p.bedSize} mm bed.`);
+      const printMesh = toMesh(this.k(pc.print.translate([x - b.min[0], -(b.min[1] + b.max[1]) / 2, -b.min[2]])));
+      x += w + 10;
+      const color = pc.role === 'shape' ? p.colorB : p.colorA;
+      this.kept.push({ name: pc.name, color, raw: printMesh });
+      const view = p.moldView === 'print' ? printMesh : toMesh(pc.view);
+      for (let i = 0; i < view.positions.length; i += 3)
+        for (let a = 0; a < 3; a++) {
+          const v = view.positions[i + a];
+          if (v < lo[a]) lo[a] = v;
+          if (v > hi[a]) hi[a] = v;
+        }
+      const part: Part = { name: pc.name, color, positions: view.positions, indices: view.indices };
+      if (p.moldView !== 'print') part.printMesh = printMesh;
+      out.push(part);
+    }
+    if (pieces.some((pc) => pc.role === 'shape') || p.moldShow !== 'mold') {
+      const g = Math.round(volume * 0.9);
+      warnings.push(`Wax needed: about ${g} g (${Math.round(volume)} ml).`);
+    }
+    const size: [number, number, number] = out.length ? [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]] : [0, 0, 0];
+    return { parts: out, warnings, size, letters: [] };
+  }
+
   private lamp(p: Params, warnings: string[]): BuildResult {
     const { pieces, shadeZ } = buildLamp(this.wasm, (o) => this.k(o), p, warnings);
     this.kept = [];

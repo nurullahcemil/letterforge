@@ -41,6 +41,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['ramp-line', { style: 'ramp', text: 'LINE', capHeight: 30, lineMode: true, lineW: 1.2 }, 'oswald'],
   ['lamp', { style: 'lamp' }, 'archivo'],
   ['lamp-stone', { style: 'lamp', lampTex: 'stone', lampWall: 1.6 }, 'archivo'],
+  ['mold-ball', { style: 'mold' }, 'archivo'],
+  ['mold-tree', { style: 'mold', moldShape: 'tree', moldKind: 'two', moldSides: 8, moldDepth: 0, moldH: 110, moldD: 80 }, 'archivo'],
   ['sign-backing', { backOn: true, backHoles: 'two', backKerf: 0.15 }, 'archivo'],
   ['book-widths', { style: 'book', text: 'ON SUCH\nA FULL SEA', letterW: { '0': 3, '6': 0.5 }, rLean: 55, rMin: 0.4, rMax: 9 }, 'oswald'],
   ['stack-widths', { style: 'stack', text: 'RAISE\nYOUR\nGAME', capHeight: 45, lineSpacing: 0.8, letterW: { '5': 2.5 } }, 'archivo'],
