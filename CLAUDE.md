@@ -60,8 +60,8 @@ Regression check used so far: run smoke before and after a change and diff the
   Idea → Words → Font → Shape → Size → Finish; sections carry `data-step`; `renderStepbar`
   hides the others (`.tab-off`), clickable step bar = jump, sticky Back/Next (last = Download 3MF).
   No-text styles skip Words/Font; Size is skipped when the size section is hidden. New designs
-  start at Idea, saved designs open at Shape. Each step turns the camera (`viewer.setView`:
-  angle / front for Words+Font / top for Size).
+  start at Idea, saved designs open at Shape. Steps do NOT move the camera (user: keep
+  the view, or where I moved it); it starts at the 3/4 view from above.
 - Canvas: summary pills (style · font · size · plates · colours, `renderSummary`); a size handle at
   the model's right edge on Shape/Size steps (`viewer.screenBox`, drag scales `sizeKeys()` of the
   style); click a part in the parts list to open its colour picker.

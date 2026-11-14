@@ -1373,13 +1373,13 @@ $('#run-check').addEventListener('click', () => ($('#check') as HTMLButtonElemen
 // ---------- sidebar tabs: Design / Font / Colours / Print ----------
 // ---------- step-by-step configurator: Idea → Words → Font → Shape → Size → Colours & print ----------
 type StepId = 'idea' | 'words' | 'font' | 'shape' | 'size' | 'finish';
-const STEPS: { id: StepId; label: string; title: string; help: string; view: 'angle' | 'front' | 'top' }[] = [
-  { id: 'idea', label: 'Idea', title: 'What are you making?', help: 'Pick a style, or start from one of the ideas.', view: 'angle' },
-  { id: 'words', label: 'Words', title: 'Your words', help: 'Type what it should say. Each line is a new line on the model.', view: 'front' },
-  { id: 'font', label: 'Font', title: 'Font', help: 'Tap a font to try it. Click a letter on the model to change just that letter.', view: 'front' },
-  { id: 'shape', label: 'Shape', title: 'Shape', help: 'The main choices for this style. More options are at the bottom.', view: 'angle' },
-  { id: 'size', label: 'Size', title: 'Size', help: 'Drag the handle on the model or use the sliders. The bed is drawn to scale.', view: 'top' },
-  { id: 'finish', label: 'Finish', title: 'Colours and printing', help: 'Click a part on the model to change its colour. Then check your printer and download.', view: 'angle' },
+const STEPS: { id: StepId; label: string; title: string; help: string }[] = [
+  { id: 'idea', label: 'Idea', title: 'What are you making?', help: 'Pick a style, or start from one of the ideas.' },
+  { id: 'words', label: 'Words', title: 'Your words', help: 'Type what it should say. Each line is a new line on the model.' },
+  { id: 'font', label: 'Font', title: 'Font', help: 'Tap a font to try it. Click a letter on the model to change just that letter.' },
+  { id: 'shape', label: 'Shape', title: 'Shape', help: 'The main choices for this style. More options are at the bottom.' },
+  { id: 'size', label: 'Size', title: 'Size', help: 'Drag the handle on the model or use the sliders. The bed is drawn to scale.' },
+  { id: 'finish', label: 'Finish', title: 'Colours and printing', help: 'Click a part on the model to change its colour. Then check your printer and download.' },
 ];
 let currentStep: StepId = 'idea';
 /** Steps that have something to show for this style (no-text styles skip Words and Font). */
@@ -1410,13 +1410,11 @@ function renderStepbar() {
   next.textContent = at < steps.length - 1 ? `Next: ${steps[at + 1].label}` : 'Download 3MF';
   next.classList.toggle('last', at === steps.length - 1);
 }
-function showStep(id: StepId, moveCamera = true) {
-  const changed = id !== currentStep;
+/** Steps never move the camera: the view stays where the user left it (user asked). */
+function showStep(id: StepId) {
   currentStep = id;
   renderStepbar();
   ($('.panel') as HTMLElement).scrollTop = 0;
-  const st = STEPS.find((x) => x.id === id)!;
-  if (changed && moveCamera) viewer.setView(st.view);
 }
 $('#step-back').addEventListener('click', () => {
   const steps = liveSteps();
