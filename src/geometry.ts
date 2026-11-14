@@ -1765,10 +1765,10 @@ export class Builder {
     const W = this.wasm;
     const size = clampN(p.dsSize ?? 200, 60, 400);
     const d = buildDish(W, (o) => this.k(o), {
-      size, height: clampN(p.dsHeight ?? 32, 8, 150), ribs: clampN(p.dsRibs ?? 28, 8, 64), depth: clampN(p.dsDepth ?? 6, 0, 30),
-      well: clampN(p.dsWell ?? 30, 10, 60) / 100, wellDepth: clampN(p.dsWellDepth ?? 3, 0, 20), scallop: clampN(p.dsScallop ?? 4, 0, 15) / 100,
+      size, height: clampN(p.dsHeight ?? 32, 8, 150), ribs: clampN(p.dsRibs ?? 28, 8, 64), depth: clampN(p.dsDepth ?? 14, 0, 40),
+      well: clampN(p.dsWell ?? 30, 10, 60) / 100, wellDepth: clampN(p.dsWellDepth ?? 7, 0, 30), scallop: clampN(p.dsScallop ?? 4, 0, 15) / 100,
       swirl: clampN(p.dsSwirl ?? 0, -120, 120), wobble: clampN(p.dsWobble ?? 50, 0, 100) / 100, wall: clampN(p.dsWall ?? 2.4, 1.2, 8),
-      floor: clampN(p.dsFloor ?? 3, 1.6, 10), seed: p.dsSeed ?? 1, bumps: clampN(p.dsBumps ?? 0.9, 0, 3), bumpWell: (p.dsCentre ?? 'veins') === 'veins' || p.dsCentre === 'plain', perRib: p.lampFine ? 24 : 16,
+      floor: clampN(p.dsFloor ?? 3, 1.6, 10), seed: p.dsSeed ?? 1, bumps: clampN(p.dsBumps ?? 0.35, 0, 3), bumpWell: (p.dsCentre ?? 'veins') === 'veins' || p.dsCentre === 'plain', perRib: p.lampFine ? 24 : 16,
     }, warnings);
     let body = d.m;
     const centre = p.dsCentre ?? 'veins';
@@ -1777,7 +1777,7 @@ export class Builder {
     if (centre === 'veins') {
       const v = veins(W, (o) => this.k(o), d.wellR * 0.97, p.dsSeed ?? 1);
       // sink the veins into the (bumpy) floor so they never hang over a dent
-      const sink = Math.min(d.floorZ - 0.2, clampN(p.dsBumps ?? 0.9, 0, 3) + OVERLAP);
+      const sink = Math.min(d.floorZ - 0.2, clampN(p.dsBumps ?? 0.35, 0, 3) + OVERLAP);
       body = this.k(body.add(this.extrude(v, raise + sink, d.floorZ - sink)));
     } else if ((centre === 'raised' || centre === 'cut') && !cs.isEmpty()) {
       // the word, centred and scaled to fit inside the well

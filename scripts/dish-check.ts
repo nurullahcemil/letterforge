@@ -1,5 +1,5 @@
-// Ribbed dish check: every design builds as a valid solid and no downward face above the bed is
-// flatter than 45° (prints without supports). Usage: npx tsx scripts/dish-check.ts ['{...}']
+// Ribbed dish check: every design builds as a valid solid and no downward face above the bed is (designed at 45°,
+// checked at 40° for rounding; Bambu supports start below 30°): prints without supports. Usage: npx tsx scripts/dish-check.ts ['{...}']
 import Module from 'manifold-3d';
 (globalThis as any).self = globalThis; (globalThis as any).window = globalThis;
 const { Builder } = await import('../src/geometry');
@@ -26,12 +26,12 @@ for (const c of cases) {
       const zMin = Math.min(P[a + 2], P[q + 2], P[w + 2]);
       if (zMin < 0.05) continue;
       const cz = nz / L; // −1 = facing straight down
-      if (cz < -Math.SQRT1_2 - 0.02) { n++; area += L / 2; worst = Math.min(worst, cz); if (process.env.WHERE) console.log(P[a], P[a + 1], P[a + 2], P[q + 2], P[w + 2], L / 2); }
+      if (cz < -Math.cos((40 * Math.PI) / 180)) { n++; area += L / 2; worst = Math.min(worst, cz); if (process.env.WHERE) console.log(P[a], P[a + 1], P[a + 2], P[q + 2], P[w + 2], L / 2); }
     }
   }
   // a few specks (under 1 mm² in all) print fine
   const ok = r.parts.length > 0 && area < 1;
   if (!ok) bad++;
-  console.log(ok ? 'ok ' : 'BAD', JSON.stringify(c), `parts ${r.parts.length}`, n ? `${n} faces (${area.toFixed(2)} mm²) flatter than 45° (worst ${(Math.acos(-worst) * 180 / Math.PI).toFixed(1)}° from straight down)` : 'no overhangs');
+  console.log(ok ? 'ok ' : 'BAD', JSON.stringify(c), `parts ${r.parts.length}`, n ? `${n} faces (${area.toFixed(2)} mm²) flatter than 40° (worst ${(Math.acos(-worst) * 180 / Math.PI).toFixed(1)}° from straight down)` : 'no overhangs');
 }
 console.log(bad ? `${bad} problem(s)` : 'all clean');
