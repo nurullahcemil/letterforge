@@ -374,8 +374,8 @@ const viewer = new Viewer($('#viewport'));
   /** Picture of the model from the 3/4 view as a small WebP (used by scripts/render-ideas.mjs):
    *  the object alone on a clear background (no plate), trimmed and centred, so picture cards
    *  look like the live word cards in both themes. */
-  thumb: (w = 480, h = 320) => new Promise<string>((resolve) => {
-    viewer.setView('angle');
+  thumb: (w = 480, h = 320, view: 'angle' | 'top' | 'front' = 'top') => new Promise<string>((resolve) => {
+    viewer.setView(view);
     const img = new Image();
     img.onload = () => {
       const src = document.createElement('canvas');
@@ -398,6 +398,7 @@ const viewer = new Viewer($('#viewport'));
     viewer.showBed(false);
     img.src = viewer.snapshotFitted();
     viewer.showBed(true);
+    viewer.setView('angle');
   }),
 };
 viewer.setBed(params.bedSize);
@@ -1509,7 +1510,7 @@ function renderStyles() {
   host.innerHTML = (Object.keys(PRESETS) as Style[])
     .map(
       (s) => `<button type="button" class="style ${s === params.style ? 'on' : ''}" data-s="${s}">
-        <span class="ico ico-${s}" aria-hidden="true">${ICONS[s]}</span>
+        <img class="pic" src="${ideaThumb(s, 'start')}" alt="" loading="lazy" onerror="this.remove()"><span class="ico ico-${s}" aria-hidden="true">${ICONS[s]}</span>
         <b>${PRESETS[s].label}</b></button>`,
     )
     .join('');
@@ -2360,7 +2361,7 @@ function renderHomeIdeas() {
 
 async function renderHome() {
   $('#home-styles').innerHTML = STYLE_ORDER.map(
-    (s) => `<a class="start" href="#/new/${s}"><span class="ico" aria-hidden="true">${ICONS[s]}</span><b>${PRESETS[s].label}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></a>`,
+    (s) => `<a class="start" href="#/new/${s}"><img class="pic" src="${ideaThumb(s, 'start')}" alt="" loading="lazy" onerror="this.remove()"><span class="ico" aria-hidden="true">${ICONS[s]}</span><b>${PRESETS[s].label}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></a>`,
   ).join('');
   renderHomeIdeas();
   const designs = await listDesigns();

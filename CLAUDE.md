@@ -115,6 +115,9 @@ Regression check used so far: run smoke before and after a change and diff the
   object and centre it on a clear background, so picture cards match the live word cards in both
   themes. Every style uses them: re-run `node scripts/render-ideas.mjs` (dev server up) after
   changing SAMPLES or the viewer look (`ONLY=a,b` limits styles). Colour dots have a thin ring.
+  Seen from the TOP (user: "put the top views on the cards… it is hard to see"); lamp + mold keep
+  the 3/4 view, duo (standing sign) the front view. The script also renders `<style>-start.webp`
+  (starting design), shown on "Start something new" and the editor's style picker cards.
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),

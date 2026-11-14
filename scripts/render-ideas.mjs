@@ -23,8 +23,9 @@ const pg = await b.newPage({ viewport: { width: 900, height: 640 } });
 pg.on('pageerror', (e) => console.log('page error', e.message));
 for (const [style, n] of Object.entries(counts)) {
   if (only && !only.includes(style)) continue;
-  for (let i = 0; i < n; i++) {
-    await pg.goto(`${base}#/new/${style}/${i}`);
+  // ideas 0..n-1 plus 'start' (the style's starting design, for the style cards)
+  for (const i of [...Array(n).keys(), 'start']) {
+    await pg.goto(i === 'start' ? `${base}#/new/${style}` : `${base}#/new/${style}/${i}`);
     await pg.reload();
     // wait for a build to land, then for it to stay quiet (lamps take a few seconds)
     await pg.waitForFunction(() => (window).__letterforge?.builds > 0, null, { timeout: 60000 });
@@ -35,9 +36,12 @@ for (const [style, n] of Object.entries(counts)) {
       last = now;
       await pg.waitForTimeout(900);
     }
-    const url = await pg.evaluate(() => (window).__letterforge.thumb());
+    // seen from the top (user: "put the top views on the cards"); lamps and candle molds are
+    // tall round things, so they keep the 3/4 view; the two-text sign stands up, so from the front
+    const view = style === 'lamp' || style === 'mold' ? 'angle' : style === 'duo' ? 'front' : 'top';
+    const url = await pg.evaluate((v) => (window).__letterforge.thumb(480, 320, v), view);
     fs.writeFileSync(`public/ideas/${style}-${i}.webp`, Buffer.from(url.split(',')[1], 'base64'));
-    console.log(style, i, 'ok');
+    console.log(style, i, view, 'ok');
   }
 }
 await b.close();
