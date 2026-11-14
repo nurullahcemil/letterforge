@@ -8,6 +8,7 @@ import type { BuildResult, Params, Part, Style } from './geometry';
 import { DEFAULTS } from './defaults';
 import { MOLD_SHAPE_DEFAULTS } from './mold';
 import { PRESETS, SAMPLES } from './presets';
+import { OPTION_ICONS } from './optionIcons';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
@@ -367,7 +368,24 @@ function call(msg: any): Promise<any> {
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const viewer = new Viewer($('#viewport'));
-(window as any).__letterforge = { viewer, params, rebuild: () => { refreshUI(); schedule(true); } };
+(window as any).__letterforge = {
+  viewer, params, rebuild: () => { refreshUI(); schedule(true); }, builds: 0,
+  /** Picture of the model from the 3/4 view as a small WebP (used by scripts/render-ideas.mjs). */
+  thumb: (w = 480, h = 320) => new Promise<string>((resolve) => {
+    viewer.setView('angle');
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d')!;
+      // cover-crop the snapshot into w × h
+      const s = Math.max(w / img.width, h / img.height);
+      g.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+      resolve(c.toDataURL('image/webp', 0.82));
+    };
+    img.src = viewer.snapshotFitted();
+  }),
+};
 viewer.setBed(params.bedSize);
 
 const statusEl = $('#status');
@@ -410,6 +428,7 @@ async function run() {
       showWarnings([`Something went wrong: ${res.message}`]);
     } else if (myId === latestBuild) {
       lastParts = res.parts;
+      (window as any).__letterforge.builds++;
       lastSize = res.size as [number, number, number];
       lastLetters = res.letters ?? [];
       lastBacking = res.backing;
@@ -472,9 +491,7 @@ function renderParts(parts: Part[]) {
   // tap a part in the list to recolour it (opens the matching colour picker)
   partsEl.querySelectorAll<HTMLLIElement>('li').forEach((li) =>
     li.addEventListener('click', () => {
-      const c = (li.dataset.color ?? '').toLowerCase();
-      const key = (['colorA', 'colorB', 'colorC'] as const).find((k) => String(params[k] ?? '').toLowerCase() === c);
-      if (key) ($('#' + key) as HTMLInputElement).click();
+      pickColourOf(li.dataset.color ?? '');
     }),
   );
 }
@@ -576,10 +593,16 @@ function controlEl(c: Control): HTMLElement {
   if (c.kind === 'range') return rangeRow(c);
   if (c.kind === 'select') {
     const row = document.createElement('div');
+    const pics = OPTION_ICONS[c.key as string];
     row.className = 'row seg';
-    row.innerHTML = `<span class="lbl">${c.label}</span><div class="segmented">${c.options
-      .map(([v, l]) => `<button type="button" data-v="${v}" class="${params[c.key] === v ? 'on' : ''}">${l}</button>`)
-      .join('')}</div>`;
+    // choices with pictures show as cards; the rest as a segmented row of words
+    row.innerHTML = pics
+      ? `<span class="lbl">${c.label}</span><div class="pics">${c.options
+          .map(([v, l]) => `<button type="button" data-v="${v}" class="pic ${params[c.key] === v ? 'on' : ''}">${pics[v] ?? ''}<span>${l}</span></button>`)
+          .join('')}</div>${c.hint ? `<small>${c.hint}</small>` : ''}`
+      : `<span class="lbl">${c.label}</span><div class="segmented">${c.options
+          .map(([v, l]) => `<button type="button" data-v="${v}" class="${params[c.key] === v ? 'on' : ''}">${l}</button>`)
+          .join('')}</div>`;
     row.querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
         (params as any)[c.key] = b.dataset.v;
@@ -855,7 +878,17 @@ function fontAxisNow(tag: string): number {
   return v ?? a?.def ?? 0;
 }
 
-viewer.onPick = (pt, cx, cy) => {
+/** Open the colour picker that controls this part's colour. */
+function pickColourOf(color: string): boolean {
+  const c = color.toLowerCase();
+  const key = (['colorA', 'colorB', 'colorC'] as const).find((k) => String(params[k] ?? '').toLowerCase() === c);
+  if (!key) return false;
+  ($('#' + key) as HTMLInputElement).click();
+  return true;
+}
+viewer.onPick = (pt, cx, cy, color) => {
+  // on the Finish step (or when there are no letters to pick) a click recolours the part
+  if (pt && color && (currentStep === 'finish' || !lastLetters.length) && pickColourOf(color)) return;
   if (!pt || !lastLetters.length) return closeLetter();
   let best = lastLetters[0];
   let bd = Infinity;
@@ -1246,7 +1279,7 @@ const STEPS: { id: StepId; label: string; title: string; help: string; view: 'an
   { id: 'font', label: 'Font', title: 'Font', help: 'Tap a font to try it. Click a letter on the model to change just that letter.', view: 'front' },
   { id: 'shape', label: 'Shape', title: 'Shape', help: 'The main choices for this style. More options are at the bottom.', view: 'angle' },
   { id: 'size', label: 'Size', title: 'Size', help: 'Drag the handle on the model or use the sliders. The bed is drawn to scale.', view: 'top' },
-  { id: 'finish', label: 'Finish', title: 'Colours and printing', help: 'Pick colours, check your printer, then download.', view: 'angle' },
+  { id: 'finish', label: 'Finish', title: 'Colours and printing', help: 'Click a part on the model to change its colour. Then check your printer and download.', view: 'angle' },
 ];
 let currentStep: StepId = 'idea';
 /** Steps that have something to show for this style (no-text styles skip Words and Font). */
@@ -1309,20 +1342,30 @@ $('#style-change').addEventListener('click', () => {
   $('#style-change').textContent = grid.hidden ? 'Change' : 'Close';
 });
 
+/** Load idea number i of the current style: its starting design, then the idea on top. */
+function applyIdea(i: number) {
+  const d = (SAMPLES[params.style] ?? [])[i];
+  if (!d) return;
+  const keep = { colorA: params.colorA, colorB: params.colorB, colorC: params.colorC, bedSize: params.bedSize, splitBed: params.splitBed, lightFiles: params.lightFiles };
+  Object.assign(params, DEFAULTS, PRESETS[params.style].patch, keep, d.patch, { style: params.style, letterW: {}, letterMove: {} });
+  params.text = d.text ?? PRESETS[params.style].text;
+  if (d.font) fontKey = d.font;
+  textTouched = true;
+}
+
+/** Picture of an idea (made by scripts/render-ideas.mjs); 'start' = the style's starting design. */
+const ideaThumb = (style: Style, i: number | 'start') => `${import.meta.env.BASE_URL}ideas/${style}-${i}.webp`;
+
 /** Ready-made ideas for the current style: real words that fit the bed. */
 function renderIdeas() {
   const list = SAMPLES[params.style] ?? [];
   $('#ideas-wrap').hidden = !list.length;
-  $('#ideas').innerHTML = list.map((d, i) => `<button type="button" class="idea" data-i="${i}">${escapeHtml(d.name)}</button>`).join('');
+  $('#ideas').innerHTML = list
+    .map((d, i) => `<button type="button" class="idea" data-i="${i}"><img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()"><span>${escapeHtml(d.name)}</span></button>`)
+    .join('');
   $('#ideas').querySelectorAll<HTMLButtonElement>('button.idea').forEach((b) =>
     b.addEventListener('click', () => {
-      const d = list[Number(b.dataset.i)];
-      // start from the style's own starting design, then the idea on top
-      const keep = { colorA: params.colorA, colorB: params.colorB, colorC: params.colorC, bedSize: params.bedSize, splitBed: params.splitBed, lightFiles: params.lightFiles };
-      Object.assign(params, DEFAULTS, PRESETS[params.style].patch, keep, d.patch, { style: params.style, letterW: {}, letterMove: {} });
-      params.text = d.text ?? PRESETS[params.style].text;
-      if (d.font) fontKey = d.font;
-      textTouched = true;
+      applyIdea(Number(b.dataset.i));
       refreshUI();
       schedule(true);
     }),
@@ -2108,7 +2151,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function newDesign(style: Style) {
+function newDesign(style: Style, idea?: number) {
   currentId = null;
   currentCreated = 0;
   textTouched = false;
@@ -2117,6 +2160,11 @@ function newDesign(style: Style) {
   currentStep = 'idea'; // a new design starts at the first step
   closeLetter();
   applyPreset(style);
+  if (idea !== undefined) {
+    // opened from an idea in the home gallery: load it and go straight to the words
+    applyIdea(idea);
+    currentStep = noText() ? 'shape' : 'words';
+  }
   nameEl.value = 'Untitled design';
   lastSaved = '';
   refreshUI();
@@ -2150,6 +2198,12 @@ const STYLE_ORDER = Object.keys(PRESETS) as Style[];
 async function renderHome() {
   $('#home-styles').innerHTML = STYLE_ORDER.map(
     (s) => `<a class="start" href="#/new/${s}"><span class="ico" aria-hidden="true">${ICONS[s]}</span><b>${PRESETS[s].label}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></a>`,
+  ).join('');
+  // ideas gallery: the first two ideas of every style, each with its picture
+  $('#home-ideas').innerHTML = STYLE_ORDER.flatMap((s) =>
+    (SAMPLES[s] ?? []).slice(0, 2).map(
+      (d, i) => `<a class="idea-card" href="#/new/${s}/${i}"><span class="th"><img src="${ideaThumb(s, i)}" alt="" loading="lazy" onerror="this.parentElement.classList.add('none')"></span><b>${escapeHtml(d.name)}</b><small>${PRESETS[s].label}</small></a>`,
+    ),
   ).join('');
   const designs = await listDesigns();
   $('#design-count').textContent = designs.length ? `(${designs.length})` : '';
@@ -2217,7 +2271,7 @@ async function route() {
   routing = true;
   try {
     const h = location.hash.replace(/^#/, '');
-    const m = h.match(/^\/(new|d)\/([\w-]+)/);
+    const m = h.match(/^\/(new|d)\/([\w-]+)(?:\/(\d+))?/);
     const showEditor = !!m;
     $('#home').hidden = showEditor;
     $('#editor').hidden = !showEditor;
@@ -2225,7 +2279,7 @@ async function route() {
     if (!m) {
       await renderHome();
     } else if (m[1] === 'new') {
-      newDesign((STYLE_ORDER.includes(m[2] as Style) ? m[2] : 'sign') as Style);
+      newDesign((STYLE_ORDER.includes(m[2] as Style) ? m[2] : 'sign') as Style, m[3] !== undefined ? Number(m[3]) : undefined);
     } else if (m[2] !== currentId) {
       await openDesign(m[2]);
     }

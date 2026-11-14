@@ -65,6 +65,14 @@ Regression check used so far: run smoke before and after a change and diff the
 - Canvas: summary pills (style · font · size · plates · colours, `renderSummary`); a size handle at
   the model's right edge on Shape/Size steps (`viewer.screenBox`, drag scales `sizeKeys()` of the
   style); click a part in the parts list to open its colour picker.
+- Picture choices: a select whose key is in `OPTION_ICONS` (src/optionIcons.ts, SVG 40×28 in
+  currentColor) renders as picture cards instead of words.
+- Ideas have pictures: `public/ideas/<style>-<i>.webp`, made by `node scripts/render-ideas.mjs`
+  (dev server running; uses `__letterforge.thumb()`). RE-RUN IT after changing SAMPLES. Home page
+  "Ideas ready to print" = first two ideas per style; links `#/new/<style>/<i>` open the idea and
+  jump to the Words step.
+- Click a part ON the model in the Finish step (or any step for styles without letters) to open
+  its colour picker (`pickColourOf`; viewer passes the hit part's colour to onPick).
 - Basic vs advanced: keys in `ADVANCED` sit behind "More options (n)" in the Shape step.
 - Style presets + sample ideas live in `src/presets.ts` (PRESETS, SAMPLES). An idea = DEFAULTS +
   preset patch + idea patch (colours/bed kept). Every start design and idea must pass

@@ -47,7 +47,8 @@ export class Viewer {
   } | null = null;
   onDragEnd: (key: DragInfo['key'], a: number, b: number) => void = () => {};
   /** A click (no drag) on the canvas: the model point that was hit (model coordinates), or null. */
-  onPick: (point: THREE.Vector3 | null, clientX: number, clientY: number) => void = () => {};
+  /** A click on the model: where it hit, and the colour of the part it hit. */
+  onPick: (point: THREE.Vector3 | null, clientX: number, clientY: number, color?: string) => void = () => {};
   private downAt: { x: number; y: number } | null = null;
   /** Letter keys to highlight (e.g. the selected letter). */
   private highlightKey: string | null = null;
@@ -173,7 +174,7 @@ export class Viewer {
         const hit = this.ray(e)
           .intersectObjects(this.model.children, false)
           .find((h) => !h.object.userData.previewOnly);
-        this.onPick(hit ? this.model.worldToLocal(hit.point.clone()) : null, e.clientX, e.clientY);
+        this.onPick(hit ? this.model.worldToLocal(hit.point.clone()) : null, e.clientX, e.clientY, hit?.object.userData.color as string | undefined);
       }
       const d = this.dragState;
       if (!d) return;
@@ -248,6 +249,7 @@ export class Viewer {
       });
       const mesh = new THREE.Mesh(g, mat);
       if (p.drag) mesh.userData.drag = p.drag;
+      mesh.userData.color = p.color;
       if (p.previewOnly) mesh.userData.previewOnly = true;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
