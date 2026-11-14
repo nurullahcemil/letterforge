@@ -201,26 +201,130 @@ export class Viewer {
     this.needsRender = true;
   }
 
+  private theme: 'dark' | 'light' = 'dark';
+  /** Light or dark plate to match the page theme. */
+  setTheme(t: 'dark' | 'light') {
+    if (t === this.theme) return;
+    this.theme = t;
+    const size = this.bedSize;
+    this.bedSize = 0;
+    if (size) this.setBed(size);
+  }
+
+  /**
+   * The print bed, drawn like a real removable build plate (own design, after the shape of the
+   * user's Bambu plate): a rounded steel sheet a bit bigger than the print area, two lift tabs at
+   * the front, a fine speckled coating, a printed 10 mm grid with 50 mm lines and the print-area
+   * corners marked. Its top sits just under z = 0.
+   */
   setBed(size: number) {
     if (size === this.bedSize) return;
     this.bedSize = size;
+    for (const o of this.bed.children) {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose();
+      const mats = (Array.isArray(m.material) ? m.material : [m.material]) as THREE.MeshStandardMaterial[];
+      for (const mt of mats) { mt?.map?.dispose(); mt?.dispose(); }
+    }
     this.bed.clear();
-    const plate = new THREE.Mesh(
-      new THREE.BoxGeometry(size, 2, size),
-      new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.9, metalness: 0.0, envMapIntensity: 0.25 }),
+    const light = this.theme === 'light';
+    const edge = Math.max(6, size * 0.03); // plate border around the print area
+    const W = size + 2 * edge;
+    const r = Math.max(6, size * 0.035);
+    const tabW = size * 0.11, tabD = Math.max(7, size * 0.035), tabX = size * 0.3;
+    // Plate outline in shape XY (y = −front); rotated so shape y → world −z (front is +z).
+    const sh = new THREE.Shape();
+    const h = W / 2;
+    sh.moveTo(-h + r, -h);
+    for (const sx of [-1, 1]) {
+      // front edge with a tab at x = sx·tabX (tabs stick out toward the viewer, −y here)
+      const x0 = sx * tabX - tabW / 2, x1 = sx * tabX + tabW / 2, tr = tabD * 0.6;
+      sh.lineTo(x0 - tr, -h);
+      sh.quadraticCurveTo(x0, -h, x0, -h - tr);
+      sh.lineTo(x0, -h - tabD + tr);
+      sh.quadraticCurveTo(x0, -h - tabD, x0 + tr, -h - tabD);
+      sh.lineTo(x1 - tr, -h - tabD);
+      sh.quadraticCurveTo(x1, -h - tabD, x1, -h - tabD + tr);
+      sh.lineTo(x1, -h - tr);
+      sh.quadraticCurveTo(x1, -h, x1 + tr, -h);
+    }
+    sh.lineTo(h - r, -h);
+    sh.quadraticCurveTo(h, -h, h, -h + r);
+    sh.lineTo(h, h - r);
+    sh.quadraticCurveTo(h, h, h - r, h);
+    sh.lineTo(-h + r, h);
+    sh.quadraticCurveTo(-h, h, -h, h - r);
+    sh.lineTo(-h, -h + r);
+    sh.quadraticCurveTo(-h, -h, -h + r, -h);
+    const T = 1.6;
+    const body = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(sh, { depth: T, bevelEnabled: true, bevelThickness: 0.4, bevelSize: 0.4, bevelSegments: 2, curveSegments: 10 }),
+      new THREE.MeshStandardMaterial({ color: light ? 0xb9bcc2 : 0x2a2b30, roughness: 0.45, metalness: 0.6, envMapIntensity: 0.6 }),
     );
-    plate.position.y = -1.01;
-    plate.receiveShadow = true;
-    const grid = new THREE.GridHelper(size, Math.max(2, Math.round(size / 20)), 0x3a3a40, 0x2c2c31);
-    grid.position.y = 0.02;
+    body.rotation.x = -Math.PI / 2;
+    body.position.y = -T - 0.45;
+    body.receiveShadow = true;
+
+    // Coating texture covering the outline's bounds (front tabs included).
+    const minY = -h - tabD, spanY = W + tabD;
+    const N = 2048, px = N / Math.max(W, spanY);
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(W * px);
+    cv.height = Math.round(spanY * px);
+    const g = cv.getContext('2d')!;
+    g.fillStyle = light ? '#a7a9ae' : '#1b1c20';
+    g.fillRect(0, 0, cv.width, cv.height);
+    // speckle
+    const img = g.getImageData(0, 0, cv.width, cv.height);
+    const d = img.data;
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (rnd() - 0.5) * (light ? 16 : 12);
+      d[i] += n; d[i + 1] += n; d[i + 2] += n;
+    }
+    g.putImageData(img, 0, 0);
+    const X = (x: number) => (x + h) * px;
+    const Y = (y: number) => (spanY - (y - minY)) * px; // canvas y grows down = toward the front
+    const area = size / 2;
+    const line = (x0: number, y0: number, x1: number, y1: number) => { g.beginPath(); g.moveTo(X(x0), Y(y0)); g.lineTo(X(x1), Y(y1)); g.stroke(); };
+    for (let v = -Math.floor(area / 10) * 10; v <= area + 1e-6; v += 10) {
+      const major = Math.abs(Math.round(v)) % 50 === 0;
+      g.strokeStyle = light ? (major ? 'rgba(0,0,0,0.20)' : 'rgba(0,0,0,0.08)') : (major ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)');
+      g.lineWidth = Math.max(1, px * (major ? 0.45 : 0.3));
+      line(v, -area, v, area);
+      line(-area, v, area, v);
+    }
+    // print-area corner marks
+    g.strokeStyle = light ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.3)';
+    g.lineWidth = Math.max(1.5, px * 0.6);
+    const c = Math.min(12, size * 0.06);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      line(sx * area, sy * area, sx * (area - c), sy * area);
+      line(sx * area, sy * area, sx * area, sy * (area - c));
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    // ShapeGeometry UVs are the shape coordinates: map them onto the canvas.
+    tex.repeat.set(1 / W, 1 / spanY);
+    tex.offset.set(h / W, -minY / spanY);
+    const top = new THREE.Mesh(
+      new THREE.ShapeGeometry(sh, 10),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0.05, envMapIntensity: light ? 0.2 : 0.35 }),
+    );
+    top.rotation.x = -Math.PI / 2;
+    top.position.y = -0.04;
+    top.receiveShadow = true;
+
     const shadowCatcher = new THREE.Mesh(
       new THREE.PlaneGeometry(size * 8, size * 8),
-      new THREE.ShadowMaterial({ opacity: 0.35 }),
+      new THREE.ShadowMaterial({ opacity: light ? 0.18 : 0.35 }),
     );
     shadowCatcher.rotation.x = -Math.PI / 2;
-    shadowCatcher.position.y = -2.05;
+    shadowCatcher.position.y = -T - 0.9;
     shadowCatcher.receiveShadow = true;
-    this.bed.add(plate, grid, shadowCatcher);
+    this.bed.add(body, top, shadowCatcher);
     this.needsRender = true;
   }
 

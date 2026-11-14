@@ -101,6 +101,15 @@ Regression check used so far: run smoke before and after a change and diff the
   bar; Finish = filament swatches per colour role (`FILAMENTS`, `renderSwatches`; real colour
   inputs kept hidden) + print-check card. Viewer bed is dark (re-run render-ideas after changes).
 - Phone width: HUD dims/summary/parts legend hidden; bed-fit pill and actions stay.
+- Light theme (user: "add light template as well"): `:root[data-theme='light']` token set; overlay
+  colours use `rgba(var(--fg-rgb), a)` so they flip. Moon/sun `.theme-toggle` in the home header
+  and editor top line; choice saved in localStorage `lf-theme` (inline script in index.html sets it
+  before paint); `applyTheme` also calls `viewer.setTheme` (plate colours). Default dark.
+- Canvas background = dot grid (`--dot`, 22 px) over the radial `--stage`.
+- Build plate (`Viewer.setBed`, user: "make the base plate look like a base plate, maybe Bambu
+  shape"): own design — rounded sheet (print area + edge), two lift tabs at the front (+z), bevelled
+  metal body, CanvasTexture coating (speckle, 10 mm grid, 50 mm lines, print-area corner marks)
+  on a ShapeGeometry top; dark/light versions. No logos or branding.
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),

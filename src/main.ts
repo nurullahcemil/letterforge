@@ -389,6 +389,18 @@ const viewer = new Viewer($('#viewport'));
 };
 viewer.setBed(params.bedSize);
 
+// ---------- light / dark theme (user: "add light template as well") ----------
+function applyTheme(t: 'dark' | 'light') {
+  if (t === 'light') document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  viewer.setTheme(t);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F4F4F1' : '#0A0A0B');
+  try { localStorage.setItem('lf-theme', t); } catch { /* private mode */ }
+}
+applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+document.querySelectorAll('.theme-toggle').forEach((b) => b.addEventListener('click', () =>
+  applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light')));
+
 const statusEl = $('#status');
 const dimsEl = $('#dims');
 const warnEl = $('#warnings');

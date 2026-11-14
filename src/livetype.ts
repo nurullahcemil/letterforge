@@ -42,7 +42,7 @@ export function liveLook(style: Style, word: string, font: string, a: string, b:
     case 'keychain':
       o.color = b;
       o['text-shadow'] = `0 2px 0 ${shade(b, 0.6)}`;
-      o.background = `radial-gradient(circle at ${p(0.32)} 55%, #141416 ${p(0.09)}, ${a} ${p(0.1)})`;
+      o.background = `radial-gradient(circle at ${p(0.32)} 55%, var(--card) ${p(0.09)}, ${a} ${p(0.1)})`;
       o.padding = `${p(0.02)} ${p(0.35)} ${p(0.12)} ${p(0.62)}`;
       o['border-radius'] = '999px';
       o['box-shadow'] = `0 ${d}px 0 ${side}, 0 ${d * 2}px ${d * 2}px rgba(0,0,0,0.45)`;
