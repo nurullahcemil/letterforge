@@ -10,7 +10,7 @@ import { buildTerrace, type TerraceParams } from './terrace';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee' | 'trophy';
 
 export interface Params extends LampParams, MoldParams, TileParams, TerraceParams {
   /** Letter flower: letters around a centre like petals. */
@@ -22,6 +22,29 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
+  /** Trophy top: 'stack' = first line turned up the side + the other lines stacked; 'badge' = a shaped plaque with raised text. */
+  tpShape?: 'stack' | 'badge';
+  /** Trophy badge outline. */
+  tpBadge?: 'circle' | 'rounded' | 'shield' | 'bulb';
+  /** Trophy badge size across (mm). */
+  tpSize?: number;
+  /** Trophy top thickness (mm). */
+  tpDepth?: number;
+  /** Trophy badge: raised text height (mm). */
+  tpRaise?: number;
+  /** Trophy stack: bridges small gaps between letters so the top is one piece (mm). */
+  tpJoin?: number;
+  /** Trophy base: 'layers' = laser-cut wood sheets glued front to back, 'printed' = 3D printed block, 'none'. */
+  tpBase?: 'layers' | 'printed' | 'none';
+  tpBaseW?: number;
+  tpBaseH?: number;
+  tpBaseD?: number;
+  /** Wood sheet thickness for the layered base (mm). */
+  tpSheet?: number;
+  /** Engraved on the base front. */
+  tpTitle?: string;
+  tpSub?: string;
+  tpYear?: string;
   /** Word stand: thickness of the flat back (mm). */
   sdThick?: number;
   /** Word stand: width of the raised letter lines (mm). */
@@ -272,7 +295,7 @@ export interface BuildResult {
   /** Where each letter sits on the model (model x/y, mm), for picking letters on the canvas. */
   letters: { i: number; x: number; y: number }[];
   /** Laser-cut backing, in model x/y mm: `cut` = board outline and holes, `guide` = where the letters sit. */
-  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number };
+  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number; engrave?: [number, number][][]; sheets?: number; what?: string };
 }
 
 interface WorkPart {
@@ -328,8 +351,12 @@ export class Builder {
     this.kept = [];
   }
 
+  /** Laser file made by a style itself (trophy base), returned like the backing. */
+  private laser: BuildResult['backing'];
+
   build(font: Font, p: Params, topFont?: Font): BuildResult {
     this.releaseKept();
+    this.laser = undefined;
     const warnings: string[] = [];
     let parts: WorkPart[] = [];
     try {
@@ -438,6 +465,10 @@ export class Builder {
           this.spots = [];
           parts = this.standee(cs, p, warnings);
           break;
+        case 'trophy':
+          this.spots = [];
+          parts = this.trophy(cs, layout.lines, font, p, warnings);
+          break;
         case 'pyramid':
           parts = this.pyramid(cs, p, warnings);
           break;
@@ -454,7 +485,7 @@ export class Builder {
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee') parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee' && p.style !== 'trophy') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -520,7 +551,7 @@ export class Builder {
           `Model is ${Math.round(size[0])}×${Math.round(size[1])} mm, larger than your ${p.bedSize} mm bed. Turn on "Split to fit bed".`,
         );
       }
-      return { parts: out, warnings, size, letters: this.spots, backing: backing?.svg };
+      return { parts: out, warnings, size, letters: this.spots, backing: backing?.svg ?? this.laser };
     } finally {
       this.flush();
     }
@@ -1565,6 +1596,172 @@ export class Builder {
       const stand = this.k(this.extrude(foot, H).subtract(slot));
       // printed beside the word, in front of it on the bed
       parts.push({ name: 'Stand', color: p.colorC ?? '#c8a27a', m: stand, print: this.k(stand.translate([0, b.min[1] - slotD - 10 - D / 2, 0])) });
+    }
+    return parts;
+  }
+
+  /**
+   * Trophy (user photos of award trophies; own designs). Top piece, printed lying flat:
+   *  - 'stack': every line turned to read upward, all the same height, side by side (a long word
+   *    becomes a thin column, a year a fat one); small gaps bridged (`tpJoin`) so it is one piece.
+   *  - 'badge': a plaque (circle / rounded / shield / bulb, `tpSize`) with the text raised on the
+   *    front in colour B.
+   * A foot strip under it slots into the base. Base 'layers' (DEFAULT, user has a laser cutter):
+   * wood sheets (`tpSheet`) glued front to back; the middle sheets have a notch for the foot; the
+   * front sheet is engraved with title / subtitle / a line / year. The laser file (red = cut,
+   * black = engrave) comes back as `backing`. 'printed': a 3D printed block with the text cut in.
+   */
+  private trophy(cs: CrossSection, lines: Vec2[][][], font: Font, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    if (cs.isEmpty()) return [];
+    const T = clampN(p.tpDepth ?? 12, 2, 40);
+    const fit = clampN(p.sdFit ?? 0.2, 0, 1);
+    const base = p.tpBase ?? 'layers';
+    const sheet = clampN(p.tpSheet ?? 3, 1, 20);
+    const csOf = (loops: Vec2[][]) => this.k(new W.CrossSection(loops as MVec2[][], 'NonZero'));
+    let top: CrossSection;
+    let raised: CrossSection | null = null;
+    if ((p.tpShape ?? 'stack') === 'stack') {
+      // every line turned to read upward, all stretched to the same height, side by side touching
+      // (a long word becomes a thin column, a short one like a year a fat one)
+      const ls = lines.filter((l) => l.length).map(csOf).filter((c) => !c.isEmpty());
+      const box = (c: CrossSection) => c.bounds();
+      const L = Math.max(...ls.map((c) => box(c).max[0] - box(c).min[0]));
+      const items: CrossSection[] = [];
+      let x = 0;
+      for (const c of ls) {
+        const b = box(c);
+        const sc = L / Math.max(1e-6, b.max[0] - b.min[0]);
+        const h = (b.max[1] - b.min[1]) * sc;
+        // rotate +90°: (x, y) → (−y, x); after it the column spans x −h..0, y 0..L
+        const col = this.k(this.k(this.k(c.translate([-b.min[0], -b.min[1]])).scale([sc, sc])).rotate(90));
+        items.push(this.k(col.translate([x + h, 0])));
+        x += h - Math.min(1, h * 0.03);
+      }
+      const all = this.k(W.CrossSection.union(items));
+      const j = clampN(p.tpJoin ?? 1.5, 0, 10);
+      top = j > 0 ? this.k(this.k(all.offset(j, 'Round', 2, 32)).offset(-j, 'Round', 2, 32)) : all;
+      const n = top.decompose();
+      n.forEach((c) => this.k(c));
+      if (n.length > 1) warnings.push('Some letters do not touch: the top would print in pieces. Use tighter letter spacing or a bigger "Join gaps".');
+    } else {
+      const D = clampN(p.tpSize ?? 90, 30, 240);
+      const R = D / 2;
+      switch (p.tpBadge ?? 'circle') {
+        case 'rounded': {
+          const r = R * 0.22;
+          top = this.k(this.k(this.rect(-R, -R, R, R).offset(-r, 'Round', 2, 48)).offset(r, 'Round', 2, 48));
+          break;
+        }
+        case 'shield': {
+          const q: MVec2[] = [[-R, R], [R, R], [R, R * 0.1], [0, -R * 1.15], [-R, R * 0.1]];
+          top = this.k(this.k(new W.CrossSection([q], 'Positive').offset(-R * 0.12, 'Round', 2, 48)).offset(R * 0.12, 'Round', 2, 48));
+          break;
+        }
+        case 'bulb': {
+          // round glass + a neck that narrows to the foot
+          const neck: MVec2[] = [[-R * 0.6, -R * 0.55], [R * 0.6, -R * 0.55], [R * 0.32, -R * 1.25], [-R * 0.32, -R * 1.25]];
+          top = this.k(this.k(this.k(this.circle(0, 0, R).add(new W.CrossSection([neck], 'Positive'))).offset(R * 0.08, 'Round', 2, 48)).offset(-R * 0.08, 'Round', 2, 48));
+          break;
+        }
+        default:
+          top = this.circle(0, 0, R);
+      }
+      // text centred in the round part, scaled to fit inside with a margin
+      const tb = cs.bounds();
+      const tw = tb.max[0] - tb.min[0], th = tb.max[1] - tb.min[1];
+      const sc = Math.min(1, (R * 1.3) / Math.max(1e-6, tw), (R * 1.15) / Math.max(1e-6, th));
+      if (sc < 1) warnings.push('The text was made smaller to fit on the badge.');
+      raised = this.k(this.k(this.k(cs.translate([-(tb.min[0] + tb.max[0]) / 2, -(tb.min[1] + tb.max[1]) / 2])).scale([sc, sc])).intersect(this.k(top.offset(-2, 'Round', 2, 32))));
+    }
+    const b = top.bounds();
+    const cx = (b.min[0] + b.max[0]) / 2;
+    const wid = b.max[0] - b.min[0];
+    // foot: 60 % of the width (at most the base), as thick as the slot minus play, flush with the back
+    const H = clampN(p.tpBaseH ?? 40, 10, 200);
+    const BW = (p.tpBaseW ?? 0) > 0 ? clampN(p.tpBaseW!, 20, 400) : Math.round(Math.max(wid * 1.05, 60));
+    const slotD = Math.min(12, H * 0.4);
+    const k = base === 'layers' ? Math.max(1, Math.round(T / sheet)) : 0;
+    const slotT = base === 'layers' ? k * sheet : T;
+    const tabT = Math.max(1, Math.min(T, slotT - 2 * fit));
+    const tabW = Math.min(wid * 0.6, BW - 16);
+    const hasBase = base !== 'none';
+    const tab = hasBase ? this.extrude(this.rect(cx - tabW / 2, b.min[1] - slotD, cx + tabW / 2, b.min[1] + 6), tabT) : null;
+    let piece = this.extrude(top, T);
+    if (tab) piece = this.k(piece.add(tab));
+    const rz = p.tpShape === 'badge' ? clampN(p.tpRaise ?? 2, 0, 10) : 0;
+    const lift = raised && rz > 0 ? this.extrude(raised, rz + OVERLAP, T - OVERLAP) : null;
+    // standing: flat y → z, back face toward +y; foot centred in the slot
+    const z0 = hasBase ? H - b.min[1] : -b.min[1];
+    const up = (m: Manifold) => this.k(this.k(m.rotate([90, 0, 0])).translate([-cx, tabT / 2, z0]));
+    const flat = (m: Manifold) => this.k(m.translate([-cx, 0, 0]));
+    const parts: WorkPart[] = [{ name: 'Trophy', color: p.colorA, m: up(piece), print: flat(piece) }];
+    if (lift) parts.push({ name: 'Raised text', color: p.colorB, m: up(lift), print: flat(lift) });
+    if (!hasBase) return parts;
+
+    // ----- base -----
+    // layered: whole sheets, the same number in front of and behind the notch so the slot is centred
+    let nS = Math.max(k + 2, Math.round(clampN(p.tpBaseD ?? 40, 10, 200) / sheet));
+    if ((nS - k) % 2) nS++;
+    const D = base === 'layers' ? nS * sheet : clampN(p.tpBaseD ?? 40, 10, 200);
+    // engraving on the front, laid out in face coordinates (x 0..BW, y 0..H)
+    const engr: CrossSection[] = [];
+    const m = Math.max(4, Math.min(8, H * 0.14));
+    const txt = (s: string, cap: number, x: number, yTop: number, maxW: number): number => {
+      if (!s.trim()) return 0;
+      const lay = layoutText(font, s, { capHeight: cap, tracking: 0.02, lineSpacing: 1.15 });
+      if (!lay.contours.length) return 0;
+      let c = csOf(lay.contours);
+      const bb = c.bounds();
+      const sc = Math.min(1, maxW / Math.max(1e-6, bb.max[0] - bb.min[0]));
+      c = this.k(this.k(c.translate([-bb.min[0], -bb.max[1]])).scale([sc, sc]).translate([x, yTop]));
+      engr.push(c);
+      return (bb.max[1] - bb.min[1]) * sc;
+    };
+    const cap = Math.max(2.5, Math.min(6, H * 0.11));
+    let yy = H - m;
+    const h1 = txt(p.tpTitle ?? '', cap, m, yy, BW - 2 * m);
+    if (h1) yy -= h1 + cap * 0.55;
+    const h2 = txt(p.tpSub ?? '', cap, m, yy, BW - 2 * m);
+    if (h2) yy -= h2 + cap * 0.55;
+    const yearCap = Math.max(cap * 1.4, Math.min(H * 0.2, 9));
+    const yBottom = m + yearCap * 1.25;
+    if (h1 || h2) engr.push(this.rect(m, Math.max(yBottom + 1.5, yy - 1) - 0.25, BW - m, Math.max(yBottom + 1.5, yy - 1) + 0.25));
+    txt(p.tpYear ?? '', yearCap, m, yBottom, BW - 2 * m);
+    const engrave = engr.length ? this.k(W.CrossSection.union(engr)) : null;
+    if (engrave && engrave.bounds().min[1] < 1) warnings.push('The base text is crowded. Make the base taller or the text shorter.');
+    // block with the slot, text cut 0.6 mm into the front (front = −y, toward you)
+    let block = this.k(this.extrude(this.rect(-BW / 2, -D / 2, BW / 2, D / 2), H));
+    block = this.k(block.subtract(this.extrude(this.rect(-tabW / 2 - fit, -slotT / 2 - (base === 'layers' ? 0 : fit), tabW / 2 + fit, slotT / 2 + (base === 'layers' ? 0 : fit)), slotD + 1, H - slotD)));
+    if (engrave) {
+      const cut = this.k(this.k(this.k(engrave.translate([-BW / 2, 0])).extrude(0.6 + OVERLAP)).rotate([90, 0, 0]));
+      block = this.k(block.subtract(this.k(cut.translate([0, -D / 2 + 0.6, 0]))));
+    }
+    if (base === 'printed') {
+      // printed with the engraved front facing up
+      const pr = this.k(this.k(block.rotate([-90, 0, 0])).translate([0, b.min[1] - slotD - 12 - H / 2, D / 2]));
+      parts.push({ name: 'Base', color: p.colorC ?? '#2b2b2e', m: block, print: pr });
+    } else {
+      parts.push({ name: 'Wooden base', color: '#c8a27a', previewOnly: true, m: block });
+      // laser file: every sheet side by side; middle sheets have the notch; the front one is engraved
+      const n = Math.round(D / sheet);
+      const first = Math.floor((n - k) / 2);
+      const cutLoops: [number, number][][] = [];
+      const gap = 4;
+      // in rows no wider than ~380 mm so the file fits a common laser bed; sheet 1 (top left) is the front
+      const cols = Math.max(1, Math.floor((380 + gap) / (BW + gap)));
+      for (let i = 0; i < n; i++) {
+        const ox = (i % cols) * (BW + gap);
+        const oy = -Math.floor(i / cols) * (H + gap);
+        const notch = i >= first && i < first + k;
+        const x0 = ox + BW / 2 - tabW / 2 - fit, x1 = ox + BW / 2 + tabW / 2 + fit;
+        const loop: [number, number][] = notch
+          ? [[ox, 0], [ox + BW, 0], [ox + BW, H], [x1, H], [x1, H - slotD], [x0, H - slotD], [x0, H], [ox, H]]
+          : [[ox, 0], [ox + BW, 0], [ox + BW, H], [ox, H]];
+        cutLoops.push(loop.map(([x, y]) => [x, y + oy] as [number, number]));
+      }
+      const eng = engrave ? (engrave.toPolygons() as [number, number][][]) : [];
+      this.laser = { cut: cutLoops, guide: [], engrave: eng, size: [BW, H], pieces: n, sheets: n, what: `${n} sheets of ${sheet} mm` };
     }
     return parts;
   }

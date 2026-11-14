@@ -125,7 +125,22 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no te
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
 arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
 concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`),
-terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand).
+terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand), trophy.
+
+## Trophy (`Builder.trophy`, user photos of award trophies; own designs; user has a laser cutter)
+Top piece printed flat, preview standing in the base (rotated 90° about X like the word stand).
+`tpShape` 'stack' ("Upright words"): every text line turned to read upward (CrossSection.rotate(90)
+is CCW), all stretched to the same height, side by side touching (long word = thin column, year =
+fat column), closed by `tpJoin` so it is one piece. 'badge': circle / rounded / shield / bulb
+(`tpSize`) with the text raised (`tpRaise`, colour B), scaled to fit. Foot strip (60 % width,
+flush with the back, `slotT − 2·sdFit` thick) into the base. `tpBase` 'layers' (DEFAULT): wood
+sheets `tpSheet` glued front to back (same count in front of/behind the notch sheets, k =
+round(T/sheet) notch sheets), front sheet engraved with `tpTitle`/`tpSub`/line/`tpYear` (laid out
+with the design font). Laser file comes back as `BuildResult.backing` with `engrave` loops (black
+fill in SVG, ENGRAVE layer in DXF), `what` = "N sheets of t mm"; sheets in rows ≤ 380 mm. The
+Finish step shows "Wooden base (laser)" with the SVG/DXF buttons. 'printed': box with slot and
+the text cut 0.6 mm into the front, printed front-up (colour C). Not bed-split.
+Flower wall art idea has the wooden backing on by default (user: "flower words need a laser backing").
 
 ## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)
 Stacked lines (tight lineSpacing ~1.02) joined into one outline: cs grown by `sdMargin` + bridge

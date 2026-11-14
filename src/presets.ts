@@ -129,6 +129,13 @@ export const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 90, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04, pinText: 'up' },
   },
+  trophy: {
+    label: 'Trophy',
+    blurb: 'An award: stacked words or a badge on top, standing in a wooden base you laser-cut and engrave (or a printed base).',
+    text: 'WINNER\n2025',
+    font: 'archivo',
+    patch: { capHeight: 14, tracking: -0.05, lineSpacing: 1, colorA: '#f26a1b', colorB: '#f6c430' },
+  },
   standee: {
     label: 'Word stand',
     blurb: 'Stacked words in one rounded outline with raised letter lines, standing in a slot stand. A small thank-you gift for a desk.',
@@ -219,12 +226,17 @@ export const SAMPLES: Record<Style, Sample[]> = {
     { name: 'ALOHA', text: 'ALOHA', font: 'archivo', patch: { flCount: 10 } },
     { name: 'LOVE', text: 'LOVE', font: 'archivo', patch: { flCount: 12 } },
     { name: 'Small (120 mm)', text: 'SUN', font: 'archivo', patch: { flCount: 9, flSize: 120 } },
-    { name: 'Wall art: three words', text: 'LOVE HOPE JOY', font: 'archivo', patch: { flLayout: 'row', flCount: 10, flSize: 150, flGap: 20, flDepth: 20 } },
+    { name: 'Wall art: three words', text: 'LOVE HOPE JOY', font: 'archivo', patch: { flLayout: 'row', flCount: 10, flSize: 150, flGap: 20, flDepth: 20, backOn: true, backHoles: 'two' } },
   ],
   arrow: [
     { name: 'Exit', text: 'EXIT', font: 'archivo', patch: { arShape: 'arrow', arDir: 'right', capHeight: 30 } },
     { name: 'Bar sign', text: 'BAR', font: 'archivo', patch: { arShape: 'rect', capHeight: 45 } },
     { name: 'Round badge', text: 'HI', font: 'archivo', patch: { arShape: 'circle', capHeight: 50 } },
+  ],
+  trophy: [
+    { name: 'Winner 2025', text: 'WINNER\n2025', font: 'archivo', patch: {} },
+    { name: 'Idea badge', text: 'BIG\nIDEA', font: 'fredoka', patch: { tpShape: 'badge', tpBadge: 'bulb', tpSize: 90, tpDepth: 6, capHeight: 16, colorA: '#f4f1ea', colorB: '#f6c430', tpTitle: 'INNOVATION AWARD', tpSub: 'Digital team', tpYear: '2025' } },
+    { name: 'Star of the month', text: 'STAR', font: 'archivo', patch: { tpShape: 'badge', tpBadge: 'circle', tpSize: 80, tpDepth: 6, capHeight: 18, colorA: '#26262a', colorB: '#f6c430', tpTitle: 'STAR OF THE MONTH', tpSub: 'Customer team', tpYear: 'MAY 2025' } },
   ],
   standee: [
     { name: 'Thank you for being you', text: 'THANK\nYOU\nFOR\nBEING\nYOU', font: 'fredoka', patch: { capHeight: 14 } },

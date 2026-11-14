@@ -46,6 +46,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['flower', { style: 'flower', text: 'BLOOM', capHeight: 55, flCount: 10, tracking: 0 }, 'archivo'],
   ['arrow-turn', { style: 'arrow', text: 'F\nU\nN', capHeight: 45, tracking: 0, lineSpacing: 1.25 }, 'archivo'],
   ['arrow-plain', { style: 'arrow', text: 'EXIT', arShape: 'arrow', arDir: 'up' }, 'oswald'],
+  ['trophy', { style: 'trophy', text: 'WINNER\n2025', capHeight: 14, tracking: -0.05, lineSpacing: 1 }, 'archivo'],
+  ['trophy-badge', { style: 'trophy', text: 'BIG\nIDEA', tpShape: 'badge', tpBadge: 'bulb', tpDepth: 6, capHeight: 16 }, 'archivo'],
   ['standee', { style: 'standee', text: 'THANK\nYOU\nFOR\nBEING\nYOU', capHeight: 14, lineSpacing: 1.02 }, 'fredoka'],
   ['pyramid', { style: 'pyramid', text: 'C', capHeight: 120 }, 'archivo'],
   ['pyramid-45', { style: 'pyramid', text: 'AB', capHeight: 100, pyRotate: true }, 'archivo'],

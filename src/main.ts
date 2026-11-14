@@ -147,6 +147,25 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  trophy: [
+    { kind: 'heading', key: 'style', label: 'Top' },
+    { kind: 'select', key: 'tpShape', label: 'Top', options: [['stack', 'Upright words'], ['badge', 'Badge']], hint: 'Upright words: every line reads upward, side by side, all the same height (e.g. WINNER and 2025 on two lines).' },
+    { kind: 'select', key: 'tpBadge', label: 'Badge shape', options: [['circle', 'Circle'], ['rounded', 'Rounded square'], ['shield', 'Shield'], ['bulb', 'Light bulb']] },
+    { kind: 'range', key: 'tpSize', label: 'Badge size', min: 40, max: 200, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'tpDepth', label: 'Thickness', min: 3, max: 30, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'tpRaise', label: 'Raised text height', min: 0, max: 6, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'tpJoin', label: 'Join gaps', min: 0, max: 6, step: 0.1, unit: 'mm', hint: 'Fills small gaps between letters so the top prints as one piece.' },
+    { kind: 'heading', key: 'style', label: 'Base' },
+    { kind: 'select', key: 'tpBase', label: 'Base', options: [['layers', 'Laser-cut wood'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Laser-cut wood: sheets glued front to back, the front one engraved. Download the laser file in the Finish step.' },
+    { kind: 'text', key: 'tpTitle', label: 'Engraved title', placeholder: 'e.g. TEAM AWARD' },
+    { kind: 'text', key: 'tpSub', label: 'Engraved line 2', placeholder: 'e.g. Project of the year' },
+    { kind: 'text', key: 'tpYear', label: 'Engraved year', placeholder: 'e.g. 2025' },
+    { kind: 'range', key: 'tpBaseW', label: 'Base width', min: 0, max: 250, step: 1, unit: 'mm', hint: '0 = as wide as the top.' },
+    { kind: 'range', key: 'tpBaseH', label: 'Base height', min: 15, max: 100, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'tpBaseD', label: 'Base depth', min: 15, max: 100, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'tpSheet', label: 'Wood sheet thickness', min: 1.5, max: 10, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'sdFit', label: 'Slot play', min: 0, max: 0.6, step: 0.05, unit: 'mm', hint: 'Extra room in the slot on each side.' },
+  ],
   standee: [
     { kind: 'heading', key: 'style', label: 'Word piece' },
     { kind: 'select', key: 'sdLetters', label: 'Raised on the front', options: [['outline', 'Letter outlines'], ['solid', 'Whole letters']] },
@@ -480,8 +499,10 @@ async function run() {
         renderAxes();
       }
       const bn = $('#backing-note');
-      bn.hidden = !params.backOn;
-      if (params.backOn) {
+      bn.hidden = !params.backOn && !(params.style === 'trophy' && lastBacking);
+      if (params.style === 'trophy' && lastBacking) {
+        bn.textContent = `Base: ${lastBacking.what}, each ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Glue them front to back; the engraved one goes in front. Red = cut, black = engrave.`;
+      } else if (params.backOn) {
         bn.textContent = lastBacking
           ? `Board ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Red lines are cuts, blue lines are the letter guide.`
           : 'Nothing to back yet.';
@@ -543,6 +564,7 @@ function renderParts(parts: Part[]) {
 function sizeKeys(): (keyof Params)[] {
   switch (params.style) {
     case 'flower': return ['flSize'];
+    case 'trophy': return params.tpShape === 'badge' ? ['tpSize'] : ['capHeight'];
     case 'terrace': return ['tgW', 'tgD'];
     case 'mold': return ['moldH', 'moldD'];
     case 'tile': return ['tlSize'];
@@ -665,7 +687,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'sdStand' || c.key === 'sdLetters') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -741,6 +763,10 @@ function renderStyleControls() {
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
+  if (params.style === 'trophy') {
+    const badge = params.tpShape === 'badge';
+    list = list.filter((c) => !((badge && c.key === 'tpJoin') || (!badge && ['tpBadge', 'tpSize', 'tpRaise'].includes(c.key)) || (params.tpBase === 'none' && ['tpTitle', 'tpSub', 'tpYear', 'tpBaseW', 'tpBaseH', 'tpBaseD', 'tpSheet', 'sdFit'].includes(c.key)) || (params.tpBase !== 'layers' && c.key === 'tpSheet')));
+  }
   if (params.style === 'standee') list = list.filter((c) => (params.sdStand !== 'none' || !['sdStandD', 'sdFit'].includes(c.key)) && !(params.sdLetters === 'solid' && c.key === 'sdLine'));
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
@@ -980,9 +1006,17 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = noText() || params.style === 'book';
+  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && params.tpBase !== 'layers');
   const host = $('#backing-controls');
   host.innerHTML = '';
+  if (params.style === 'trophy') {
+    sec.querySelector('h2')!.textContent = 'Wooden base (laser)';
+    $('#dl-backing').hidden = false;
+    $('#dl-backing-dxf').hidden = false;
+    $('#backing-note').hidden = false;
+    return;
+  }
+  sec.querySelector('h2')!.textContent = 'Wooden backing';
   host.appendChild(controlEl({ kind: 'toggle', key: 'backOn', label: 'Make a laser-cut backing', hint: 'A wooden board behind the letters, cut on a laser cutter. Shown under the model in 3D.' }));
   if (params.backOn) BACKING_CONTROLS.filter((c) => c.key !== 'backHoleD' || params.backHoles !== 'none').forEach((c) => host.appendChild(controlEl(c)));
   $('#dl-backing').hidden = !params.backOn;
@@ -1393,6 +1427,7 @@ function renderSwatches() {
   if ($('#colorB-wrap').style.display !== 'none') roles.push(['colorB', $('#colorB-label').textContent || 'Second colour']);
   if (params.style === 'arrow') roles.push(['colorC', 'Letters']);
   if (params.style === 'standee' && params.sdStand !== 'none') roles.push(['colorC', 'Stand']);
+  if (params.style === 'trophy' && params.tpBase === 'printed') roles.push(['colorC', 'Base']);
   $('#swatch-host').innerHTML = roles
     .map(([k, label]) => {
       const cur = String(params[k] ?? '').toLowerCase();
@@ -1594,6 +1629,7 @@ function syncColors() {
     concrete: ['Mold', '—'],
     terrace: ['Planter', '—'],
     standee: ['Word', 'Letter lines'],
+    trophy: ['Trophy', 'Raised text'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1606,6 +1642,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  trophy: `<svg viewBox="0 0 48 32"><circle cx="24" cy="11" r="9" fill="currentColor" opacity=".3"/><path d="M20 12l3-4 2 5 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 19h6v4h-6z" fill="currentColor"/><rect x="12" y="22" width="24" height="8" rx="1" fill="currentColor"/></svg>`,
   standee: `<svg viewBox="0 0 48 32"><path d="M15 3h18a3 3 0 0 1 3 3v18H12V6a3 3 0 0 1 3-3z" fill="currentColor" opacity=".3"/><path d="M16 8h6M16 13h14M16 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="9" y="24" width="30" height="5" rx="2" fill="currentColor"/></svg>`,
   terrace: `<svg viewBox="0 0 48 32"><path d="M3 24c0-6 6-8 12-8s9 3 14 3 16-2 16 5v2H3z" fill="currentColor" opacity=".3"/><path d="M8 22c0-4 4-6 8-6s7 2 7 5M12 20c0-3 2-5 5-5s4 2 4 4M30 22c1-4 4-5 7-5s6 2 6 5M34 21c0-3 2-4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 12l1-4 1 4M38 14l1-3 1 3" stroke="#6f9a3a" stroke-width="1.6" fill="none"/></svg>`,
   concrete: `<svg viewBox="0 0 48 32"><rect x="3" y="6" width="42" height="22" rx="2" fill="currentColor" opacity=".3"/><path d="M9 24V10h7a4 4 0 0 1 0 8H9M24 10v14h7M37 24l5-14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
@@ -2121,11 +2158,11 @@ $('#dl-3mf').addEventListener('click', async () => {
 
 $('#dl-backing').addEventListener('click', () => {
   if (!lastBacking) return;
-  download(toBackingSVG(lastBacking, params.text.trim() || 'Letterforge'), baseName() + '-backing.svg');
+  download(toBackingSVG(lastBacking, params.text.trim() || 'Letterforge'), baseName() + (lastBacking.what ? '-base.svg' : '-backing.svg'));
 });
 $('#dl-backing-dxf').addEventListener('click', async () => {
   if (!lastBacking) return;
-  download(await toBackingDXF(lastBacking), baseName() + '-backing.dxf');
+  download(await toBackingDXF(lastBacking), baseName() + (lastBacking.what ? '-base.dxf' : '-backing.dxf'));
 });
 
 $('#dl-stl').addEventListener('click', async () => {

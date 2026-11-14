@@ -203,7 +203,7 @@ export function standOnOpenEnd<T extends { positions: Float32Array }>(meshes: T[
  * Red hairline = cut (board outline and holes); blue hairline = guide (where the letters go, to
  * engrave or score). Y is flipped so the board reads the same way as the model seen from above.
  */
-export function toBackingSVG(b: { cut: [number, number][][]; guide: [number, number][][] }, title: string): Blob {
+export function toBackingSVG(b: { cut: [number, number][][]; guide: [number, number][][]; engrave?: [number, number][][]; what?: string }, title: string): Blob {
   const all = [...b.cut, ...b.guide].flat();
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of b.cut.flat().length ? b.cut.flat() : all) {
@@ -214,11 +214,12 @@ export function toBackingSVG(b: { cut: [number, number][][]; guide: [number, num
   const h = y1 - y0 + 2 * pad;
   const path = (loops: [number, number][][]) =>
     loops.map((q) => 'M' + q.map(([x, y]) => `${(x - x0 + pad).toFixed(3)},${(y1 - y + pad).toFixed(3)}`).join('L') + 'Z').join('');
-  const esc = title.replace(/[<>&"]/g, '');
+  const esc = title.replace(/[<>&"]/g, '').replace(/\s+/g, ' ');
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(3)}mm" height="${h.toFixed(3)}mm" viewBox="0 0 ${w.toFixed(3)} ${h.toFixed(3)}">
-  <title>${esc} – wooden backing</title>
-  <g id="guide-engrave" fill="none" stroke="#0000ff" stroke-width="0.1">${b.guide.length ? `<path d="${path(b.guide)}"/>` : ''}</g>
+  <title>${esc} – ${b.what ? 'wooden base' : 'wooden backing'}</title>
+  <g id="guide-engrave" fill="none" stroke="#0000ff" stroke-width="0.1">${b.guide.length ? `<path d="${path(b.guide)}"/>` : ''}</g>${b.engrave?.length ? `
+  <g id="engrave" fill="#000000" fill-rule="evenodd" stroke="none"><path d="${path(b.engrave)}"/></g>` : ''}
   <g id="cut" fill="none" stroke="#ff0000" stroke-width="0.1"><path d="${path(b.cut)}"/></g>
 </svg>
 `;
@@ -230,7 +231,7 @@ export function toBackingSVG(b: { cut: [number, number][][]; guide: [number, num
  * GUIDE (blue) = where the letters go. Each outline is one closed polyline. Maker.js is loaded only
  * when this is used.
  */
-export async function toBackingDXF(b: { cut: [number, number][][]; guide: [number, number][][] }): Promise<Blob> {
+export async function toBackingDXF(b: { cut: [number, number][][]; guide: [number, number][][]; engrave?: [number, number][][] }): Promise<Blob> {
   const mod: any = await import('makerjs');
   const mk = mod.default ?? mod;
   const group = (loops: [number, number][][], layer: string) => {
@@ -244,12 +245,12 @@ export async function toBackingDXF(b: { cut: [number, number][][]; guide: [numbe
   };
   const model = {
     units: mk.unitType.Millimeter,
-    models: { cut: group(b.cut, 'CUT'), ...(b.guide.length ? { guide: group(b.guide, 'GUIDE') } : {}) },
+    models: { cut: group(b.cut, 'CUT'), ...(b.guide.length ? { guide: group(b.guide, 'GUIDE') } : {}), ...(b.engrave?.length ? { engrave: group(b.engrave, 'ENGRAVE') } : {}) },
   };
   const dxf: string = mk.exporter.toDXF(model, {
     units: mk.unitType.Millimeter,
     usePOLYLINE: true,
-    layerOptions: { CUT: { color: mk.exporter.colors.red }, GUIDE: { color: mk.exporter.colors.blue } },
+    layerOptions: { CUT: { color: mk.exporter.colors.red }, GUIDE: { color: mk.exporter.colors.blue }, ENGRAVE: { color: mk.exporter.colors.black } },
   });
   return new Blob([dxf], { type: 'application/dxf' });
 }
