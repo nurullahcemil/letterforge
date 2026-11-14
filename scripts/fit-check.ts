@@ -17,6 +17,7 @@ const files: Record<string, string> = {
   oswald: 'oswald/files/oswald-latin-700-normal.woff', fredoka: 'fredoka/files/fredoka-latin-700-normal.woff',
   righteous: 'righteous/files/righteous-latin-400-normal.woff', pacifico: 'pacifico/files/pacifico-latin-400-normal.woff',
   dancing: 'dancing-script/files/dancing-script-latin-700-normal.woff',
+  aref: 'aref-ruqaa/files/aref-ruqaa-arabic-700-normal.woff',
 };
 const fonts: Record<string, any> = {};
 const font = (k: string) => {

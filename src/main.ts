@@ -147,6 +147,20 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  ribbon: [
+    { kind: 'heading', key: 'style', label: 'Ribbons' },
+    { kind: 'range', key: 'rbDepth', label: 'Depth', min: 10, max: 80, step: 1, unit: 'mm', hint: 'How deep the ribbons go, front to back.' },
+    { kind: 'range', key: 'rbSway', label: 'Sway', min: 0, max: 80, step: 5, unit: '%', hint: 'How much the depth rises and falls along each stroke. 0 = all the same depth.' },
+    { kind: 'range', key: 'rbWave', label: 'Sway length', min: 20, max: 300, step: 5, unit: 'mm' },
+    { kind: 'range', key: 'rbWall', label: 'Ribbon thickness', min: 1.2, max: 5, step: 0.1, unit: 'mm', hint: '2–3 mm prints well and lets light through.' },
+    { kind: 'heading', key: 'style', label: 'Base' },
+    { kind: 'select', key: 'rbBase', label: 'Base', options: [['wood', 'Wood block'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Wood block: laser-engrave the front and cut the slot. Download the laser file in the Finish step.' },
+    { kind: 'toggle', key: 'rbLed', label: 'Groove for an LED strip', hint: 'A groove under the slot: the light shines up through the open rail into the ribbons.' },
+    { kind: 'text', key: 'rbText1', label: 'Engraved line 1', placeholder: 'optional' },
+    { kind: 'text', key: 'rbText2', label: 'Engraved line 2', placeholder: 'optional' },
+    { kind: 'range', key: 'rbBaseH', label: 'Base height', min: 15, max: 80, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'sdFit', label: 'Slot play', min: 0, max: 0.6, step: 0.05, unit: 'mm' },
+  ],
   trophy: [
     { kind: 'heading', key: 'style', label: 'Top' },
     { kind: 'select', key: 'tpShape', label: 'Top', options: [['stack', 'Upright words'], ['badge', 'Badge']], hint: 'Upright words: every line reads upward, side by side, all the same height (e.g. WINNER and 2025 on two lines).' },
@@ -499,10 +513,12 @@ async function run() {
         renderAxes();
       }
       const bn = $('#backing-note');
-      bn.hidden = !params.backOn && !(params.style === 'trophy' && lastBacking);
-      if (params.style === 'trophy' && lastBacking) {
+      const standBase = (params.style === 'trophy' || params.style === 'ribbon') && lastBacking?.what;
+      bn.hidden = !params.backOn && !standBase;
+      if (standBase && lastBacking) {
         const sl = lastBacking.slot;
-        bn.textContent = `Base: ${lastBacking.what} (wide × deep × tall). Engrave the front (black). Blue = the block edges, and on the top face the slot to cut${sl ? `: ${fmt(sl[0])} × ${fmt(sl[1])} mm, ${fmt(sl[2])} mm deep` : ''}.`;
+        const lg = lastBacking.led;
+        bn.textContent = `Base: ${lastBacking.what} (wide × deep × tall). Engrave the front (black). Blue = the block edges, and on the top face the slot to cut${sl ? `: ${fmt(sl[0])} × ${fmt(sl[1])} mm, ${fmt(sl[2])} mm deep` : ''}${lg ? `, with a groove for the LED strip in its floor: ${fmt(lg[0])} × ${fmt(lg[1])} mm, ${fmt(lg[2])} mm deeper` : ''}.`;
       } else if (params.backOn) {
         bn.textContent = lastBacking
           ? `Board ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Red lines are cuts, blue lines are the letter guide.`
@@ -565,6 +581,7 @@ function renderParts(parts: Part[]) {
 function sizeKeys(): (keyof Params)[] {
   switch (params.style) {
     case 'flower': return ['flSize'];
+    case 'ribbon': return ['capHeight'];
     case 'trophy': return params.tpShape === 'badge' ? ['tpSize'] : ['capHeight'];
     case 'terrace': return ['tgW', 'tgD'];
     case 'mold': return ['moldH', 'moldD'];
@@ -688,7 +705,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'pinFrame' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'pinFrame' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase' || c.key === 'rbBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -765,6 +782,7 @@ function renderStyleControls() {
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'pins' && !params.pinFrame) list = list.filter((c) => c.key !== 'pinFrameH');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
+  if (params.style === 'ribbon' && params.rbBase === 'none') list = list.filter((c) => !['rbLed', 'rbText1', 'rbText2', 'rbBaseH', 'sdFit'].includes(c.key));
   if (params.style === 'trophy') {
     const badge = params.tpShape === 'badge';
     list = list.filter((c) => !((badge && c.key === 'tpJoin') || (!badge && ['tpBadge', 'tpSize', 'tpRaise'].includes(c.key)) || (params.tpBase === 'none' && ['tpTitle', 'tpSub', 'tpYear', 'tpBaseW', 'tpBaseH', 'tpBaseD', 'sdFit'].includes(c.key))));
@@ -1008,10 +1026,10 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none'));
+  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none')) || (params.style === 'ribbon' && params.rbBase !== 'wood');
   const host = $('#backing-controls');
   host.innerHTML = '';
-  if (params.style === 'trophy') {
+  if (params.style === 'trophy' || params.style === 'ribbon') {
     sec.querySelector('h2')!.textContent = 'Wooden base (laser)';
     $('#dl-backing').hidden = false;
     $('#dl-backing-dxf').hidden = false;
@@ -1430,6 +1448,7 @@ function renderSwatches() {
   if (params.style === 'arrow') roles.push(['colorC', 'Letters']);
   if (params.style === 'standee' && params.sdStand !== 'none') roles.push(['colorC', 'Stand']);
   if (params.style === 'trophy' && params.tpBase === 'printed') roles.push(['colorC', 'Base']);
+  if (params.style === 'ribbon' && params.rbBase === 'printed') roles.push(['colorC', 'Base']);
   $('#swatch-host').innerHTML = roles
     .map(([k, label]) => {
       const cur = String(params[k] ?? '').toLowerCase();
@@ -1632,6 +1651,7 @@ function syncColors() {
     terrace: ['Planter', '—'],
     standee: ['Word', 'Letter lines'],
     trophy: ['Trophy', 'Raised text'],
+    ribbon: ['Ribbons', '—'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1644,6 +1664,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  ribbon: `<svg viewBox="0 0 48 32"><path d="M6 22c4-14 14-14 16-6s-8 10-6 2 14-14 20-6-4 12-10 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><rect x="8" y="26" width="32" height="4" rx="1" fill="currentColor" opacity=".5"/></svg>`,
   trophy: `<svg viewBox="0 0 48 32"><circle cx="24" cy="11" r="9" fill="currentColor" opacity=".3"/><path d="M20 12l3-4 2 5 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 19h6v4h-6z" fill="currentColor"/><rect x="12" y="22" width="24" height="8" rx="1" fill="currentColor"/></svg>`,
   standee: `<svg viewBox="0 0 48 32"><path d="M15 3h18a3 3 0 0 1 3 3v18H12V6a3 3 0 0 1 3-3z" fill="currentColor" opacity=".3"/><path d="M16 8h6M16 13h14M16 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="9" y="24" width="30" height="5" rx="2" fill="currentColor"/></svg>`,
   terrace: `<svg viewBox="0 0 48 32"><path d="M3 24c0-6 6-8 12-8s9 3 14 3 16-2 16 5v2H3z" fill="currentColor" opacity=".3"/><path d="M8 22c0-4 4-6 8-6s7 2 7 5M12 20c0-3 2-5 5-5s4 2 4 4M30 22c1-4 4-5 7-5s6 2 6 5M34 21c0-3 2-4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 12l1-4 1 4M38 14l1-3 1 3" stroke="#6f9a3a" stroke-width="1.6" fill="none"/></svg>`,

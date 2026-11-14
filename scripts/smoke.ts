@@ -14,6 +14,7 @@ const fonts = {
   archivo: 'node_modules/@fontsource/archivo-black/files/archivo-black-latin-400-normal.woff',
   pacifico: 'node_modules/@fontsource/pacifico/files/pacifico-latin-400-normal.woff',
   dancing: 'node_modules/@fontsource/dancing-script/files/dancing-script-latin-700-normal.woff',
+  aref: 'node_modules/@fontsource/aref-ruqaa/files/aref-ruqaa-arabic-700-normal.woff',
   fredoka: 'node_modules/@fontsource/fredoka/files/fredoka-latin-700-normal.woff',
   oswald: 'node_modules/@fontsource/oswald/files/oswald-latin-700-normal.woff',
 };
@@ -46,6 +47,8 @@ const cases: [string, Partial<Params>, string][] = [
   ['flower', { style: 'flower', text: 'BLOOM', capHeight: 55, flCount: 10, tracking: 0 }, 'archivo'],
   ['arrow-turn', { style: 'arrow', text: 'F\nU\nN', capHeight: 45, tracking: 0, lineSpacing: 1.25 }, 'archivo'],
   ['arrow-plain', { style: 'arrow', text: 'EXIT', arShape: 'arrow', arDir: 'up' }, 'oswald'],
+  ['ribbon', { style: 'ribbon', text: 'Love', capHeight: 70 }, 'dancing'],
+  ['ribbon-ar', { style: 'ribbon', text: 'سلام', capHeight: 55 }, 'aref'],
   ['trophy', { style: 'trophy', text: 'WINNER\n2025', capHeight: 14, tracking: -0.05, lineSpacing: 1 }, 'archivo'],
   ['trophy-badge', { style: 'trophy', text: 'BIG\nIDEA', tpShape: 'badge', tpBadge: 'bulb', tpDepth: 6, capHeight: 16 }, 'archivo'],
   ['standee', { style: 'standee', text: 'THANK\nYOU\nFOR\nBEING\nYOU', capHeight: 14, lineSpacing: 1.02 }, 'fredoka'],

@@ -4,6 +4,8 @@ import oswald from '@fontsource/oswald/files/oswald-latin-700-normal.woff?url';
 import fredoka from '@fontsource/fredoka/files/fredoka-latin-700-normal.woff?url';
 import righteous from '@fontsource/righteous/files/righteous-latin-400-normal.woff?url';
 import dancing from '@fontsource/dancing-script/files/dancing-script-latin-700-normal.woff?url';
+import aref from '@fontsource/aref-ruqaa/files/aref-ruqaa-arabic-700-normal.woff?url';
+import arefLatin from '@fontsource/aref-ruqaa/files/aref-ruqaa-latin-700-normal.woff?url';
 import pacifico from '@fontsource/pacifico/files/pacifico-latin-400-normal.woff?url';
 
 import archivoExt from '@fontsource/archivo-black/files/archivo-black-latin-ext-400-normal.woff?url';
@@ -31,4 +33,6 @@ export const FONTS: FontDef[] = [
   { key: 'righteous', label: 'Righteous', css: 'Righteous', url: righteous, extUrl: righteousExt },
   { key: 'pacifico', label: 'Pacifico (script)', css: 'Pacifico', url: pacifico, extUrl: pacificoExt },
   { key: 'dancing', label: 'Dancing Script (script)', css: 'Dancing Script', url: dancing, extUrl: dancingExt },
+  // Arabic calligraphy (Ruqaa); the latin file fills in for Latin letters
+  { key: 'aref', label: 'Aref Ruqaa (Arabic)', css: 'Aref Ruqaa', url: aref, extUrl: arefLatin },
 ];

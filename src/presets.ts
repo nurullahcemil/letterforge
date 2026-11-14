@@ -129,6 +129,13 @@ export const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 90, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04, pinText: 'up' },
   },
+  ribbon: {
+    label: 'Ribbon letters',
+    blurb: 'A word in script or Arabic calligraphy made of thin, deep ribbons that sway front to back, standing in a wooden base with room for an LED strip.',
+    text: 'Love',
+    font: 'dancing',
+    patch: { capHeight: 70, tracking: 0, colorA: '#efe4d2' },
+  },
   trophy: {
     label: 'Trophy',
     blurb: 'An award: stacked words or a badge on top, standing in a wooden base you laser-cut and engrave (or a printed base).',
@@ -232,6 +239,11 @@ export const SAMPLES: Record<Style, Sample[]> = {
     { name: 'Exit', text: 'EXIT', font: 'archivo', patch: { arShape: 'arrow', arDir: 'right', capHeight: 30 } },
     { name: 'Bar sign', text: 'BAR', font: 'archivo', patch: { arShape: 'rect', capHeight: 45 } },
     { name: 'Round badge', text: 'HI', font: 'archivo', patch: { arShape: 'circle', capHeight: 50 } },
+  ],
+  ribbon: [
+    { name: 'Love', text: 'Love', font: 'dancing', patch: {} },
+    { name: 'Salam (Arabic)', text: 'سلام', font: 'aref', patch: { capHeight: 55 } },
+    { name: 'Home', text: 'Home', font: 'pacifico', patch: { capHeight: 60, rbText1: 'OUR HOME' } },
   ],
   trophy: [
     { name: 'Winner 2025', text: 'WINNER\n2025', font: 'archivo', patch: {} },
