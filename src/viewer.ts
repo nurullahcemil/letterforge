@@ -278,7 +278,12 @@ export class Viewer {
     this.sun.shadow.camera.far = 3000;
     this.sun.position.set(-radius * 1.2, radius * 3 + 200, radius * 1.5 + 100);
     this.sun.shadow.camera.updateProjectionMatrix();
-    if (refit || this.lastRadius === 0 || radius > this.lastRadius * 1.6 || radius < this.lastRadius * 0.5) {
+    const fitR = Math.max(radius, size.z * 0.62);
+    if (this.lockFrame) {
+      // Size step: hold the camera on the bed so the model visibly grows and shrinks against it;
+      // only pull back if the model no longer fits in the frame.
+      if (fitR > this.frameR * 1.02) { this.lastFitR = fitR; this.frameScale(); }
+    } else if (refit || this.lastRadius === 0 || radius > this.lastRadius * 1.6 || radius < this.lastRadius * 0.5) {
       // tall, narrow models (candle molds) need more room than their width suggests
       this.fit(Math.max(radius, size.z * 0.62), size.z);
     }
@@ -308,6 +313,28 @@ export class Viewer {
     this.fit();
   }
   private lastFitR = 0;
+  private lockFrame = false;
+  private frameR = 0;
+  /** Size step (user: "I can not get the sense of how big it is"): frame the whole bed from the
+   *  current camera direction and keep the camera still while the size changes. */
+  setScaleFrame(on: boolean) {
+    if (on === this.lockFrame) return;
+    this.lockFrame = on;
+    if (on) this.frameScale();
+  }
+  private frameScale() {
+    const r = Math.max(this.bedSize * 0.6, this.lastFitR || this.lastRadius);
+    this.frameR = r;
+    const dist = (r / Math.tan((this.camera.fov * Math.PI) / 360)) * 1.15 + 10;
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
+    this.controls.target.set(0, 0, 0);
+    this.camera.position.copy(dir.multiplyScalar(dist));
+    this.camera.near = Math.max(0.5, dist / 200);
+    this.camera.far = dist * 20;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.needsRender = true;
+  }
 
   fit(radius = this.lastFitR || this.lastRadius, height = this.lastHeight) {
     this.lastHeight = height;

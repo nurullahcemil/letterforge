@@ -61,7 +61,10 @@ Regression check used so far: run smoke before and after a change and diff the
   hides the others (`.tab-off`), clickable step bar = jump, sticky Back/Next (last = Download 3MF).
   No-text styles skip Words/Font; Size is skipped when the size section is hidden. New designs
   start at Idea, saved designs open at Shape. Steps do NOT move the camera (user: keep
-  the view, or where I moved it); it starts at the 3/4 view from above.
+  the view, or where I moved it); it starts at the 3/4 view from above. Exception: on Size,
+  `viewer.setScaleFrame(true)` frames the whole bed from the current direction and holds the
+  camera (no auto-refit) so the model visibly grows/shrinks against the bed (user: "I can not get
+  the sense of how big it is"); it only pulls back if the model outgrows the frame.
 - Canvas: summary pills (style · font · size · plates · colours, `renderSummary`); a size handle at
   the model's right edge on Shape/Size steps (`viewer.screenBox`, drag scales `sizeKeys()` of the
   style); click a part in the parts list to open its colour picker.

@@ -1409,6 +1409,7 @@ function renderStepbar() {
   back.textContent = at > 0 ? `Back: ${steps[at - 1].label}` : 'Cancel';
   next.textContent = at < steps.length - 1 ? `Next: ${steps[at + 1].label}` : 'Download 3MF';
   next.classList.toggle('last', at === steps.length - 1);
+  viewer.setScaleFrame(currentStep === 'size');
 }
 /** Steps never move the camera: the view stays where the user left it (user asked). */
 function showStep(id: StepId) {
