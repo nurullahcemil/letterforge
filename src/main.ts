@@ -244,6 +244,7 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Base and frame' },
     { kind: 'range', key: 'pinPlate', label: 'Plate thickness', min: 1, max: 10, step: 0.2, unit: 'mm' },
     { kind: 'toggle', key: 'pinFrame', label: 'Frame around' },
+    { kind: 'range', key: 'pinFrameH', label: 'Frame height', min: 0, max: 150, step: 0.5, unit: 'mm', hint: 'Above the plate. 0 = just above the tallest pins. Lower it to let the pins stand out.' },
     { kind: 'heading', key: 'style', label: 'Two colours' },
     { kind: 'toggle', key: 'pinSeparate', label: 'Print pins separately', hint: 'The base gets a hole for every pin, and the pins come as their own piece, so you can print them in another colour and push them in.' },
     { kind: 'range', key: 'pinSocket', label: 'Hole depth', min: 1, max: 10, step: 0.5, unit: 'mm' },
@@ -687,7 +688,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'pinFrame' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -762,6 +763,7 @@ function renderStyleControls() {
   if (params.style === 'pins' && !params.pinSeparate) list = list.filter((c) => c.key !== 'pinSocket' && c.key !== 'pinFit');
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
+  if (params.style === 'pins' && !params.pinFrame) list = list.filter((c) => c.key !== 'pinFrameH');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
   if (params.style === 'trophy') {
     const badge = params.tpShape === 'badge';

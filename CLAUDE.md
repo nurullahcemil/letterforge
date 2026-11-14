@@ -283,7 +283,8 @@ no overlap between halves and candle; must end "all clean").
 - pins extras: `pinLayout` grid | rings (circles, every other turned half a step), `pinHole` empty
   middle, `pinMode` 'halo' (tall ring just outside the hole, fading out), `pinTip` flat | round
   (revolved dome) | tube (revolved, hole from the top). User photos: yellow round-top M, framed
-  ring of tubes.
+  ring of tubes. `pinFrameH` = frame height above the plate (0 = auto: tallest pin + 4); may be lower
+  than the pins (user wanted a low frame).
 - lines (`Builder.lineLetters`, "Line letters", user photo of a fin alphabet): one square tile per
   character (rows = text lines, wrapped at `lnCols`); letter scaled into the tile; inside: rings
   `letter.offset(−k·pitch)` minus a `lnFin` inset; outside: straight bars at 0/45/90/135° or

@@ -107,6 +107,8 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   pinW?: number;
   pinH?: number;
   pinFrame?: boolean;
+  /** Pin art frame height above the plate (mm); 0 = auto (4 mm above the tallest pin). May be lower than the pins. */
+  pinFrameH?: number;
   /** Pin art with waves/ripples: your text shows as taller ('up') or shorter ('down') pins. */
   pinText?: 'none' | 'up' | 'down';
   /** Square grid or circles around the middle; empty hole in the middle (mm); pin tops. */
@@ -1357,7 +1359,8 @@ export class Builder {
     if (p.pinFrame) {
       const t = 3;
       plate = this.k(this.rect(x0 - t, y0 - t, x1 + t, y1 + t).subtract(this.rect(x0, y0, x1, y1)));
-      const frame = this.extrude(plate, plateT + hMax + 4);
+      const fh = (p.pinFrameH ?? 0) > 0 ? clampN(p.pinFrameH!, 0.4, 300) : hMax + 4;
+      const frame = this.extrude(plate, plateT + fh);
       // printed apart, the frame is part of the base (one piece in one colour)
       if (sep) parts[0].m = this.k(parts[0].m!.add(frame));
       else parts.push({ name: 'Frame', color: p.colorB, m: frame });

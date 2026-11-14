@@ -224,6 +224,7 @@ export const DEFAULTS: Params = {
   pinW: 200,
   pinH: 200,
   pinFrame: true,
+  pinFrameH: 0,
   pinText: 'none',
   pinSeparate: true,
   pinLayout: 'grid',
