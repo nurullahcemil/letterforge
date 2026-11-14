@@ -147,6 +147,24 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  dish: [
+    { kind: 'heading', key: 'style', label: 'Dish' },
+    { kind: 'range', key: 'dsSize', label: 'Size', min: 80, max: 250, step: 1, unit: 'mm', hint: 'Across the rib points.' },
+    { kind: 'range', key: 'dsHeight', label: 'Height', min: 10, max: 90, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'dsRibs', label: 'Ribs', min: 8, max: 48, step: 1 },
+    { kind: 'range', key: 'dsDepth', label: 'Rib depth', min: 0, max: 15, step: 0.5, unit: 'mm', hint: 'How deep the hollows between the ribs are.' },
+    { kind: 'range', key: 'dsScallop', label: 'Pointed edge', min: 0, max: 12, step: 0.5, unit: '%', hint: 'How much the rim pulls in between the ribs.' },
+    { kind: 'range', key: 'dsSwirl', label: 'Swirl', min: -90, max: 90, step: 5, unit: '°', hint: 'Turns the ribs as they go out.' },
+    { kind: 'range', key: 'dsWobble', label: 'Hand-made look', min: 0, max: 100, step: 5, unit: '%', hint: 'Lets the ribs wander a little.' },
+    { kind: 'range', key: 'dsSeed', label: 'Variation', min: 1, max: 99, step: 1, hint: 'Shuffles the wobble and the veins.' },
+    { kind: 'heading', key: 'style', label: 'Middle' },
+    { kind: 'select', key: 'dsCentre', label: 'Middle', options: [['veins', 'Veins'], ['raised', 'Raised word'], ['cut', 'Cut-in word'], ['plain', 'Plain']], hint: 'A word goes in the middle, as big as fits. Type it in the Words step.' },
+    { kind: 'range', key: 'dsWell', label: 'Middle size', min: 15, max: 55, step: 1, unit: '%' },
+    { kind: 'range', key: 'dsRaise', label: 'Raised / cut depth', min: 0.4, max: 4, step: 0.1, unit: 'mm' },
+    { kind: 'range', key: 'dsWellDepth', label: 'Middle sits lower by', min: 0, max: 10, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'dsWall', label: 'Thinnest wall', min: 1.2, max: 6, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'dsFloor', label: 'Floor thickness', min: 1.6, max: 8, step: 0.2, unit: 'mm' },
+  ],
   sculpture: [
     { kind: 'heading', key: 'style', label: 'Shape' },
     { kind: 'select', key: 'scShape', label: 'Shape', options: [['infinity', 'Infinity'], ['trefoil', 'Knot'], ['lissajous', 'Wave loops'], ['twist', 'Twisted ring']] },
@@ -356,7 +374,7 @@ const params: Params = { ...defaults };
 /** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
 /** Pin art with the pins printed apart from the base (separate files/objects). */
 const pinsApart = () => params.style === 'pins' && !!params.pinSeparate;
-const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace' || params.style === 'sculpture';
+const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace' || params.style === 'sculpture' || (params.style === 'dish' && params.dsCentre !== 'raised' && params.dsCentre !== 'cut');
 let fontKey = 'archivo';
 let lastSize: [number, number, number] = [0, 0, 0];
 let textTouched = false;
@@ -584,6 +602,7 @@ function sizeKeys(): (keyof Params)[] {
   switch (params.style) {
     case 'flower': return ['flSize'];
     case 'sculpture': return ['scSize'];
+    case 'dish': return ['dsSize', 'dsHeight'];
     case 'trophy': return params.tpShape === 'badge' ? ['tpSize'] : ['capHeight'];
     case 'terrace': return ['tgW', 'tgD'];
     case 'mold': return ['moldH', 'moldD'];
@@ -730,7 +749,7 @@ const ADVANCED = new Set<string>([
   'lampWall', 'hubSpokes', 'jointD', 'jointFit', 'socketD', 'lampSeed', 'baseFeet', 'baseRound', 'baseTaper', 'lampTexH', 'shCorner',
   'moldWall', 'moldWick', 'moldPour', 'moldPins', 'moldBolts', 'moldBands', 'moldZig',
   'arRound', 'arBoard', 'arShadowT', 'arLetterT', 'pyBase', 'pinSocket', 'pinFit', 'pinPlate', 'pinSoft', 'pinPad',
-  'lnBase', 'lnFin', 'ccFloor', 'ccWall', 'ccHoleD', 'tgWall', 'tgFloor', 'tgWobble', 'tlWall', 'tlDraft',
+  'lnBase', 'lnFin', 'ccFloor', 'ccWall', 'ccHoleD', 'tgWall', 'tgFloor', 'tgWobble', 'tlWall', 'tlDraft', 'dsWall', 'dsFloor', 'dsWellDepth', 'dsSeed',
 ]);
 let showAdvanced = false;
 
@@ -784,6 +803,7 @@ function renderStyleControls() {
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'pins' && !params.pinFrame) list = list.filter((c) => c.key !== 'pinFrameH');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
+  if (params.style === 'dish' && (params.dsCentre ?? 'veins') === 'plain') list = list.filter((c) => c.key !== 'dsRaise');
   if (params.style === 'sculpture' && params.scBase === 'none') list = list.filter((c) => !['scLed', 'scText1', 'scText2', 'scBaseH', 'sdFit'].includes(c.key));
   if (params.style === 'trophy') {
     const badge = params.tpShape === 'badge';
@@ -807,7 +827,7 @@ function renderStyleControls() {
   $('#text-section').hidden = isLamp;
   // no text, no font: the Font tab goes away
   renderStepbar();
-  $('#size-section').hidden = isLamp || params.style === 'flower' || params.style === 'lines'; // the flower has its own Size
+  $('#size-section').hidden = isLamp || params.style === 'flower' || params.style === 'lines' || params.style === 'dish'; // the flower has its own Size
   // basic settings first; the rarely needed ones sit behind "More options"
   const adv = list.filter((c) => c.kind !== 'heading' && ADVANCED.has(c.key as string));
   let basic = list.filter((c) => !adv.includes(c));
@@ -1028,7 +1048,7 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = (noText() && params.style !== 'sculpture') || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none')) || (params.style === 'sculpture' && params.scBase !== 'wood');
+  sec.hidden = (noText() && params.style !== 'sculpture') || params.style === 'book' || params.style === 'dish' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none')) || (params.style === 'sculpture' && params.scBase !== 'wood');
   const host = $('#backing-controls');
   host.innerHTML = '';
   if (params.style === 'trophy' || params.style === 'sculpture') {
@@ -1654,6 +1674,7 @@ function syncColors() {
     standee: ['Word', 'Letter lines'],
     trophy: ['Trophy', 'Raised text'],
     sculpture: ['Sculpture', '—'],
+    dish: ['Dish', 'Raised word'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1661,11 +1682,12 @@ function syncColors() {
   $('#colorB-label').textContent = b;
   ($('#colorC') as HTMLInputElement).value = params.colorC ?? '#f6efe4';
   $('#colorC-wrap').style.display = params.style === 'arrow' ? '' : 'none';
-  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
+  $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(params.style) || (params.style === 'stepped' && !params.spBase) || (params.style === 'dish' && params.dsCentre !== 'raised') ? 'none' : '';
   renderSwatches();
 }
 
 const ICONS: Record<Style, string> = {
+  dish: `<svg viewBox="0 0 48 32"><g fill="none" stroke="currentColor" stroke-width="1.6"><path d="M24 3l3 5 6-2-1 6 6 1-4 5 4 5-6 1 1 6-6-2-3 5-3-5-6 2 1-6-6-1 4-5-4-5 6-1-1-6 6 2z" fill="currentColor" opacity=".3"/><circle cx="24" cy="16" r="5"/><path d="M24 11V4M29 16h8M24 21v8M19 16h-8M27.5 12.5l5-5M27.5 19.5l5 5M20.5 19.5l-5 5M20.5 12.5l-5-5" opacity=".8"/></g></svg>`,
   sculpture: `<svg viewBox="0 0 48 32"><path d="M8 14c0-8 12-8 16 0s16 8 16 0-12-8-16 0-16 8-16 0z" fill="none" stroke="currentColor" stroke-width="3"/><rect x="16" y="25" width="16" height="5" rx="1" fill="currentColor" opacity=".5"/></svg>`,
   trophy: `<svg viewBox="0 0 48 32"><circle cx="24" cy="11" r="9" fill="currentColor" opacity=".3"/><path d="M20 12l3-4 2 5 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 19h6v4h-6z" fill="currentColor"/><rect x="12" y="22" width="24" height="8" rx="1" fill="currentColor"/></svg>`,
   standee: `<svg viewBox="0 0 48 32"><path d="M15 3h18a3 3 0 0 1 3 3v18H12V6a3 3 0 0 1 3-3z" fill="currentColor" opacity=".3"/><path d="M16 8h6M16 13h14M16 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="9" y="24" width="30" height="5" rx="2" fill="currentColor"/></svg>`,

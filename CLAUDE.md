@@ -126,7 +126,7 @@ mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (let
 arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
 concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`),
 terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand), trophy, sculpture (no text:
-ribbon sculpture, `src/sculpture.ts`).
+ribbon sculpture, `src/sculpture.ts`), dish (ribbed dish, `src/dish.ts`).
 
 ## Trophy (`Builder.trophy`, user photos of award trophies; own designs; user has a laser cutter)
 Top piece printed flat, preview standing in the base (rotated 90° about X like the word stand).
@@ -157,6 +157,19 @@ check (points far apart along the loop must stay > band size apart) warns. Feet:
 (two feet on the infinity were tried and the user went back to one) into the stand base (`woodBase`, shared with the trophy: wood block laser file or printed;
 slot may sit off centre via `slotAt`, base centred under the sculpture; LED groove in front).
 Printed standing with tree supports (note shown). Pictures: 3/4 view.
+
+## Ribbed dish (`src/dish.ts`, `Builder.dish`; user photo of a fluted dry-brushed bowl; own design)
+One closed mesh on a (row = distance out, column = point around) grid; columns follow the ribs
+(swirl + seeded wobble) so every crest sits on a mesh line and stays sharp. Top: flat well
+(`dsWell` % of radius, floor `dsFloor`), 45° step up `dsWellDepth`, bowl rising to `dsHeight`,
+hollows `dsDepth` with profile sin(πφ)^0.75 (sharp crest, round hollow) fading in from the well;
+rim points by pulling r in between ribs (`dsScallop`, grows with s², so the well stays round).
+Underside per column: g(s) = max(0, s + min over s'≥s of (top − dsWall − s')) → flat foot, never
+flatter than 45°, so NO supports (check: `npx tsx scripts/dish-check.ts`, must say all clean).
+Middle `dsCentre`: veins (seeded branching random walk, raised, merged into the dish), raised word
+(own part, colour B), cut-in word, plain. The word fills the well (capHeight ignored; size section
+hidden). Text steps (Words/Font) only show for the word middles (noText() is dynamic for dish).
+Paint tip shown as a note (user asked about painting: dry-brush black prints). Pictures: 3/4 view.
 
 ## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)
 Stacked lines (tight lineSpacing ~1.02) joined into one outline: cs grown by `sdMargin` + bridge
