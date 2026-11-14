@@ -110,6 +110,11 @@ Regression check used so far: run smoke before and after a change and diff the
   shape"): own design — rounded sheet (print area + edge), two lift tabs at the front (+z), bevelled
   metal body, CanvasTexture coating (speckle, 10 mm grid, 50 mm lines, print-area corner marks)
   on a ShapeGeometry top; dark/light versions. No logos or branding.
+- Idea pictures (`__letterforge.thumb`) hide the plate (`viewer.showBed(false)`), trim to the
+  object and centre it on a clear background, so picture cards match the live word cards in both
+  themes (user: "something is not matching"). Only no-text styles use them:
+  `ONLY=lamp,mold,tile,terrace node scripts/render-ideas.mjs`. Colour dots have a thin ring
+  (white dots vanished on light); very light letter colours get `.live.pale` outline on light.
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),

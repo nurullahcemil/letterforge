@@ -17,9 +17,12 @@ for (const line of block.split('\n')) {
   if (cur && /^\s+\{ name: /.test(line)) counts[cur]++;
 }
 const b = await chromium.launch();
+// ONLY=a,b limits the styles. Pictures have no plate and a clear background (work in both themes).
+const only = process.env.ONLY ? process.env.ONLY.split(',') : null;
 const pg = await b.newPage({ viewport: { width: 900, height: 640 } });
 pg.on('pageerror', (e) => console.log('page error', e.message));
 for (const [style, n] of Object.entries(counts)) {
+  if (only && !only.includes(style)) continue;
   for (let i = 0; i < n; i++) {
     await pg.goto(`${base}#/new/${style}/${i}`);
     await pg.reload();

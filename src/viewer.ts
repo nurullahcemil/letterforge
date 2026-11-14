@@ -201,6 +201,11 @@ export class Viewer {
     this.needsRender = true;
   }
 
+  /** Hide the plate (and its shadow catcher), e.g. for idea pictures on a clear background. */
+  showBed(on: boolean) {
+    this.bed.visible = on;
+    this.needsRender = true;
+  }
   private theme: 'dark' | 'light' = 'dark';
   /** Light or dark plate to match the page theme. */
   setTheme(t: 'dark' | 'light') {

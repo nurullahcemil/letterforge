@@ -372,19 +372,33 @@ const viewer = new Viewer($('#viewport'));
 (window as any).__letterforge = {
   viewer, params, rebuild: () => { refreshUI(); schedule(true); }, builds: 0,
   /** Picture of the model from the 3/4 view as a small WebP (used by scripts/render-ideas.mjs). */
+  /** Picture of the model from the 3/4 view as a small WebP (used by scripts/render-ideas.mjs):
+   *  the object alone on a clear background (no plate), trimmed and centred, so picture cards
+   *  look like the live word cards in both themes. */
   thumb: (w = 480, h = 320) => new Promise<string>((resolve) => {
     viewer.setView('angle');
     const img = new Image();
     img.onload = () => {
+      const src = document.createElement('canvas');
+      src.width = img.width; src.height = img.height;
+      const sg = src.getContext('2d')!;
+      sg.drawImage(img, 0, 0);
+      const d = sg.getImageData(0, 0, src.width, src.height).data;
+      let x0 = src.width, y0 = src.height, x1 = 0, y1 = 0;
+      for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) {
+        if (d[(y * src.width + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      }
+      if (x1 < x0) { x0 = 0; y0 = 0; x1 = src.width - 1; y1 = src.height - 1; }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
       const c = document.createElement('canvas');
       c.width = w; c.height = h;
-      const g = c.getContext('2d')!;
-      // cover-crop the snapshot into w × h
-      const s = Math.max(w / img.width, h / img.height);
-      g.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
-      resolve(c.toDataURL('image/webp', 0.82));
+      const s = Math.min((w * 0.84) / bw, (h * 0.84) / bh);
+      c.getContext('2d')!.drawImage(src, x0, y0, bw, bh, (w - bw * s) / 2, (h - bh * s) / 2, bw * s, bh * s);
+      resolve(c.toDataURL('image/webp', 0.86));
     };
+    viewer.showBed(false);
     img.src = viewer.snapshotFitted();
+    viewer.showBed(true);
   }),
 };
 viewer.setBed(params.bedSize);
@@ -1468,6 +1482,11 @@ function applyIdea(i: number) {
 
 /** Picture of an idea (made by scripts/render-ideas.mjs); 'start' = the style's starting design. */
 const ideaThumb = (style: Style, i: number | 'start') => `${import.meta.env.BASE_URL}ideas/${style}-${i}.webp`;
+/** Very light letter colours need an outline to read on the light theme's cards. */
+const pale = (hex: string) => {
+  const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.72;
+};
 
 /** Ready-made ideas for the current style: real words that fit the bed. */
 function renderIdeas() {
@@ -1480,7 +1499,7 @@ function renderIdeas() {
       const live = !NO_TEXT_STYLES.has(params.style) && text !== '';
       const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[params.style].font))?.css ?? 'Archivo Black';
       const pic = live
-        ? `<span class="live-box live-wrap"><span class="live" style="${liveLook(params.style, text, font, patch.colorA ?? DEFAULTS.colorA, patch.colorB ?? DEFAULTS.colorB, 120)}">${escapeHtml(text)}</span></span>`
+        ? `<span class="live-box live-wrap"><span class="live${pale(patch.colorA ?? DEFAULTS.colorA) ? ' pale' : ''}" style="${liveLook(params.style, text, font, patch.colorA ?? DEFAULTS.colorA, patch.colorB ?? DEFAULTS.colorB, 120)}">${escapeHtml(text)}</span></span>`
         : `<img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()">`;
       return `<button type="button" class="idea" data-i="${i}">${pic}<span>${escapeHtml(d.name)}</span></button>`;
     })
@@ -2365,7 +2384,7 @@ function renderHomeIdeas() {
       const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[s].font))?.css ?? 'Archivo Black';
       const twoColour = !['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(s);
       const pic = live
-        ? `<span class="live" style="${liveLook(s, shown, font, a, b, 220)}">${escapeHtml(shown)}</span>`
+        ? `<span class="live${pale(s === 'keychain' ? b : a) ? ' pale' : ''}" style="${liveLook(s, shown, font, a, b, 220)}">${escapeHtml(shown)}</span>`
         : `<img src="${ideaThumb(s, i)}" alt="" loading="lazy">`;
       return `<a class="idea-card" href="#/new/${s}/${i}${live ? q : ''}"><span class="th"><span class="kind">${escapeHtml(PRESETS[s].label)}</span>${pic}</span><span class="meta"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></span><span class="dots" aria-label="${twoColour ? 2 : 1} colours"><i style="background:${a}"></i>${twoColour ? `<i style="background:${b}"></i>` : ''}</span></span></a>`;
     })
