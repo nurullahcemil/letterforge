@@ -125,7 +125,16 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no te
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
 arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
 concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`),
-terrace (no text: terrace planter, `src/terrace.ts`).
+terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand).
+
+## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)
+Stacked lines (tight lineSpacing ~1.02) joined into one outline: cs grown by `sdMargin` + bridge
+(0.25·cap), shrunk back, inner holes dropped (same trick as the backing). Flat back `sdThick`;
+raised on the front (`sdRaise`, colour B): `sdLetters` 'outline' = ring of every letter (`sdLine`
+wide) + the outline edge, or 'solid' = whole letters. Foot strip (60 % of the width, `slotD` =
+1.2·T, 3–6 mm) slots into a printed stand (`sdStand`, colour C, rounded box H 8, depth `sdStandD`,
+slot = tab + `sdFit` each side). Preview: standing in the stand (rotated 90° about X); files use
+`print` = both pieces lying flat, stand in front. Not bed-split. Pictures use the 3/4 view.
 
 ## Key conventions
 - Model coordinates = print coordinates, mm, Z up. Viewer rotates the model −90° about X.

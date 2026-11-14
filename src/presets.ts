@@ -129,6 +129,13 @@ export const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { capHeight: 90, colorA: '#f3efe6', colorB: '#26262a', tracking: 0.04, pinText: 'up' },
   },
+  standee: {
+    label: 'Word stand',
+    blurb: 'Stacked words in one rounded outline with raised letter lines, standing in a slot stand. A small thank-you gift for a desk.',
+    text: 'THANK\nYOU',
+    font: 'fredoka',
+    patch: { capHeight: 16, lineSpacing: 1.02, tracking: 0, colorA: '#e8336d', colorB: '#e8336d', colorC: '#d6b48c' },
+  },
   pyramid: {
     label: 'Pyramid tiles',
     blurb: 'Letters cut into a grid of little pyramids and slopes that catch the light. Shuffle for a new pattern.',
@@ -218,6 +225,11 @@ export const SAMPLES: Record<Style, Sample[]> = {
     { name: 'Exit', text: 'EXIT', font: 'archivo', patch: { arShape: 'arrow', arDir: 'right', capHeight: 30 } },
     { name: 'Bar sign', text: 'BAR', font: 'archivo', patch: { arShape: 'rect', capHeight: 45 } },
     { name: 'Round badge', text: 'HI', font: 'archivo', patch: { arShape: 'circle', capHeight: 50 } },
+  ],
+  standee: [
+    { name: 'Thank you for being you', text: 'THANK\nYOU\nFOR\nBEING\nYOU', font: 'fredoka', patch: { capHeight: 14 } },
+    { name: 'Best mum', text: 'BEST\nMUM\nEVER', font: 'archivo', patch: { capHeight: 16, sdLetters: 'solid', colorA: '#f4f1ea', colorB: '#2f9e6b' } },
+    { name: 'You got this', text: 'YOU\nGOT\nTHIS', font: 'fredoka', patch: { capHeight: 18, colorA: '#f2b632', colorB: '#f2b632', colorC: '#26262a' } },
   ],
   pyramid: [
     { name: 'OK', text: 'OK', font: 'archivo', patch: { capHeight: 90 } },

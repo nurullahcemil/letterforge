@@ -10,7 +10,7 @@ import { buildTerrace, type TerraceParams } from './terrace';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee';
 
 export interface Params extends LampParams, MoldParams, TileParams, TerraceParams {
   /** Letter flower: letters around a centre like petals. */
@@ -22,6 +22,22 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
+  /** Word stand: thickness of the flat back (mm). */
+  sdThick?: number;
+  /** Word stand: width of the raised letter lines (mm). */
+  sdLine?: number;
+  /** Word stand: how far the letter lines stand off the back (mm). */
+  sdRaise?: number;
+  /** Word stand: outline margin around the letters (mm). */
+  sdMargin?: number;
+  /** Word stand: what is raised on the front: 'outline' = letter outlines + edge, 'solid' = whole letters. */
+  sdLetters?: 'outline' | 'solid';
+  /** Word stand: 'printed' = a printed stand with a slot, 'none' = just the word piece. */
+  sdStand?: 'printed' | 'none';
+  /** Word stand: stand depth front to back (mm). */
+  sdStandD?: number;
+  /** Word stand: play in the slot (mm, each side). */
+  sdFit?: number;
   /** Letter flower: 'one' = all text in one flower, 'row' = one flower per word, side by side (wall art). */
   flLayout?: 'one' | 'row';
   /** Letter flower row: gap between the flowers (mm). */
@@ -418,6 +434,10 @@ export class Builder {
         case 'arrow':
           parts = this.arrowSign(cs, p, warnings);
           break;
+        case 'standee':
+          this.spots = [];
+          parts = this.standee(cs, p, warnings);
+          break;
         case 'pyramid':
           parts = this.pyramid(cs, p, warnings);
           break;
@@ -434,7 +454,7 @@ export class Builder {
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete') parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -1484,6 +1504,68 @@ export class Builder {
     const wTot = Math.max(...rows.map((r) => r.length)) * T, hTot = rows.length * T;
     if (wTot > p.bedSize || hTot > p.bedSize) warnings.push(`${Math.round(wTot)} × ${Math.round(hTot)} mm: bigger than your bed. The 3MF puts the tiles on several plates; glue them on a board.`);
     if (fin < 0.8) warnings.push('Lines thinner than 0.8 mm may not print well. Make them thicker.');
+    return parts;
+  }
+
+  /**
+   * Word stand (user photo of a "THANK YOU FOR BEING YOU" desk piece; own design): the lines of
+   * text are joined into one rounded outline that hugs the letters (grown by `sdMargin`, gaps
+   * between letters and lines bridged, inner holes dropped). That outline is a flat back
+   * (`sdThick`), with the letter outlines and the edge raised on the front as thin lines
+   * (`sdLine` wide, `sdRaise` high, colour B). A foot strip under the words slots into a printed
+   * stand (`sdStand`). Preview: standing in the stand; files (`print`): both lying flat.
+   */
+  private standee(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
+    const W = this.wasm;
+    if (cs.isEmpty()) return [];
+    const T = clampN(p.sdThick ?? 4, 1.2, 20);
+    const lw = clampN(p.sdLine ?? 1.2, 0.4, 6);
+    const raise = clampN(p.sdRaise ?? 1.5, 0, 10);
+    const margin = clampN(p.sdMargin ?? 2.5, 0.8, 30);
+    const fit = clampN(p.sdFit ?? 0.2, 0, 1);
+    // one outline around everything: grow, bridge gaps between letters and lines, drop inner holes
+    const bridge = Math.max(2, p.capHeight * 0.25);
+    let blob = this.k(this.k(cs.offset(margin + bridge, 'Round', 2, 48)).offset(-bridge, 'Round', 2, 48));
+    blob = this.k(new W.CrossSection((blob.toPolygons() as [number, number][][]).filter((q) => polyArea(q) > 0), 'Positive'));
+    const pieces = blob.decompose();
+    pieces.forEach((c) => this.k(c));
+    if (pieces.length > 1) warnings.push('The lines do not touch: they will print as separate pieces. Make the letters bigger or the line spacing smaller.');
+    const b = blob.bounds();
+    const cx = (b.min[0] + b.max[0]) / 2;
+    const wid = b.max[0] - b.min[0];
+    // foot strip under the words that goes into the stand's slot
+    const slotD = Math.max(3, Math.min(6, T * 1.2));
+    const tabW = wid * 0.6;
+    const hasStand = p.sdStand !== 'none';
+    const tab = hasStand ? this.rect(cx - tabW / 2, b.min[1] - slotD, cx + tabW / 2, b.min[1] + Math.min(4, p.capHeight * 0.3)) : null;
+    const backCs = tab ? this.k(blob.add(tab)) : blob;
+    const back = this.extrude(backCs, T);
+    // raised lines: every letter's outline, plus the edge of the outline (both inside the back)
+    const ring = (c: CrossSection) => this.k(this.k(c.offset(lw / 2, 'Round', 2, 32)).subtract(this.k(c.offset(-lw / 2, 'Round', 2, 32))));
+    const edge = this.k(blob.subtract(this.k(blob.offset(-lw, 'Round', 2, 32))));
+    const linesCs = p.sdLetters === 'solid'
+      ? this.k(cs.intersect(blob))
+      : this.k(this.k(this.k(ring(cs)).add(edge)).intersect(blob));
+    const lines = raise > 0 ? this.extrude(linesCs, raise + OVERLAP, T - OVERLAP) : null;
+    // standing: flat piece turned up (its y → z), back face at y = +T/2, lines toward the front (−y)
+    const up = (m: Manifold, z0: number) => this.k(this.k(m.rotate([90, 0, 0])).translate([-cx, T / 2, z0]));
+    const H = 8;
+    const z0 = hasStand ? H - slotD - (b.min[1] - slotD) : -b.min[1];
+    const parts: WorkPart[] = [];
+    const flatAt = (m: Manifold) => this.k(m.translate([-cx, 0, 0]));
+    parts.push({ name: 'Word', color: p.colorA, m: up(back, z0), print: flatAt(back) });
+    if (lines) parts.push({ name: p.sdLetters === 'solid' ? 'Letters' : 'Letter lines', color: p.colorB, m: up(lines, z0), print: flatAt(lines) });
+    if (hasStand) {
+      const D = clampN(p.sdStandD ?? 24, T + 8, 120);
+      const SW = Math.max(tabW + 16, wid * 0.85);
+      const r = Math.min(5, D / 2 - 0.5);
+      let foot = this.rect(-SW / 2, -D / 2, SW / 2, D / 2);
+      foot = this.k(this.k(foot.offset(-r, 'Round', 2, 32)).offset(r, 'Round', 2, 32));
+      const slot = this.extrude(this.rect(-tabW / 2 - fit, -T / 2 - fit, tabW / 2 + fit, T / 2 + fit), slotD + 1, H - slotD);
+      const stand = this.k(this.extrude(foot, H).subtract(slot));
+      // printed beside the word, in front of it on the bed
+      parts.push({ name: 'Stand', color: p.colorC ?? '#c8a27a', m: stand, print: this.k(stand.translate([0, b.min[1] - slotD - 10 - D / 2, 0])) });
+    }
     return parts;
   }
 

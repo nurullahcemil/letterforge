@@ -37,8 +37,8 @@ for (const [style, n] of Object.entries(counts)) {
       await pg.waitForTimeout(900);
     }
     // seen from the top (user: "put the top views on the cards"); lamps and candle molds are
-    // tall round things, so they keep the 3/4 view; the two-text sign stands up, so from the front
-    const view = style === 'lamp' || style === 'mold' ? 'angle' : style === 'duo' ? 'front' : 'top';
+    // tall round things, so they keep the 3/4 view; the word stand reads best at an angle; the two-text sign stands up, so from the front
+    const view = style === 'lamp' || style === 'mold' || style === 'standee' ? 'angle' : style === 'duo' ? 'front' : 'top';
     const url = await pg.evaluate((v) => (window).__letterforge.thumb(480, 320, v), view);
     fs.writeFileSync(`public/ideas/${style}-${i}.webp`, Buffer.from(url.split(',')[1], 'base64'));
     console.log(style, i, view, 'ok');

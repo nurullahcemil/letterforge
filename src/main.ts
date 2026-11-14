@@ -147,6 +147,18 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
+  standee: [
+    { kind: 'heading', key: 'style', label: 'Word piece' },
+    { kind: 'select', key: 'sdLetters', label: 'Raised on the front', options: [['outline', 'Letter outlines'], ['solid', 'Whole letters']] },
+    { kind: 'range', key: 'sdMargin', label: 'Outline around the letters', min: 0.8, max: 12, step: 0.1, unit: 'mm' },
+    { kind: 'range', key: 'sdThick', label: 'Back thickness', min: 1.6, max: 10, step: 0.2, unit: 'mm' },
+    { kind: 'range', key: 'sdLine', label: 'Letter line width', min: 0.6, max: 3, step: 0.1, unit: 'mm', hint: 'The raised outline of every letter. 0.8 mm or more prints well.' },
+    { kind: 'range', key: 'sdRaise', label: 'Letter line height', min: 0, max: 5, step: 0.1, unit: 'mm', hint: '0 = a flat piece with no raised lines.' },
+    { kind: 'heading', key: 'style', label: 'Stand' },
+    { kind: 'select', key: 'sdStand', label: 'Stand', options: [['printed', 'Printed stand'], ['none', 'No stand']] },
+    { kind: 'range', key: 'sdStandD', label: 'Stand depth', min: 12, max: 60, step: 1, unit: 'mm' },
+    { kind: 'range', key: 'sdFit', label: 'Slot play', min: 0, max: 0.6, step: 0.05, unit: 'mm', hint: 'Extra room in the slot on each side. More if it is too tight.' },
+  ],
   terrace: [
     { kind: 'heading', key: 'style', label: 'Shape' },
     { kind: 'range', key: 'tgHills', label: 'Hills', min: 1, max: 4, step: 1 },
@@ -653,7 +665,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'sdStand' || c.key === 'sdLetters') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -729,6 +741,7 @@ function renderStyleControls() {
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
+  if (params.style === 'standee') list = list.filter((c) => (params.sdStand !== 'none' || !['sdStandD', 'sdFit'].includes(c.key)) && !(params.sdLetters === 'solid' && c.key === 'sdLine'));
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
     list = list.filter((c) => {
@@ -1379,6 +1392,7 @@ function renderSwatches() {
   const roles: ['colorA' | 'colorB' | 'colorC', string][] = [['colorA', $('#colorA-label').textContent || 'Colour']];
   if ($('#colorB-wrap').style.display !== 'none') roles.push(['colorB', $('#colorB-label').textContent || 'Second colour']);
   if (params.style === 'arrow') roles.push(['colorC', 'Letters']);
+  if (params.style === 'standee' && params.sdStand !== 'none') roles.push(['colorC', 'Stand']);
   $('#swatch-host').innerHTML = roles
     .map(([k, label]) => {
       const cur = String(params[k] ?? '').toLowerCase();
@@ -1579,6 +1593,7 @@ function syncColors() {
     lines: ['Letter lines', 'Background'],
     concrete: ['Mold', '—'],
     terrace: ['Planter', '—'],
+    standee: ['Word', 'Letter lines'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1591,6 +1606,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
+  standee: `<svg viewBox="0 0 48 32"><path d="M15 3h18a3 3 0 0 1 3 3v18H12V6a3 3 0 0 1 3-3z" fill="currentColor" opacity=".3"/><path d="M16 8h6M16 13h14M16 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="9" y="24" width="30" height="5" rx="2" fill="currentColor"/></svg>`,
   terrace: `<svg viewBox="0 0 48 32"><path d="M3 24c0-6 6-8 12-8s9 3 14 3 16-2 16 5v2H3z" fill="currentColor" opacity=".3"/><path d="M8 22c0-4 4-6 8-6s7 2 7 5M12 20c0-3 2-5 5-5s4 2 4 4M30 22c1-4 4-5 7-5s6 2 6 5M34 21c0-3 2-4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 12l1-4 1 4M38 14l1-3 1 3" stroke="#6f9a3a" stroke-width="1.6" fill="none"/></svg>`,
   concrete: `<svg viewBox="0 0 48 32"><rect x="3" y="6" width="42" height="22" rx="2" fill="currentColor" opacity=".3"/><path d="M9 24V10h7a4 4 0 0 1 0 8H9M24 10v14h7M37 24l5-14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
   lines: `<svg viewBox="0 0 48 32"><rect x="4" y="2" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/><path d="M8 26L18 6l10 20M11 26L18 12l7 14M14 26l4-8 4 8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M36 4v24M39 4v24M42 4v24M45 4v24" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>`,
