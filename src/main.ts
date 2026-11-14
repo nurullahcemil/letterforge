@@ -520,7 +520,7 @@ async function run() {
       if (standBase && lastBacking) {
         const sl = lastBacking.slot;
         const lg = lastBacking.led;
-        bn.textContent = `Base: ${lastBacking.what} (wide × deep × tall). Engrave the front (black). Blue = the block edges, and on the top face the slot to cut${sl ? `: ${fmt(sl[0])} × ${fmt(sl[1])} mm, ${fmt(sl[2])} mm deep` : ''}${lg ? `, with a groove for the LED strip in its floor: ${fmt(lg[0])} × ${fmt(lg[1])} mm, ${fmt(lg[2])} mm deeper` : ''}.`;
+        bn.textContent = `Base: ${lastBacking.what} (wide × deep × tall). Engrave the front (black). Blue = the block edges, and on the top face ${(lastBacking.nSlots ?? 1) > 1 ? `the ${lastBacking.nSlots} slots` : 'the slot'} to cut${sl && (lastBacking.nSlots ?? 1) === 1 ? `: ${fmt(sl[0])} × ${fmt(sl[1])} mm, ${fmt(sl[2])} mm deep` : sl ? `, ${fmt(sl[2])} mm deep` : ''}${lg ? `, and the groove in front for the LED strip: ${fmt(lg[0])} × ${fmt(lg[1])} mm, ${fmt(lg[2])} mm deep` : ''}.`;
       } else if (params.backOn) {
         bn.textContent = lastBacking
           ? `Board ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Red lines are cuts, blue lines are the letter guide.`

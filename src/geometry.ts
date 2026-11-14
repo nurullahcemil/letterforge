@@ -312,7 +312,7 @@ export interface BuildResult {
   /** Where each letter sits on the model (model x/y, mm), for picking letters on the canvas. */
   letters: { i: number; x: number; y: number }[];
   /** Laser-cut backing, in model x/y mm: `cut` = board outline and holes, `guide` = where the letters sit. */
-  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number; engrave?: [number, number][][]; sheets?: number; what?: string; slot?: [number, number, number]; led?: [number, number, number] };
+  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number; engrave?: [number, number][][]; sheets?: number; what?: string; slot?: [number, number, number]; nSlots?: number; led?: [number, number, number] };
 }
 
 interface WorkPart {
@@ -1743,51 +1743,57 @@ export class Builder {
       thick: clampN(p.scThick ?? 2.4, 0.8, 10), halfTwists: clampN(p.scTwist ?? 1, 0, 12), depth: clampN(p.scDepth ?? 35, 0, 100) / 100,
     }, warnings);
     const bb = band.boundingBox();
-    // foot: under the lowest part (both loops of the infinity when they line up), overlapping the
-    // band a little; the base is centred under the whole sculpture and its slot moves to the foot
+    // feet: one under each low part (both loops of the infinity), each into its own slot in the
+    // base; the base is centred under the whole sculpture
     const mesh = band.getMesh();
-    let zmin = Infinity, zx = 0, zy = 0;
-    for (let i = 0; i < mesh.vertProperties.length; i += mesh.numProp) if (mesh.vertProperties[i + 2] < zmin) { zmin = mesh.vertProperties[i + 2]; zx = mesh.vertProperties[i]; zy = mesh.vertProperties[i + 1]; }
-    const tol = clampN(p.scWidth ?? 16, 3, 80) * 0.6 + 1;
-    const pick = (maxDy: number) => {
-      let a = Infinity, b2 = -Infinity, c = Infinity, d = -Infinity;
-      for (let i = 0; i < mesh.vertProperties.length; i += mesh.numProp) {
-        const x = mesh.vertProperties[i], y = mesh.vertProperties[i + 1];
-        if (mesh.vertProperties[i + 2] > zmin + tol || Math.abs(y - zy) > maxDy) continue;
-        a = Math.min(a, x); b2 = Math.max(b2, x); c = Math.min(c, y); d = Math.max(d, y);
-      }
-      return [a, b2, c, d];
-    };
-    let [lx0, lx1, ly0, ly1] = pick(Infinity);
-    if (ly1 - ly0 > 14 || lx1 - lx0 > (bb.max[0] - bb.min[0]) * 0.8) {
-      // low points far apart front to back: use only the ones near the very lowest
-      [lx0, lx1, ly0, ly1] = pick(6);
-      lx0 = Math.max(lx0, zx - 20); lx1 = Math.min(lx1, zx + 20);
+    const vp = mesh.vertProperties, np = mesh.numProp;
+    let zmin = Infinity;
+    for (let i = 0; i < vp.length; i += np) zmin = Math.min(zmin, vp[i + 2]);
+    const bandW = clampN(p.scWidth ?? 16, 3, 80);
+    const tol = bandW * 0.6 + 1;
+    const lowPts: [number, number, number][] = [];
+    for (let i = 0; i < vp.length; i += np) if (vp[i + 2] <= zmin + tol) lowPts.push([vp[i], vp[i + 1], vp[i + 2]]);
+    lowPts.sort((a, q) => a[0] - q[0]);
+    // split into groups where there is a gap across
+    const groups: [number, number, number][][] = [];
+    for (const q of lowPts) {
+      const g = groups[groups.length - 1];
+      if (g && q[0] - g[g.length - 1][0] < 15) g.push(q); else groups.push([q]);
     }
-    const low: [number, number, number] = [(lx0 + lx1) / 2, (ly0 + ly1) / 2, zmin];
-    const fw = Math.min(bb.max[0] - bb.min[0], Math.max(lx1 - lx0 + 10, Math.min(40, Math.max(12, (bb.max[0] - bb.min[0]) * 0.22))));
-    const fd = Math.max(6, clampN(p.scThick ?? 2.4, 0.8, 10) * 3, ly1 - ly0 + 4);
+    // the (at most) two lowest groups get a foot each
+    const lowest = (g: [number, number, number][]) => g.reduce((m, q) => (q[2] < m[2] ? q : m), g[0]);
+    const chosen = groups.sort((g1, g2) => lowest(g1)[2] - lowest(g2)[2]).slice(0, 2);
     const slotD = 8;
-    const reach = Math.max(3, clampN(p.scWidth ?? 16, 3, 80) * 0.35);
-    const foot = this.extrude(this.rect(low[0] - fw / 2, low[1] - fd / 2, low[0] + fw / 2, low[1] + fd / 2), slotD + reach, low[2] - slotD);
-    let piece = this.k(band.add(foot));
+    const reach = Math.max(3, bandW * 0.35);
+    const fd0 = Math.max(6, clampN(p.scThick ?? 2.4, 0.8, 10) * 3);
+    const feet = chosen.map((g) => {
+      const lo = lowest(g);
+      // only the part of the group near its own lowest point (keeps a foot small and under the band)
+      const near = g.filter((q) => Math.abs(q[1] - lo[1]) < 6 && Math.abs(q[0] - lo[0]) < 20);
+      const xs = near.map((q) => q[0]), ys = near.map((q) => q[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: Math.min(40, Math.max(12, x1 - x0 + 10)), t: Math.max(fd0, y1 - y0 + 4), z: lo[2] };
+    });
+    let piece = band;
+    for (const f of feet) piece = this.k(piece.add(this.extrude(this.rect(f.x - f.w / 2, f.y - f.t / 2, f.x + f.w / 2, f.y + f.t / 2), f.z + reach - (zmin - slotD), zmin - slotD)));
+    if (feet.length > 1) warnings.push('It stands on two feet, one under each low part.');
     const ccx = (bb.min[0] + bb.max[0]) / 2, ccy = (bb.min[1] + bb.max[1]) / 2;
-    piece = this.k(piece.translate([-ccx, -ccy, -(low[2] - slotD)]));
-    const slotAt: [number, number] = [low[0] - ccx, low[1] - ccy];
+    piece = this.k(piece.translate([-ccx, -ccy, -(zmin - slotD)]));
+    const fit = clampN(p.sdFit ?? 0.2, 0, 1);
+    const slots = feet.map((f) => ({ x: f.x - ccx, y: f.y - ccy, w: f.w + 2 * fit, t: f.t + 2 * fit }));
     warnings.push('Print it standing up with tree supports (Bambu: Support → tree(auto)).');
     const base = p.scBase ?? 'wood';
     if (base === 'none') return [{ name: 'Sculpture', color: p.colorA, m: piece }];
     const H = clampN(p.scBaseH ?? 25, 12, 100);
-    const fit = clampN(p.sdFit ?? 0.2, 0, 1);
     const shown = this.k(piece.translate([0, 0, H - slotD]));
     const parts: WorkPart[] = [{ name: 'Sculpture', color: p.colorA, m: shown, print: piece }];
     const depth = bb.max[1] - bb.min[1];
     parts.push(...this.woodBase({
       font, p, warnings, base: base === 'printed' ? 'printed' : 'wood',
-      BW: Math.round(Math.max(2 * Math.abs(slotAt[0]) + fw + 24, (bb.max[0] - bb.min[0]) * 0.7)), H,
-      D: Math.round(Math.max(2 * Math.abs(slotAt[1]) + fd + 24, Math.min(depth + 10, 80))),
-      slotW: fw + 2 * fit, slotT: fd + 2 * fit, slotD, slotAt, lines: [p.scText1 ?? '', p.scText2 ?? '', ''],
-      led: p.scLed !== false ? 8 : 0, printY: -(fd / 2) - 20,
+      BW: Math.round(Math.max(...slots.map((q) => 2 * Math.abs(q.x) + q.w + 24), (bb.max[0] - bb.min[0]) * 0.7)), H,
+      D: Math.round(Math.max(...slots.map((q) => 2 * Math.abs(q.y) + q.t + 24), Math.min(depth + 10, 80))),
+      slotW: slots[0].w, slotT: slots[0].t, slotD, slots, lines: [p.scText1 ?? '', p.scText2 ?? '', ''],
+      led: p.scLed !== false ? 8 : 0, printY: -40,
     }));
     return parts;
   }
@@ -1800,7 +1806,7 @@ export class Builder {
    * 'wood': a preview-only block + the laser file (front engraving, block outline, top face with
    * the slot and groove to cut) in this.laser. 'printed': a printed part (colour C), front up.
    */
-  private woodBase(o: { font: Font; p: Params; warnings: string[]; base: 'wood' | 'printed'; BW: number; H: number; D: number; slotW: number; slotT: number; slotD: number; lines: string[]; led?: number; inner?: [number, number, number]; slotAt?: [number, number]; printY: number }): WorkPart[] {
+  private woodBase(o: { font: Font; p: Params; warnings: string[]; base: 'wood' | 'printed'; BW: number; H: number; D: number; slotW: number; slotT: number; slotD: number; lines: string[]; led?: number; inner?: [number, number, number]; slotAt?: [number, number]; slots?: { x: number; y: number; w: number; t: number }[]; printY: number }): WorkPart[] {
     const W = this.wasm;
     const { font, p, warnings, BW, H, D, slotW, slotT, slotD } = o;
     const csOf = (loops: Vec2[][]) => this.k(new W.CrossSection(loops as MVec2[][], 'NonZero'));
@@ -1834,12 +1840,16 @@ export class Builder {
     let block = this.k(this.extrude(this.rect(-BW / 2, -D / 2, BW / 2, D / 2), H));
     // slot (and grooves) may sit off centre, under the foot of the piece
     const [sx, sy] = o.slotAt ?? [0, 0];
-    block = this.k(block.subtract(this.extrude(this.rect(sx - slotW / 2, sy - slotT / 2, sx + slotW / 2, sy + slotT / 2), slotD + 1, H - slotD)));
+    const slots = o.slots ?? [{ x: sx, y: sy, w: slotW, t: slotT }];
+    for (const q of slots) block = this.k(block.subtract(this.extrude(this.rect(q.x - q.w / 2, q.y - q.t / 2, q.x + q.w / 2, q.y + q.t / 2), slotD + 1, H - slotD)));
     // narrower groove under the slot (e.g. for an LED strip lying under an open rail)
     if (o.inner) block = this.k(block.subtract(this.extrude(this.rect(sx - o.inner[0] / 2, sy - o.inner[1] / 2, sx + o.inner[0] / 2, sy + o.inner[1] / 2), o.inner[2] + 1, H - slotD - o.inner[2])));
     const led = o.led ?? 0;
-    const ledY0 = sy - slotT / 2 - 2 - led, ledY1 = sy - slotT / 2 - 2;
-    if (led > 0) block = this.k(block.subtract(this.extrude(this.rect(sx - slotW / 2, ledY0, sx + slotW / 2, ledY1), 4, H - 3)));
+    // LED groove in front of the slot(s), spanning all of them
+    const front = Math.min(...slots.map((q) => q.y - q.t / 2));
+    const gx0 = Math.min(...slots.map((q) => q.x - q.w / 2)), gx1 = Math.max(...slots.map((q) => q.x + q.w / 2));
+    const ledY0 = front - 2 - led, ledY1 = front - 2;
+    if (led > 0) block = this.k(block.subtract(this.extrude(this.rect(gx0, ledY0, gx1, ledY1), 4, H - 3)));
     if (engrave) {
       const cut = this.k(this.k(this.k(engrave.translate([-BW / 2, 0])).extrude(0.6 + OVERLAP)).rotate([90, 0, 0]));
       block = this.k(block.subtract(this.k(cut.translate([0, -D / 2 + 0.6, 0]))));
@@ -1855,13 +1865,13 @@ export class Builder {
     const guide: [number, number][][] = [
       box(0, 0, BW, H),
       box(0, oy, BW, oy + D),
-      box(BW / 2 + sx - slotW / 2, oy + D / 2 + sy - slotT / 2, BW / 2 + sx + slotW / 2, oy + D / 2 + sy + slotT / 2),
+      ...slots.map((q) => box(BW / 2 + q.x - q.w / 2, oy + D / 2 + q.y - q.t / 2, BW / 2 + q.x + q.w / 2, oy + D / 2 + q.y + q.t / 2)),
     ];
     // top face drawn as seen from above with the front at the bottom
-    if (led > 0) guide.push(box(BW / 2 + sx - slotW / 2, oy + D / 2 + ledY0, BW / 2 + sx + slotW / 2, oy + D / 2 + ledY1));
+    if (led > 0) guide.push(box(BW / 2 + gx0, oy + D / 2 + ledY0, BW / 2 + gx1, oy + D / 2 + ledY1));
     if (o.inner) guide.push(box(BW / 2 + sx - o.inner[0] / 2, oy + D / 2 + sy - o.inner[1] / 2, BW / 2 + sx + o.inner[0] / 2, oy + D / 2 + sy + o.inner[1] / 2));
     const eng = engrave ? (engrave.toPolygons() as [number, number][][]) : [];
-    this.laser = { cut: [], guide, engrave: eng, size: [BW, H], pieces: 1, what: `wood block ${fmtN(BW)} × ${fmtN(D)} × ${fmtN(H)} mm`, slot: [slotW, slotT, slotD], led: led > 0 ? [slotW, led, 3] : o.inner };
+    this.laser = { cut: [], guide, engrave: eng, size: [BW, H], pieces: 1, what: `wood block ${fmtN(BW)} × ${fmtN(D)} × ${fmtN(H)} mm`, slot: [slotW, slotT, slotD], nSlots: slots.length, led: led > 0 ? [gx1 - gx0, led, 3] : o.inner };
     return [{ name: 'Wooden base', color: '#c8a27a', previewOnly: true, m: block }];
   }
 

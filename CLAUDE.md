@@ -152,8 +152,9 @@ and dropped: user said "not looking like sculptures… maybe just shapes". Now n
 `scDepth` % front-back movement. Rotation-minimising frame (double reflection), closing mismatch
 spread along the loop + `scTwist` half twists (odd = Möbius: last ring joins the first shifted by 2
 corners). Mesh built directly (4 corners per ring, quads, no caps) → Manifold. Self-clearance
-check (points far apart along the loop must stay > band size apart) warns. Foot under the lowest
-part into the stand base (`woodBase`, shared with the trophy: wood block laser file or printed;
+check (points far apart along the loop must stay > band size apart) warns. Feet: low band points
+(within 0.6·width of the lowest) grouped across x (gap > 15 mm); the two lowest groups each get a foot
+and a slot (user: "two feet for the infinity so it stands on both loops") into the stand base (`woodBase`, shared with the trophy: wood block laser file or printed;
 slot may sit off centre via `slotAt`, base centred under the sculpture; LED groove in front).
 Printed standing with tree supports (note shown). Pictures: 3/4 view.
 
