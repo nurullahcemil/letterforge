@@ -3,7 +3,7 @@ import * as SS from 'straight-skeleton';
 import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
-import { centerlines, resample as resampleLine, type P as RP } from './ribbon';
+import { buildSculpture } from './sculpture';
 import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
 import { buildMold, type MoldParams } from './mold';
 import { buildTiles, type TileParams } from './tiles';
@@ -11,7 +11,7 @@ import { buildTerrace, type TerraceParams } from './terrace';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee' | 'trophy' | 'ribbon';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee' | 'trophy' | 'sculpture';
 
 export interface Params extends LampParams, MoldParams, TileParams, TerraceParams {
   /** Letter flower: letters around a centre like petals. */
@@ -23,21 +23,22 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
-  /** Ribbon letters: wall thickness (mm). */
-  rbWall?: number;
-  /** Ribbon letters: deepest the ribbons go, front to back (mm). */
-  rbDepth?: number;
-  /** Ribbon letters: how much the depth sways along a stroke (%). */
-  rbSway?: number;
-  /** Ribbon letters: length of one sway (mm). */
-  rbWave?: number;
-  /** Ribbon letters base: 'wood' (laser-engraved block), 'printed', 'none'. */
-  rbBase?: 'wood' | 'printed' | 'none';
-  rbBaseH?: number;
-  /** Ribbon letters: LED strip groove under the open rail. */
-  rbLed?: boolean;
-  rbText1?: string;
-  rbText2?: string;
+  /** Ribbon sculpture shape. */
+  scShape?: 'infinity' | 'trefoil' | 'lissajous' | 'twist';
+  /** Ribbon sculpture: width across (mm). */
+  scSize?: number;
+  /** Ribbon sculpture: band width and thickness (mm). */
+  scWidth?: number;
+  scThick?: number;
+  /** Ribbon sculpture: extra half twists. */
+  scTwist?: number;
+  /** Ribbon sculpture: front-to-back movement, % of the width. */
+  scDepth?: number;
+  scBase?: 'wood' | 'printed' | 'none';
+  scBaseH?: number;
+  scLed?: boolean;
+  scText1?: string;
+  scText2?: string;
   /** Trophy top: 'stack' = first line turned up the side + the other lines stacked; 'badge' = a shaped plaque with raised text. */
   tpShape?: 'stack' | 'badge';
   /** Trophy badge outline. */
@@ -411,7 +412,7 @@ export class Builder {
         layout.lines.push(art.toPolygons() as Vec2[][]);
       }
       // pin art waves and ripples don't need any text
-      const textFree = p.style === 'pins' && (p.pinMode ?? 'wave') !== 'letters';
+      const textFree = (p.style === 'pins' && (p.pinMode ?? 'wave') !== 'letters') || p.style === 'sculpture';
       if (cs.isEmpty() && !textFree) {
         return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
@@ -482,9 +483,9 @@ export class Builder {
           this.spots = [];
           parts = this.standee(cs, p, warnings);
           break;
-        case 'ribbon':
+        case 'sculpture':
           this.spots = [];
-          parts = this.ribbon(layout.contours, font, p, warnings);
+          parts = this.sculpture(font, p, warnings);
           break;
         case 'trophy':
           this.spots = [];
@@ -506,7 +507,7 @@ export class Builder {
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee' && p.style !== 'trophy' && p.style !== 'ribbon') parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee' && p.style !== 'trophy' && p.style !== 'sculpture') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -1731,171 +1732,75 @@ export class Builder {
   }
 
   /**
-   * Ribbon letters (user photo of a calligraphy sculpture of thin deep ribbons; own design): the
-   * centre line of every stroke (`centerlines`, src/ribbon.ts) becomes a thin wall (`rbWall`)
-   * standing on the back, as deep as `rbDepth` × a sway (cosine along the stroke, `rbSway` %,
-   * `rbWave` long, a different phase per stroke, ends eased down like a brush), so crossing
-   * strokes stand out at different depths. Printed lying on its back: every wall stands straight up
-   * on the bed, no supports. Under the words an open rail (back bar + front bar + ties) holds it
-   * all together; pieces that don't reach the rail (dots) get a thin post down to it. The rail sits
-   * in the base slot; an LED strip groove under it lights the ribbons from below.
+   * Ribbon sculpture (no text; src/sculpture.ts): a flat band swept along a closed 3D curve.
+   * A foot under its lowest point slots into the stand base (woodBase: laser-engraved wood block
+   * or printed), with an LED groove in front of the slot. Printed standing up, with tree supports.
    */
-  private ribbon(contours: Vec2[][], font: Font, p: Params, warnings: string[]): WorkPart[] {
+  private sculpture(font: Font, p: Params, warnings: string[]): WorkPart[] {
     const W = this.wasm;
-    if (!contours.length) return [];
-    const cap = p.capHeight;
-    const t = clampN(p.rbWall ?? 2.4, 0.8, 8);
-    const D = clampN(p.rbDepth ?? 40, 6, 200);
-    const sway = clampN(p.rbSway ?? 45, 0, 90) / 100;
-    const lam = clampN(p.rbWave ?? 80, 10, 1000);
-    const lines = centerlines(contours as RP[][], clampN(cap / 160, 0.12, 0.4), Math.max(2, cap * 0.12));
-    if (!lines.length) return [];
-    const r = t / 2;
-    const fix = (q: MVec2[]) => (polyArea(q as [number, number][]) < 0 ? q.reverse() : q);
-    const solids: Manifold[] = [];
-    const flats: CrossSection[] = [];
-    lines.forEach((l, k) => {
-      const { p: pts, s } = resampleLine(l, 0.6);
-      if (pts.length < 2) return;
-      const L = s[s.length - 1];
-      const closed = Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 0.5;
-      const phase = k * 2.39;
-      const ease = Math.max(4, cap * 0.25);
-      const h = (si: number) => {
-        const w = 1 - sway * (0.5 + 0.5 * Math.cos((2 * Math.PI * si) / lam + phase));
-        const e = closed ? 1 : Math.min(1, Math.min(si, L - si) / ease);
-        return Math.max(3, D * w * (0.6 + 0.4 * e * e * (3 - 2 * e)));
-      };
-      // in short overlapping chunks, so each top face is small and follows its own heights
-      const CH = 16;
-      for (let c0 = 0; c0 < pts.length - 1; c0 += CH) {
-        const c1 = Math.min(pts.length - 1, c0 + CH);
-        const polys: MVec2[][] = [];
-        for (let i = c0; i < c1; i++) {
-          const a = pts[i], b = pts[i + 1];
-          const dx = b[0] - a[0], dy = b[1] - a[1];
-          const ln = Math.hypot(dx, dy) || 1;
-          const nx = (-dy / ln) * r, ny = (dx / ln) * r;
-          polys.push(fix([[a[0] + nx, a[1] + ny], [a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny]]));
-        }
-        for (let i = c0; i <= c1; i++) {
-          if (!closed && (i === 0 || i === pts.length - 1)) continue; // square brush ends
-          const c: MVec2[] = [];
-          for (let q = 0; q < 12; q++) c.push([pts[i][0] + r * Math.cos((q / 12) * 2 * Math.PI), pts[i][1] + r * Math.sin((q / 12) * 2 * Math.PI)]);
-          polys.push(c);
-        }
-        const cs = this.k(new W.CrossSection(polys, 'Positive'));
-        flats.push(cs);
-        const sp = pts.slice(c0, c1 + 1), ss = s.slice(c0, c1 + 1);
-        const m = this.k(this.k(cs.extrude(1)).warp((v) => {
-          if (v[2] < 0.5) return;
-          let best = Infinity, bs = ss[0];
-          for (let i = 0; i < sp.length; i++) {
-            const d = (sp[i][0] - v[0]) ** 2 + (sp[i][1] - v[1]) ** 2;
-            if (d < best) { best = d; bs = ss[i]; }
-          }
-          v[2] = h(bs);
-        }));
-        solids.push(m);
+    const band = buildSculpture(W, (o) => this.k(o), {
+      shape: p.scShape ?? 'infinity', size: clampN(p.scSize ?? 150, 40, 400), width: clampN(p.scWidth ?? 16, 3, 80),
+      thick: clampN(p.scThick ?? 2.4, 0.8, 10), halfTwists: clampN(p.scTwist ?? 1, 0, 12), depth: clampN(p.scDepth ?? 35, 0, 100) / 100,
+    }, warnings);
+    const bb = band.boundingBox();
+    // foot: under the lowest part (both loops of the infinity when they line up), overlapping the
+    // band a little; the base is centred under the whole sculpture and its slot moves to the foot
+    const mesh = band.getMesh();
+    let zmin = Infinity, zx = 0, zy = 0;
+    for (let i = 0; i < mesh.vertProperties.length; i += mesh.numProp) if (mesh.vertProperties[i + 2] < zmin) { zmin = mesh.vertProperties[i + 2]; zx = mesh.vertProperties[i]; zy = mesh.vertProperties[i + 1]; }
+    const tol = clampN(p.scWidth ?? 16, 3, 80) * 0.6 + 1;
+    const pick = (maxDy: number) => {
+      let a = Infinity, b2 = -Infinity, c = Infinity, d = -Infinity;
+      for (let i = 0; i < mesh.vertProperties.length; i += mesh.numProp) {
+        const x = mesh.vertProperties[i], y = mesh.vertProperties[i + 1];
+        if (mesh.vertProperties[i + 2] > zmin + tol || Math.abs(y - zy) > maxDy) continue;
+        a = Math.min(a, x); b2 = Math.max(b2, x); c = Math.min(c, y); d = Math.max(d, y);
       }
-    });
-    if (!solids.length) return [];
-    const flat = this.k(W.CrossSection.union(flats));
-    const b = flat.bounds();
-    const x0 = b.min[0], x1 = b.max[0], y0 = b.min[1];
-    // open rail under the words: back bar + front bar + ties
-    const railH = Math.max(4, t * 1.6);
-    const bar = Math.max(t * 1.5, 2.5);
-    const railCs = this.rect(x0, y0 - railH, x1, y0 + 0.6);
-    const rail: Manifold[] = [this.extrude(railCs, bar), this.extrude(railCs, bar, D - bar)];
-    const nTies = Math.max(2, Math.round((x1 - x0) / 30) + 1);
-    for (let i = 0; i < nTies; i++) {
-      const x = x0 + (i / (nTies - 1)) * (x1 - x0 - t) ;
-      rail.push(this.extrude(this.rect(x, y0 - railH, x + t, y0 - railH + Math.min(railH, 3)), D));
+      return [a, b2, c, d];
+    };
+    let [lx0, lx1, ly0, ly1] = pick(Infinity);
+    if (ly1 - ly0 > 14 || lx1 - lx0 > (bb.max[0] - bb.min[0]) * 0.8) {
+      // low points far apart front to back: use only the ones near the very lowest
+      [lx0, lx1, ly0, ly1] = pick(6);
+      lx0 = Math.max(lx0, zx - 20); lx1 = Math.min(lx1, zx + 20);
     }
-    // pieces that don't reach the rail: a short ribbon bridge to the nearest other stroke when that
-    // is closer, otherwise a thin post straight down to the rail
-    const comps = flat.decompose();
-    comps.forEach((c) => this.k(c));
-    const vertsOf = comps.map((c) => (c.toPolygons() as [number, number][][]).flat());
-    let posts = 0;
-    comps.forEach((c, ci) => {
-      if (c.bounds().min[1] <= y0 + 0.5) return;
-      let low: [number, number] = [0, Infinity];
-      for (const v of vertsOf[ci]) if (v[1] < low[1]) low = v;
-      let best = low[1] - y0, from: [number, number] | null = null, to: [number, number] | null = null;
-      vertsOf.forEach((vs, cj) => {
-        if (cj === ci) return;
-        for (let i = 0; i < vertsOf[ci].length; i += 2) for (let j = 0; j < vs.length; j += 2) {
-          const a = vertsOf[ci][i], q = vs[j];
-          const d = Math.hypot(a[0] - q[0], a[1] - q[1]);
-          if (d < best) { best = d; from = a; to = q; }
-        }
-      });
-      if (from && to) {
-        const [ax, ay] = from as [number, number], [bx, by] = to as [number, number];
-        const ln = Math.hypot(bx - ax, by - ay) || 1;
-        const ux = (bx - ax) / ln, uy = (by - ay) / ln, nx = -uy * r, ny = ux * r;
-        const q = fix([[ax - ux * r + nx, ay - uy * r + ny], [ax - ux * r - nx, ay - uy * r - ny], [bx + ux * r - nx, by + uy * r - ny], [bx + ux * r + nx, by + uy * r + ny]]);
-        rail.push(this.extrude(this.k(new W.CrossSection([q], 'Positive')), Math.max(3, D * 0.35)));
-      } else {
-        rail.push(this.extrude(this.rect(low[0] - t / 2, y0 - 0.5, low[0] + t / 2, low[1] + t), bar));
-        posts++;
-      }
-    });
-    // support: where the word floats high above the rail for a long stretch (an Arabic word resting
-    // only on a descender), add posts so no part hangs out more than ~40 mm
-    {
-      const all = vertsOf.flat();
-      const touch = all.filter((v) => v[1] <= y0 + 0.8).map((v) => v[0]).sort((a, q) => a - q);
-      const xs = [x0 - 1, ...touch, x1 + 1];
-      const span = 40;
-      for (let i = 0; i < xs.length - 1; i++) {
-        const gap = xs[i + 1] - xs[i];
-        if (gap <= span) continue;
-        const n = Math.floor(gap / span);
-        for (let k = 1; k <= n; k++) {
-          const xc = xs[i] + (gap * k) / (n + 1);
-          let low = Infinity;
-          for (const v of all) if (Math.abs(v[0] - xc) < 3 && v[1] < low) low = v[1];
-          if (!Number.isFinite(low) || low - y0 > cap * 0.9) continue;
-          rail.push(this.extrude(this.rect(xc - t / 2, y0 - 0.5, xc + t / 2, low + t), bar));
-        }
-      }
-    }
-    if (posts) warnings.push(`${posts} part${posts > 1 ? 's' : ''} (like a dot) did not touch the rest, so ${posts > 1 ? 'they stand' : 'it stands'} on a thin post.`);
-    const piece = this.k(W.Manifold.union([...solids, ...rail]));
-    const cx = (x0 + x1) / 2;
-    const base = p.rbBase ?? 'wood';
+    const low: [number, number, number] = [(lx0 + lx1) / 2, (ly0 + ly1) / 2, zmin];
+    const fw = Math.min(bb.max[0] - bb.min[0], Math.max(lx1 - lx0 + 10, Math.min(40, Math.max(12, (bb.max[0] - bb.min[0]) * 0.22))));
+    const fd = Math.max(6, clampN(p.scThick ?? 2.4, 0.8, 10) * 3, ly1 - ly0 + 4);
+    const slotD = 8;
+    const reach = Math.max(3, clampN(p.scWidth ?? 16, 3, 80) * 0.35);
+    const foot = this.extrude(this.rect(low[0] - fw / 2, low[1] - fd / 2, low[0] + fw / 2, low[1] + fd / 2), slotD + reach, low[2] - slotD);
+    let piece = this.k(band.add(foot));
+    const ccx = (bb.min[0] + bb.max[0]) / 2, ccy = (bb.min[1] + bb.max[1]) / 2;
+    piece = this.k(piece.translate([-ccx, -ccy, -(low[2] - slotD)]));
+    const slotAt: [number, number] = [low[0] - ccx, low[1] - ccy];
+    warnings.push('Print it standing up with tree supports (Bambu: Support → tree(auto)).');
+    const base = p.scBase ?? 'wood';
+    if (base === 'none') return [{ name: 'Sculpture', color: p.colorA, m: piece }];
+    const H = clampN(p.scBaseH ?? 25, 12, 100);
     const fit = clampN(p.sdFit ?? 0.2, 0, 1);
-    const H = clampN(p.rbBaseH ?? 30, 12, 120);
-    const hasBase = base !== 'none';
-    // standing: flat y → up, depth (z) → front-back, centred; the rail goes into the slot
-    const z0 = hasBase ? H - y0 : railH - y0;
-    const up = (m: Manifold) => this.k(this.k(m.rotate([90, 0, 0])).translate([-cx, D / 2, z0]));
-    const parts: WorkPart[] = [{ name: 'Ribbons', color: p.colorA, m: up(piece), print: this.k(piece.translate([-cx, 0, 0])) }];
-    if (!hasBase) return parts;
-    const slotW = x1 - x0 + 2 * fit;
-    const slotT = D + 2 * fit;
+    const shown = this.k(piece.translate([0, 0, H - slotD]));
+    const parts: WorkPart[] = [{ name: 'Sculpture', color: p.colorA, m: shown, print: piece }];
+    const depth = bb.max[1] - bb.min[1];
     parts.push(...this.woodBase({
       font, p, warnings, base: base === 'printed' ? 'printed' : 'wood',
-      BW: Math.round(x1 - x0 + 24), H, D: Math.round(D + 20), slotW, slotT, slotD: railH,
-      lines: [p.rbText1 ?? '', p.rbText2 ?? '', ''],
-      inner: p.rbLed !== false ? [Math.max(10, slotW - 12), Math.max(6, D - 2 * bar - 2), 4] : undefined,
-      printY: y0 - railH - 14,
+      BW: Math.round(Math.max(2 * Math.abs(slotAt[0]) + fw + 24, (bb.max[0] - bb.min[0]) * 0.7)), H,
+      D: Math.round(Math.max(2 * Math.abs(slotAt[1]) + fd + 24, Math.min(depth + 10, 80))),
+      slotW: fw + 2 * fit, slotT: fd + 2 * fit, slotD, slotAt, lines: [p.scText1 ?? '', p.scText2 ?? '', ''],
+      led: p.scLed !== false ? 8 : 0, printY: -(fd / 2) - 20,
     }));
     return parts;
   }
 
   /**
-   * Stand base shared by the trophy and ribbon styles: a block BW × D × H with a slot
+   * Stand base shared by the trophy and ribbon sculpture styles: a block BW × D × H with a slot
    * (slotW × slotT × slotD) in the middle of the top face, the front engraved with up to three
    * lines (title, line 2 under a divider, year at the bottom). Optional LED groove (`led` mm wide,
    * 3 mm deep) on the top face in front of the slot, for a light strip shining up into the piece.
    * 'wood': a preview-only block + the laser file (front engraving, block outline, top face with
    * the slot and groove to cut) in this.laser. 'printed': a printed part (colour C), front up.
    */
-  private woodBase(o: { font: Font; p: Params; warnings: string[]; base: 'wood' | 'printed'; BW: number; H: number; D: number; slotW: number; slotT: number; slotD: number; lines: string[]; led?: number; inner?: [number, number, number]; printY: number }): WorkPart[] {
+  private woodBase(o: { font: Font; p: Params; warnings: string[]; base: 'wood' | 'printed'; BW: number; H: number; D: number; slotW: number; slotT: number; slotD: number; lines: string[]; led?: number; inner?: [number, number, number]; slotAt?: [number, number]; printY: number }): WorkPart[] {
     const W = this.wasm;
     const { font, p, warnings, BW, H, D, slotW, slotT, slotD } = o;
     const csOf = (loops: Vec2[][]) => this.k(new W.CrossSection(loops as MVec2[][], 'NonZero'));
@@ -1927,12 +1832,14 @@ export class Builder {
     if (engrave && engrave.bounds().min[1] < 1) warnings.push('The base text is crowded. Make the base taller or the text shorter.');
     // block with the slot (+ LED groove), text cut 0.6 mm into the front (front = −y, toward you)
     let block = this.k(this.extrude(this.rect(-BW / 2, -D / 2, BW / 2, D / 2), H));
-    block = this.k(block.subtract(this.extrude(this.rect(-slotW / 2, -slotT / 2, slotW / 2, slotT / 2), slotD + 1, H - slotD)));
+    // slot (and grooves) may sit off centre, under the foot of the piece
+    const [sx, sy] = o.slotAt ?? [0, 0];
+    block = this.k(block.subtract(this.extrude(this.rect(sx - slotW / 2, sy - slotT / 2, sx + slotW / 2, sy + slotT / 2), slotD + 1, H - slotD)));
     // narrower groove under the slot (e.g. for an LED strip lying under an open rail)
-    if (o.inner) block = this.k(block.subtract(this.extrude(this.rect(-o.inner[0] / 2, -o.inner[1] / 2, o.inner[0] / 2, o.inner[1] / 2), o.inner[2] + 1, H - slotD - o.inner[2])));
+    if (o.inner) block = this.k(block.subtract(this.extrude(this.rect(sx - o.inner[0] / 2, sy - o.inner[1] / 2, sx + o.inner[0] / 2, sy + o.inner[1] / 2), o.inner[2] + 1, H - slotD - o.inner[2])));
     const led = o.led ?? 0;
-    const ledY0 = -slotT / 2 - 2 - led, ledY1 = -slotT / 2 - 2;
-    if (led > 0) block = this.k(block.subtract(this.extrude(this.rect(-slotW / 2, ledY0, slotW / 2, ledY1), 4, H - 3)));
+    const ledY0 = sy - slotT / 2 - 2 - led, ledY1 = sy - slotT / 2 - 2;
+    if (led > 0) block = this.k(block.subtract(this.extrude(this.rect(sx - slotW / 2, ledY0, sx + slotW / 2, ledY1), 4, H - 3)));
     if (engrave) {
       const cut = this.k(this.k(this.k(engrave.translate([-BW / 2, 0])).extrude(0.6 + OVERLAP)).rotate([90, 0, 0]));
       block = this.k(block.subtract(this.k(cut.translate([0, -D / 2 + 0.6, 0]))));
@@ -1948,11 +1855,11 @@ export class Builder {
     const guide: [number, number][][] = [
       box(0, 0, BW, H),
       box(0, oy, BW, oy + D),
-      box(BW / 2 - slotW / 2, oy + D / 2 - slotT / 2, BW / 2 + slotW / 2, oy + D / 2 + slotT / 2),
+      box(BW / 2 + sx - slotW / 2, oy + D / 2 + sy - slotT / 2, BW / 2 + sx + slotW / 2, oy + D / 2 + sy + slotT / 2),
     ];
     // top face drawn as seen from above with the front at the bottom
-    if (led > 0) guide.push(box(BW / 2 - slotW / 2, oy + D / 2 + ledY0, BW / 2 + slotW / 2, oy + D / 2 + ledY1));
-    if (o.inner) guide.push(box(BW / 2 - o.inner[0] / 2, oy + D / 2 - o.inner[1] / 2, BW / 2 + o.inner[0] / 2, oy + D / 2 + o.inner[1] / 2));
+    if (led > 0) guide.push(box(BW / 2 + sx - slotW / 2, oy + D / 2 + ledY0, BW / 2 + sx + slotW / 2, oy + D / 2 + ledY1));
+    if (o.inner) guide.push(box(BW / 2 + sx - o.inner[0] / 2, oy + D / 2 + sy - o.inner[1] / 2, BW / 2 + sx + o.inner[0] / 2, oy + D / 2 + sy + o.inner[1] / 2));
     const eng = engrave ? (engrave.toPolygons() as [number, number][][]) : [];
     this.laser = { cut: [], guide, engrave: eng, size: [BW, H], pieces: 1, what: `wood block ${fmtN(BW)} × ${fmtN(D)} × ${fmtN(H)} mm`, slot: [slotW, slotT, slotD], led: led > 0 ? [slotW, led, 3] : o.inner };
     return [{ name: 'Wooden base', color: '#c8a27a', previewOnly: true, m: block }];

@@ -147,18 +147,20 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'heading', key: 'style', label: 'Letters' },
     { kind: 'range', key: 'arLetterT', label: 'Letter thickness', min: 0.6, max: 15, step: 0.2, unit: 'mm' },
   ],
-  ribbon: [
-    { kind: 'heading', key: 'style', label: 'Ribbons' },
-    { kind: 'range', key: 'rbDepth', label: 'Depth', min: 10, max: 80, step: 1, unit: 'mm', hint: 'How deep the ribbons go, front to back.' },
-    { kind: 'range', key: 'rbSway', label: 'Sway', min: 0, max: 80, step: 5, unit: '%', hint: 'How much the depth rises and falls along each stroke. 0 = all the same depth.' },
-    { kind: 'range', key: 'rbWave', label: 'Sway length', min: 20, max: 300, step: 5, unit: 'mm' },
-    { kind: 'range', key: 'rbWall', label: 'Ribbon thickness', min: 1.2, max: 5, step: 0.1, unit: 'mm', hint: '2–3 mm prints well and lets light through.' },
+  sculpture: [
+    { kind: 'heading', key: 'style', label: 'Shape' },
+    { kind: 'select', key: 'scShape', label: 'Shape', options: [['infinity', 'Infinity'], ['trefoil', 'Knot'], ['lissajous', 'Wave loops'], ['twist', 'Twisted ring']] },
+    { kind: 'range', key: 'scSize', label: 'Size', min: 60, max: 240, step: 1, unit: 'mm', hint: 'Width across.' },
+    { kind: 'range', key: 'scWidth', label: 'Band width', min: 4, max: 40, step: 0.5, unit: 'mm' },
+    { kind: 'range', key: 'scThick', label: 'Band thickness', min: 1.2, max: 5, step: 0.1, unit: 'mm', hint: '2–3 mm is strong and lets light through.' },
+    { kind: 'range', key: 'scTwist', label: 'Twists', min: 0, max: 8, step: 1, hint: 'Half turns of the band along the loop. Odd numbers make a Möbius band (one side only).' },
+    { kind: 'range', key: 'scDepth', label: 'Front to back', min: 0, max: 80, step: 1, unit: '%', hint: 'How far the loop moves toward you and away. More keeps crossing parts apart.' },
     { kind: 'heading', key: 'style', label: 'Base' },
-    { kind: 'select', key: 'rbBase', label: 'Base', options: [['wood', 'Wood block'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Wood block: laser-engrave the front and cut the slot. Download the laser file in the Finish step.' },
-    { kind: 'toggle', key: 'rbLed', label: 'Groove for an LED strip', hint: 'A groove under the slot: the light shines up through the open rail into the ribbons.' },
-    { kind: 'text', key: 'rbText1', label: 'Engraved line 1', placeholder: 'optional' },
-    { kind: 'text', key: 'rbText2', label: 'Engraved line 2', placeholder: 'optional' },
-    { kind: 'range', key: 'rbBaseH', label: 'Base height', min: 15, max: 80, step: 1, unit: 'mm' },
+    { kind: 'select', key: 'scBase', label: 'Base', options: [['wood', 'Wood block'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Wood block: laser-engrave the front and cut the slot. Download the laser file in the Finish step.' },
+    { kind: 'toggle', key: 'scLed', label: 'Groove for an LED strip' },
+    { kind: 'text', key: 'scText1', label: 'Engraved line 1', placeholder: 'optional' },
+    { kind: 'text', key: 'scText2', label: 'Engraved line 2', placeholder: 'optional' },
+    { kind: 'range', key: 'scBaseH', label: 'Base height', min: 12, max: 80, step: 1, unit: 'mm' },
     { kind: 'range', key: 'sdFit', label: 'Slot play', min: 0, max: 0.6, step: 0.05, unit: 'mm' },
   ],
   trophy: [
@@ -354,7 +356,7 @@ const params: Params = { ...defaults };
 /** Styles without text (lamp, candle mold): no text, size, font style or backing sections. */
 /** Pin art with the pins printed apart from the base (separate files/objects). */
 const pinsApart = () => params.style === 'pins' && !!params.pinSeparate;
-const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace';
+const noText = () => params.style === 'lamp' || params.style === 'mold' || params.style === 'tile' || params.style === 'terrace' || params.style === 'sculpture';
 let fontKey = 'archivo';
 let lastSize: [number, number, number] = [0, 0, 0];
 let textTouched = false;
@@ -513,7 +515,7 @@ async function run() {
         renderAxes();
       }
       const bn = $('#backing-note');
-      const standBase = (params.style === 'trophy' || params.style === 'ribbon') && lastBacking?.what;
+      const standBase = (params.style === 'trophy' || params.style === 'sculpture') && lastBacking?.what;
       bn.hidden = !params.backOn && !standBase;
       if (standBase && lastBacking) {
         const sl = lastBacking.slot;
@@ -581,7 +583,7 @@ function renderParts(parts: Part[]) {
 function sizeKeys(): (keyof Params)[] {
   switch (params.style) {
     case 'flower': return ['flSize'];
-    case 'ribbon': return ['capHeight'];
+    case 'sculpture': return ['scSize'];
     case 'trophy': return params.tpShape === 'badge' ? ['tpSize'] : ['capHeight'];
     case 'terrace': return ['tgW', 'tgD'];
     case 'mold': return ['moldH', 'moldD'];
@@ -705,7 +707,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'pinFrame' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase' || c.key === 'rbBase') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout' || c.key === 'pinFrame' || c.key === 'sdStand' || c.key === 'sdLetters' || c.key === 'tpShape' || c.key === 'tpBase' || c.key === 'scBase' || c.key === 'scShape') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -782,7 +784,7 @@ function renderStyleControls() {
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
   if (params.style === 'pins' && !params.pinFrame) list = list.filter((c) => c.key !== 'pinFrameH');
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
-  if (params.style === 'ribbon' && params.rbBase === 'none') list = list.filter((c) => !['rbLed', 'rbText1', 'rbText2', 'rbBaseH', 'sdFit'].includes(c.key));
+  if (params.style === 'sculpture' && params.scBase === 'none') list = list.filter((c) => !['scLed', 'scText1', 'scText2', 'scBaseH', 'sdFit'].includes(c.key));
   if (params.style === 'trophy') {
     const badge = params.tpShape === 'badge';
     list = list.filter((c) => !((badge && c.key === 'tpJoin') || (!badge && ['tpBadge', 'tpSize', 'tpRaise'].includes(c.key)) || (params.tpBase === 'none' && ['tpTitle', 'tpSub', 'tpYear', 'tpBaseW', 'tpBaseH', 'tpBaseD', 'sdFit'].includes(c.key))));
@@ -1026,10 +1028,10 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none')) || (params.style === 'ribbon' && params.rbBase !== 'wood');
+  sec.hidden = (noText() && params.style !== 'sculpture') || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none')) || (params.style === 'sculpture' && params.scBase !== 'wood');
   const host = $('#backing-controls');
   host.innerHTML = '';
-  if (params.style === 'trophy' || params.style === 'ribbon') {
+  if (params.style === 'trophy' || params.style === 'sculpture') {
     sec.querySelector('h2')!.textContent = 'Wooden base (laser)';
     $('#dl-backing').hidden = false;
     $('#dl-backing-dxf').hidden = false;
@@ -1448,7 +1450,7 @@ function renderSwatches() {
   if (params.style === 'arrow') roles.push(['colorC', 'Letters']);
   if (params.style === 'standee' && params.sdStand !== 'none') roles.push(['colorC', 'Stand']);
   if (params.style === 'trophy' && params.tpBase === 'printed') roles.push(['colorC', 'Base']);
-  if (params.style === 'ribbon' && params.rbBase === 'printed') roles.push(['colorC', 'Base']);
+  if (params.style === 'sculpture' && params.scBase === 'printed') roles.push(['colorC', 'Base']);
   $('#swatch-host').innerHTML = roles
     .map(([k, label]) => {
       const cur = String(params[k] ?? '').toLowerCase();
@@ -1651,7 +1653,7 @@ function syncColors() {
     terrace: ['Planter', '—'],
     standee: ['Word', 'Letter lines'],
     trophy: ['Trophy', 'Raised text'],
-    ribbon: ['Ribbons', '—'],
+    sculpture: ['Sculpture', '—'],
     tile: ['Mold', 'Master'],
   };
   const [a, b] = labels[params.style];
@@ -1664,7 +1666,7 @@ function syncColors() {
 }
 
 const ICONS: Record<Style, string> = {
-  ribbon: `<svg viewBox="0 0 48 32"><path d="M6 22c4-14 14-14 16-6s-8 10-6 2 14-14 20-6-4 12-10 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><rect x="8" y="26" width="32" height="4" rx="1" fill="currentColor" opacity=".5"/></svg>`,
+  sculpture: `<svg viewBox="0 0 48 32"><path d="M8 14c0-8 12-8 16 0s16 8 16 0-12-8-16 0-16 8-16 0z" fill="none" stroke="currentColor" stroke-width="3"/><rect x="16" y="25" width="16" height="5" rx="1" fill="currentColor" opacity=".5"/></svg>`,
   trophy: `<svg viewBox="0 0 48 32"><circle cx="24" cy="11" r="9" fill="currentColor" opacity=".3"/><path d="M20 12l3-4 2 5 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 19h6v4h-6z" fill="currentColor"/><rect x="12" y="22" width="24" height="8" rx="1" fill="currentColor"/></svg>`,
   standee: `<svg viewBox="0 0 48 32"><path d="M15 3h18a3 3 0 0 1 3 3v18H12V6a3 3 0 0 1 3-3z" fill="currentColor" opacity=".3"/><path d="M16 8h6M16 13h14M16 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="9" y="24" width="30" height="5" rx="2" fill="currentColor"/></svg>`,
   terrace: `<svg viewBox="0 0 48 32"><path d="M3 24c0-6 6-8 12-8s9 3 14 3 16-2 16 5v2H3z" fill="currentColor" opacity=".3"/><path d="M8 22c0-4 4-6 8-6s7 2 7 5M12 20c0-3 2-5 5-5s4 2 4 4M30 22c1-4 4-5 7-5s6 2 6 5M34 21c0-3 2-4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 12l1-4 1 4M38 14l1-3 1 3" stroke="#6f9a3a" stroke-width="1.6" fill="none"/></svg>`,
@@ -2425,7 +2427,7 @@ const STYLE_ORDER = Object.keys(PRESETS) as Style[];
 
 // ---------- home: ideas ready to print (real pictures) + start something new ----------
 // (user tried the live-word catalog and asked for the real style pictures back)
-const NO_TEXT_STYLES = new Set<Style>(['lamp', 'mold', 'tile', 'terrace']);
+const NO_TEXT_STYLES = new Set<Style>(['lamp', 'mold', 'tile', 'terrace', 'sculpture']);
 function renderHomeIdeas() {
   // the first two ideas of every style, each with its real picture
   $('#home-ideas').innerHTML = STYLE_ORDER.flatMap((s) =>

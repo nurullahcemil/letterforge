@@ -125,7 +125,8 @@ stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no te
 mold (no text: candle shape + printable candle mold, `src/mold.ts`), flower (letter flower),
 arrow (arrow sign), pyramid (pyramid-tile letters), pins (pin art), lines (line letters),
 concrete (concrete letter molds), tile (no text: star & cross tile mold, `src/tiles.ts`),
-terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand), trophy.
+terrace (no text: terrace planter, `src/terrace.ts`), standee (word stand), trophy, sculpture (no text:
+ribbon sculpture, `src/sculpture.ts`).
 
 ## Trophy (`Builder.trophy`, user photos of award trophies; own designs; user has a laser cutter)
 Top piece printed flat, preview standing in the base (rotated 90° about X like the word stand).
@@ -142,6 +143,19 @@ loops, `what`, `slot` [w, t, depth]); SVG black fill / DXF ENGRAVE layer. Old sa
 (stacked sheets, removed) is read as 'wood'. 'printed': box with slot and the text cut 0.6 mm into
 the front, printed front-up (colour C). Not bed-split.
 Flower wall art idea has the wooden backing on by default (user: "flower words need a laser backing").
+
+## Ribbon sculpture (`src/sculpture.ts`, `Builder.sculpture`; user photo of a calligraphy ribbon sculpture)
+Words as ribbons were tried (centre-line tracing + walls on a flat back, branch `wip/ribbon-letters`)
+and dropped: user said "not looking like sculptures… maybe just shapes". Now no text: a flat band
+(`scWidth` × `scThick`) swept along a closed 3D curve (`scShape` infinity / trefoil "Knot" /
+'lissajous' = (2,5) torus knot "Wave loops" / twist "Twisted ring"), scaled to `scSize`,
+`scDepth` % front-back movement. Rotation-minimising frame (double reflection), closing mismatch
+spread along the loop + `scTwist` half twists (odd = Möbius: last ring joins the first shifted by 2
+corners). Mesh built directly (4 corners per ring, quads, no caps) → Manifold. Self-clearance
+check (points far apart along the loop must stay > band size apart) warns. Foot under the lowest
+part into the stand base (`woodBase`, shared with the trophy: wood block laser file or printed;
+slot may sit off centre via `slotAt`, base centred under the sculpture; LED groove in front).
+Printed standing with tree supports (note shown). Pictures: 3/4 view.
 
 ## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)
 Stacked lines (tight lineSpacing ~1.02) joined into one outline: cs grown by `sdMargin` + bridge
