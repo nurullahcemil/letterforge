@@ -34,13 +34,11 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   tpRaise?: number;
   /** Trophy stack: bridges small gaps between letters so the top is one piece (mm). */
   tpJoin?: number;
-  /** Trophy base: 'layers' = laser-cut wood sheets glued front to back, 'printed' = 3D printed block, 'none'. */
-  tpBase?: 'layers' | 'printed' | 'none';
+  /** Trophy base: 'wood' = a solid wood block (front laser-engraved, slot cut by hand), 'printed' = 3D printed block, 'none'. ('layers' = old name of 'wood'.) */
+  tpBase?: 'wood' | 'layers' | 'printed' | 'none';
   tpBaseW?: number;
   tpBaseH?: number;
   tpBaseD?: number;
-  /** Wood sheet thickness for the layered base (mm). */
-  tpSheet?: number;
   /** Engraved on the base front. */
   tpTitle?: string;
   tpSub?: string;
@@ -295,7 +293,7 @@ export interface BuildResult {
   /** Where each letter sits on the model (model x/y, mm), for picking letters on the canvas. */
   letters: { i: number; x: number; y: number }[];
   /** Laser-cut backing, in model x/y mm: `cut` = board outline and holes, `guide` = where the letters sit. */
-  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number; engrave?: [number, number][][]; sheets?: number; what?: string };
+  backing?: { cut: [number, number][][]; guide: [number, number][][]; size: [number, number]; pieces: number; engrave?: [number, number][][]; sheets?: number; what?: string; slot?: [number, number, number] };
 }
 
 interface WorkPart {
@@ -315,6 +313,7 @@ type Deletable = { delete(): void };
 /** Styles built from the plain letter outline, where loose letter pieces would print apart. */
 const JOIN_STYLES = new Set(['sign', 'planter', 'topo', 'facet', 'keychain', 'duo', 'stepped']);
 const OVERLAP = 0.01;
+const fmtN = (v: number) => String(Math.round(v * 10) / 10);
 
 export class Builder {
   private bin: Deletable[] = [];
@@ -1606,18 +1605,17 @@ export class Builder {
    *    becomes a thin column, a year a fat one); small gaps bridged (`tpJoin`) so it is one piece.
    *  - 'badge': a plaque (circle / rounded / shield / bulb, `tpSize`) with the text raised on the
    *    front in colour B.
-   * A foot strip under it slots into the base. Base 'layers' (DEFAULT, user has a laser cutter):
-   * wood sheets (`tpSheet`) glued front to back; the middle sheets have a notch for the foot; the
-   * front sheet is engraved with title / subtitle / a line / year. The laser file (red = cut,
-   * black = engrave) comes back as `backing`. 'printed': a 3D printed block with the text cut in.
+   * A foot strip under it slots into the base. Base 'wood' (DEFAULT; user: "we will use thick wood"):
+   * one solid block; its front is laser-engraved with title / subtitle / a line / year. The laser
+   * file (black = engrave, blue = block edges + the slot to cut on the top face) comes back as
+   * `backing`. 'printed': a 3D printed block with the text cut in.
    */
   private trophy(cs: CrossSection, lines: Vec2[][][], font: Font, p: Params, warnings: string[]): WorkPart[] {
     const W = this.wasm;
     if (cs.isEmpty()) return [];
     const T = clampN(p.tpDepth ?? 12, 2, 40);
     const fit = clampN(p.sdFit ?? 0.2, 0, 1);
-    const base = p.tpBase ?? 'layers';
-    const sheet = clampN(p.tpSheet ?? 3, 1, 20);
+    const base = p.tpBase === 'layers' || !p.tpBase ? 'wood' : p.tpBase;
     const csOf = (loops: Vec2[][]) => this.k(new W.CrossSection(loops as MVec2[][], 'NonZero'));
     let top: CrossSection;
     let raised: CrossSection | null = null;
@@ -1681,9 +1679,9 @@ export class Builder {
     const H = clampN(p.tpBaseH ?? 40, 10, 200);
     const BW = (p.tpBaseW ?? 0) > 0 ? clampN(p.tpBaseW!, 20, 400) : Math.round(Math.max(wid * 1.05, 60));
     const slotD = Math.min(12, H * 0.4);
-    const k = base === 'layers' ? Math.max(1, Math.round(T / sheet)) : 0;
-    const slotT = base === 'layers' ? k * sheet : T;
-    const tabT = Math.max(1, Math.min(T, slotT - 2 * fit));
+    // the foot is the full thickness of the top; the slot is that plus play on each side
+    const tabT = T;
+    const slotT = T + 2 * fit;
     const tabW = Math.min(wid * 0.6, BW - 16);
     const hasBase = base !== 'none';
     const tab = hasBase ? this.extrude(this.rect(cx - tabW / 2, b.min[1] - slotD, cx + tabW / 2, b.min[1] + 6), tabT) : null;
@@ -1700,10 +1698,7 @@ export class Builder {
     if (!hasBase) return parts;
 
     // ----- base -----
-    // layered: whole sheets, the same number in front of and behind the notch so the slot is centred
-    let nS = Math.max(k + 2, Math.round(clampN(p.tpBaseD ?? 40, 10, 200) / sheet));
-    if ((nS - k) % 2) nS++;
-    const D = base === 'layers' ? nS * sheet : clampN(p.tpBaseD ?? 40, 10, 200);
+    const D = Math.max(clampN(p.tpBaseD ?? 40, 10, 200), slotT + 8);
     // engraving on the front, laid out in face coordinates (x 0..BW, y 0..H)
     const engr: CrossSection[] = [];
     const m = Math.max(4, Math.min(8, H * 0.14));
@@ -1732,7 +1727,7 @@ export class Builder {
     if (engrave && engrave.bounds().min[1] < 1) warnings.push('The base text is crowded. Make the base taller or the text shorter.');
     // block with the slot, text cut 0.6 mm into the front (front = −y, toward you)
     let block = this.k(this.extrude(this.rect(-BW / 2, -D / 2, BW / 2, D / 2), H));
-    block = this.k(block.subtract(this.extrude(this.rect(-tabW / 2 - fit, -slotT / 2 - (base === 'layers' ? 0 : fit), tabW / 2 + fit, slotT / 2 + (base === 'layers' ? 0 : fit)), slotD + 1, H - slotD)));
+    block = this.k(block.subtract(this.extrude(this.rect(-tabW / 2 - fit, -slotT / 2, tabW / 2 + fit, slotT / 2), slotD + 1, H - slotD)));
     if (engrave) {
       const cut = this.k(this.k(this.k(engrave.translate([-BW / 2, 0])).extrude(0.6 + OVERLAP)).rotate([90, 0, 0]));
       block = this.k(block.subtract(this.k(cut.translate([0, -D / 2 + 0.6, 0]))));
@@ -1743,25 +1738,17 @@ export class Builder {
       parts.push({ name: 'Base', color: p.colorC ?? '#2b2b2e', m: block, print: pr });
     } else {
       parts.push({ name: 'Wooden base', color: '#c8a27a', previewOnly: true, m: block });
-      // laser file: every sheet side by side; middle sheets have the notch; the front one is engraved
-      const n = Math.round(D / sheet);
-      const first = Math.floor((n - k) / 2);
-      const cutLoops: [number, number][][] = [];
-      const gap = 4;
-      // in rows no wider than ~380 mm so the file fits a common laser bed; sheet 1 (top left) is the front
-      const cols = Math.max(1, Math.floor((380 + gap) / (BW + gap)));
-      for (let i = 0; i < n; i++) {
-        const ox = (i % cols) * (BW + gap);
-        const oy = -Math.floor(i / cols) * (H + gap);
-        const notch = i >= first && i < first + k;
-        const x0 = ox + BW / 2 - tabW / 2 - fit, x1 = ox + BW / 2 + tabW / 2 + fit;
-        const loop: [number, number][] = notch
-          ? [[ox, 0], [ox + BW, 0], [ox + BW, H], [x1, H], [x1, H - slotD], [x0, H - slotD], [x0, H], [ox, H]]
-          : [[ox, 0], [ox + BW, 0], [ox + BW, H], [ox, H]];
-        cutLoops.push(loop.map(([x, y]) => [x, y + oy] as [number, number]));
-      }
+      // laser file for a solid block: the front face engraving (black) inside the face outline
+      // (blue, to line it up on the block), and below it the top face with the slot to cut (blue)
+      const sw = tabW + 2 * fit;
+      const oy = -(D + 8);
+      const guide: [number, number][][] = [
+        [[0, 0], [BW, 0], [BW, H], [0, H]],
+        [[0, oy], [BW, oy], [BW, oy + D], [0, oy + D]],
+        [[BW / 2 - sw / 2, oy + D / 2 - slotT / 2], [BW / 2 + sw / 2, oy + D / 2 - slotT / 2], [BW / 2 + sw / 2, oy + D / 2 + slotT / 2], [BW / 2 - sw / 2, oy + D / 2 + slotT / 2]],
+      ];
       const eng = engrave ? (engrave.toPolygons() as [number, number][][]) : [];
-      this.laser = { cut: cutLoops, guide: [], engrave: eng, size: [BW, H], pieces: n, sheets: n, what: `${n} sheets of ${sheet} mm` };
+      this.laser = { cut: [], guide, engrave: eng, size: [BW, H], pieces: 1, what: `wood block ${fmtN(BW)} × ${fmtN(D)} × ${fmtN(H)} mm`, slot: [sw, slotT, slotD] };
     }
     return parts;
   }

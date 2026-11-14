@@ -156,14 +156,13 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'tpRaise', label: 'Raised text height', min: 0, max: 6, step: 0.2, unit: 'mm' },
     { kind: 'range', key: 'tpJoin', label: 'Join gaps', min: 0, max: 6, step: 0.1, unit: 'mm', hint: 'Fills small gaps between letters so the top prints as one piece.' },
     { kind: 'heading', key: 'style', label: 'Base' },
-    { kind: 'select', key: 'tpBase', label: 'Base', options: [['layers', 'Laser-cut wood'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Laser-cut wood: sheets glued front to back, the front one engraved. Download the laser file in the Finish step.' },
+    { kind: 'select', key: 'tpBase', label: 'Base', options: [['wood', 'Wood block'], ['printed', '3D printed'], ['none', 'No base']], hint: 'Wood block: a solid piece of thick wood, the front laser-engraved. Download the laser file in the Finish step.' },
     { kind: 'text', key: 'tpTitle', label: 'Engraved title', placeholder: 'e.g. TEAM AWARD' },
     { kind: 'text', key: 'tpSub', label: 'Engraved line 2', placeholder: 'e.g. Project of the year' },
     { kind: 'text', key: 'tpYear', label: 'Engraved year', placeholder: 'e.g. 2025' },
     { kind: 'range', key: 'tpBaseW', label: 'Base width', min: 0, max: 250, step: 1, unit: 'mm', hint: '0 = as wide as the top.' },
     { kind: 'range', key: 'tpBaseH', label: 'Base height', min: 15, max: 100, step: 1, unit: 'mm' },
     { kind: 'range', key: 'tpBaseD', label: 'Base depth', min: 15, max: 100, step: 1, unit: 'mm' },
-    { kind: 'range', key: 'tpSheet', label: 'Wood sheet thickness', min: 1.5, max: 10, step: 0.5, unit: 'mm' },
     { kind: 'range', key: 'sdFit', label: 'Slot play', min: 0, max: 0.6, step: 0.05, unit: 'mm', hint: 'Extra room in the slot on each side.' },
   ],
   standee: [
@@ -501,7 +500,8 @@ async function run() {
       const bn = $('#backing-note');
       bn.hidden = !params.backOn && !(params.style === 'trophy' && lastBacking);
       if (params.style === 'trophy' && lastBacking) {
-        bn.textContent = `Base: ${lastBacking.what}, each ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Glue them front to back; the engraved one goes in front. Red = cut, black = engrave.`;
+        const sl = lastBacking.slot;
+        bn.textContent = `Base: ${lastBacking.what} (wide × deep × tall). Engrave the front (black). Blue = the block edges, and on the top face the slot to cut${sl ? `: ${fmt(sl[0])} × ${fmt(sl[1])} mm, ${fmt(sl[2])} mm deep` : ''}.`;
       } else if (params.backOn) {
         bn.textContent = lastBacking
           ? `Board ${fmt(lastBacking.size[0])} × ${fmt(lastBacking.size[1])} mm. Red lines are cuts, blue lines are the letter guide.`
@@ -765,7 +765,7 @@ function renderStyleControls() {
   if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
   if (params.style === 'trophy') {
     const badge = params.tpShape === 'badge';
-    list = list.filter((c) => !((badge && c.key === 'tpJoin') || (!badge && ['tpBadge', 'tpSize', 'tpRaise'].includes(c.key)) || (params.tpBase === 'none' && ['tpTitle', 'tpSub', 'tpYear', 'tpBaseW', 'tpBaseH', 'tpBaseD', 'tpSheet', 'sdFit'].includes(c.key)) || (params.tpBase !== 'layers' && c.key === 'tpSheet')));
+    list = list.filter((c) => !((badge && c.key === 'tpJoin') || (!badge && ['tpBadge', 'tpSize', 'tpRaise'].includes(c.key)) || (params.tpBase === 'none' && ['tpTitle', 'tpSub', 'tpYear', 'tpBaseW', 'tpBaseH', 'tpBaseD', 'sdFit'].includes(c.key))));
   }
   if (params.style === 'standee') list = list.filter((c) => (params.sdStand !== 'none' || !['sdStandD', 'sdFit'].includes(c.key)) && !(params.sdLetters === 'solid' && c.key === 'sdLine'));
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
@@ -1006,7 +1006,7 @@ const BACKING_CONTROLS: Control[] = [
 
 function renderBacking() {
   const sec = $('#backing-section');
-  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && params.tpBase !== 'layers');
+  sec.hidden = noText() || params.style === 'book' || (params.style === 'trophy' && (params.tpBase === 'printed' || params.tpBase === 'none'));
   const host = $('#backing-controls');
   host.innerHTML = '';
   if (params.style === 'trophy') {

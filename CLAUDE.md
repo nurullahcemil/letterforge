@@ -133,13 +133,14 @@ Top piece printed flat, preview standing in the base (rotated 90° about X like 
 is CCW), all stretched to the same height, side by side touching (long word = thin column, year =
 fat column), closed by `tpJoin` so it is one piece. 'badge': circle / rounded / shield / bulb
 (`tpSize`) with the text raised (`tpRaise`, colour B), scaled to fit. Foot strip (60 % width,
-flush with the back, `slotT − 2·sdFit` thick) into the base. `tpBase` 'layers' (DEFAULT): wood
-sheets `tpSheet` glued front to back (same count in front of/behind the notch sheets, k =
-round(T/sheet) notch sheets), front sheet engraved with `tpTitle`/`tpSub`/line/`tpYear` (laid out
-with the design font). Laser file comes back as `BuildResult.backing` with `engrave` loops (black
-fill in SVG, ENGRAVE layer in DXF), `what` = "N sheets of t mm"; sheets in rows ≤ 380 mm. The
-Finish step shows "Wooden base (laser)" with the SVG/DXF buttons. 'printed': box with slot and
-the text cut 0.6 mm into the front, printed front-up (colour C). Not bed-split.
+full thickness T) into a slot T + 2·`sdFit` wide. `tpBase` 'wood' (DEFAULT; user: "we will use
+thick wood, no box-like design"): ONE solid wood block (`tpBaseW` 0 = auto / `tpBaseH` /
+`tpBaseD`); laser file = the front face engraving (black: `tpTitle`/`tpSub`/line/`tpYear`, laid out
+with the design font) inside the face outline (blue, to line it up), and the top face with the slot
+outline (blue) to mark and cut by hand. Comes back as `BuildResult.backing` (cut empty, `engrave`
+loops, `what`, `slot` [w, t, depth]); SVG black fill / DXF ENGRAVE layer. Old saved value 'layers'
+(stacked sheets, removed) is read as 'wood'. 'printed': box with slot and the text cut 0.6 mm into
+the front, printed front-up (colour C). Not bed-split.
 Flower wall art idea has the wooden backing on by default (user: "flower words need a laser backing").
 
 ## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)
