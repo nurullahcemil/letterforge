@@ -4,7 +4,6 @@ import QRCode from 'qrcode';
 import type { Font } from 'opentype.js';
 import { layoutText, smartLines, type Vec2 } from './text';
 import { buildSculpture } from './sculpture';
-import { buildDish, veins } from './dish';
 import { buildLamp, LAMP_TURN, type LampParams } from './lamp';
 import { buildMold, type MoldParams } from './mold';
 import { buildTiles, type TileParams } from './tiles';
@@ -12,7 +11,7 @@ import { buildTerrace, type TerraceParams } from './terrace';
 
 const SkeletonBuilder: typeof SS.SkeletonBuilder = (SS as any).SkeletonBuilder ?? (SS as any).default.SkeletonBuilder;
 
-export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee' | 'trophy' | 'sculpture' | 'dish';
+export type Style = 'sign' | 'planter' | 'topo' | 'facet' | 'keychain' | 'duo' | 'stack' | 'stepped' | 'ramp' | 'book' | 'lamp' | 'mold' | 'flower' | 'arrow' | 'pyramid' | 'tile' | 'pins' | 'lines' | 'concrete' | 'terrace' | 'standee' | 'trophy' | 'sculpture';
 
 export interface Params extends LampParams, MoldParams, TileParams, TerraceParams {
   /** Letter flower: letters around a centre like petals. */
@@ -24,24 +23,6 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
-  /** Ribbed dish: diameter, rim height (mm), number of ribs, hollow depth (mm). */
-  dsSize?: number;
-  dsHeight?: number;
-  dsRibs?: number;
-  dsDepth?: number;
-  /** Ribbed dish: middle well size, % of the radius; how deep it sits (mm). */
-  dsWell?: number;
-  dsWellDepth?: number;
-  /** Ribbed dish: rim points (% of the radius), swirl (degrees), hand-made wobble (%). */
-  dsScallop?: number;
-  dsSwirl?: number;
-  dsWobble?: number;
-  dsWall?: number;
-  dsFloor?: number;
-  /** Ribbed dish middle: raised veins, a raised word (colour B), a word cut in, or plain. */
-  dsCentre?: 'veins' | 'raised' | 'cut' | 'plain';
-  dsRaise?: number;
-  dsSeed?: number;
   /** Ribbon sculpture shape. */
   scShape?: 'infinity' | 'trefoil' | 'lissajous' | 'twist';
   /** Ribbon sculpture: width across (mm). */
@@ -431,7 +412,7 @@ export class Builder {
         layout.lines.push(art.toPolygons() as Vec2[][]);
       }
       // pin art waves and ripples don't need any text
-      const textFree = (p.style === 'pins' && (p.pinMode ?? 'wave') !== 'letters') || p.style === 'sculpture' || p.style === 'dish';
+      const textFree = (p.style === 'pins' && (p.pinMode ?? 'wave') !== 'letters') || p.style === 'sculpture';
       if (cs.isEmpty() && !textFree) {
         return { parts: [], warnings: ['Type something to get started.'], size: [0, 0, 0], letters: [] };
       }
@@ -502,10 +483,6 @@ export class Builder {
           this.spots = [];
           parts = this.standee(cs, p, warnings);
           break;
-        case 'dish':
-          this.spots = [];
-          parts = this.dish(cs, p, warnings);
-          break;
         case 'sculpture':
           this.spots = [];
           parts = this.sculpture(font, p, warnings);
@@ -530,7 +507,7 @@ export class Builder {
           parts = this.pins(cs, p, warnings);
           break;
       }
-      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee' && p.style !== 'trophy' && p.style !== 'sculpture' && p.style !== 'dish') parts = this.splitToBed(parts, p.bedSize, warnings);
+      if (p.splitBed && p.style !== 'lines' && p.style !== 'concrete' && p.style !== 'standee' && p.style !== 'trophy' && p.style !== 'sculpture') parts = this.splitToBed(parts, p.bedSize, warnings);
 
       // Detach manifolds we keep for export from the garbage bin.
       const keep = new Set(parts.filter((x) => !x.previewOnly).map((x) => x.m).filter(Boolean) as Manifold[]);
@@ -1751,47 +1728,6 @@ export class Builder {
       slotW: tabW + 2 * fit, slotT, slotD, lines: [p.tpTitle ?? '', p.tpSub ?? '', p.tpYear ?? ''],
       printY: b.min[1] - slotD - 12,
     }));
-    return parts;
-  }
-
-  /**
-   * Ribbed dish (src/dish.ts): ribs around a flat middle well. The middle gets raised veins, a
-   * raised word (its own part, colour B), a word cut into the floor, or nothing. Prints as it
-   * stands, no supports (the underside never gets flatter than 45°).
-   */
-  private dish(cs: CrossSection, p: Params, warnings: string[]): WorkPart[] {
-    const W = this.wasm;
-    const size = clampN(p.dsSize ?? 200, 60, 400);
-    const d = buildDish(W, (o) => this.k(o), {
-      size, height: clampN(p.dsHeight ?? 32, 8, 150), ribs: clampN(p.dsRibs ?? 28, 8, 64), depth: clampN(p.dsDepth ?? 6, 0, 30),
-      well: clampN(p.dsWell ?? 30, 10, 60) / 100, wellDepth: clampN(p.dsWellDepth ?? 3, 0, 20), scallop: clampN(p.dsScallop ?? 4, 0, 15) / 100,
-      swirl: clampN(p.dsSwirl ?? 0, -120, 120), wobble: clampN(p.dsWobble ?? 50, 0, 100) / 100, wall: clampN(p.dsWall ?? 2.4, 1.2, 8),
-      floor: clampN(p.dsFloor ?? 3, 1.6, 10), seed: p.dsSeed ?? 1, perRib: p.lampFine ? 24 : 16,
-    }, warnings);
-    let body = d.m;
-    const centre = p.dsCentre ?? 'veins';
-    const raise = clampN(p.dsRaise ?? 1.2, 0.4, 6);
-    const parts: WorkPart[] = [];
-    if (centre === 'veins') {
-      const v = veins(W, (o) => this.k(o), d.wellR * 0.97, p.dsSeed ?? 1);
-      body = this.k(body.add(this.extrude(v, raise + OVERLAP, d.floorZ - OVERLAP)));
-    } else if ((centre === 'raised' || centre === 'cut') && !cs.isEmpty()) {
-      // the word, centred and scaled to fit inside the well
-      const b = cs.bounds();
-      const bw = b.max[0] - b.min[0], bh = b.max[1] - b.min[1];
-      // as big as fits inside the well (the word size follows the dish, not the letter height)
-      const sc = (d.wellR * 2 * 0.8) / Math.max(1e-6, Math.hypot(bw, bh));
-      const word = this.k(cs.translate([-(b.min[0] + b.max[0]) / 2, -(b.min[1] + b.max[1]) / 2]).scale([sc, sc]));
-      if (centre === 'cut') {
-        const cut = Math.min(raise, d.floorZ - 1);
-        body = this.k(body.subtract(this.extrude(word, cut + 1, d.floorZ - cut)));
-      } else {
-        parts.push({ name: 'Word', color: p.colorB, m: this.extrude(word, raise, d.floorZ) });
-      }
-    }
-    parts.unshift({ name: 'Dish', color: p.colorA, m: body });
-    if (size > p.bedSize - 10) warnings.push(`The dish is ${Math.round(size)} mm across, too big for your ${p.bedSize} mm bed. Make it smaller.`);
-    warnings.push('Prints as it stands, no supports. Paint tip: print in black, then dry-brush the rib edges with a light colour.');
     return parts;
   }
 

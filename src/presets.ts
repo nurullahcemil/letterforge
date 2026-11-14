@@ -136,13 +136,6 @@ export const PRESETS: Record<Style, StylePreset> = {
     font: 'archivo',
     patch: { colorA: '#efe4d2' },
   },
-  dish: {
-    label: 'Ribbed dish',
-    blurb: 'A round dish with sharp ribs and soft hollows around a middle with veins or a word. Prints without supports. Dry-brush the rib edges for a glowing look.',
-    text: 'KEYS',
-    font: 'archivo',
-    patch: { colorA: '#1E1E20', colorB: '#5CC79C' },
-  },
   trophy: {
     label: 'Trophy',
     blurb: 'An award: stacked words or a badge on top, standing in a wooden base you laser-cut and engrave (or a printed base).',
@@ -252,12 +245,6 @@ export const SAMPLES: Record<Style, Sample[]> = {
     { name: 'Knot', text: '', font: 'archivo', patch: { scShape: 'trefoil', scTwist: 2, scWidth: 14, scSize: 140 } },
     { name: 'Wave loops', text: '', font: 'archivo', patch: { scShape: 'lissajous', scWidth: 10, scTwist: 2, scSize: 150, scDepth: 35 } },
     { name: 'Twisted ring', text: '', font: 'archivo', patch: { scShape: 'twist', scTwist: 3, scWidth: 22, scSize: 130 } },
-  ],
-  dish: [
-    { name: 'Veins dish', text: 'KEYS', font: 'archivo', patch: {} },
-    { name: 'Key dish', text: 'KEYS', font: 'archivo', patch: { dsCentre: 'raised', dsSize: 160, dsHeight: 26, dsRibs: 24, dsWell: 38 } },
-    { name: 'Swirl bowl', text: 'KEYS', font: 'archivo', patch: { dsCentre: 'plain', dsSize: 180, dsHeight: 55, dsRibs: 22, dsDepth: 7, dsSwirl: 45, dsWell: 22, colorA: '#4D86E6' } },
-    { name: 'Ring dish', text: 'A+J', font: 'fredoka', patch: { dsCentre: 'cut', dsSize: 100, dsHeight: 18, dsRibs: 18, dsDepth: 3.5, dsWell: 42, dsFloor: 3, colorA: '#EF6E66' } },
   ],
   trophy: [
     { name: 'Winner 2025', text: 'WINNER\n2025', font: 'archivo', patch: {} },
