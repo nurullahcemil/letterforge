@@ -12,7 +12,6 @@
  * dish gets a flat foot with a 45° underside to the rim, a steep one becomes an even shell.
  */
 import type { ManifoldToplevel, Manifold, CrossSection, Vec2 } from 'manifold-3d';
-import { createNoise2D } from 'simplex-noise';
 
 export interface DishParams {
   /** Diameter across the rib points (mm). */
@@ -36,10 +35,6 @@ export interface DishParams {
   wall: number;
   floor: number;
   seed: number;
-  /** Bumpy hand-worked surface: bump height (mm). */
-  bumps: number;
-  /** Bumps on the middle floor too (not under a word). */
-  bumpWell: boolean;
   /** Points per rib around (sharpness / file size). */
   perRib?: number;
 }
@@ -93,13 +88,6 @@ export function buildDish(W: ManifoldToplevel, keep: <T extends { delete(): void
   const wob = Math.max(0, Math.min(1, dp.wobble));
   const swirl = (dp.swirl * Math.PI) / 180;
   const step = (2 * Math.PI) / n;
-  // ribs wander along their length, and are not all equally wide
-  const wanderA = wob * Math.min(0.45 * step, 0.12);
-  const kSp = Math.max(2, Math.round(n / 3));
-  const spaceA = (wob * 0.18) / kSp;
-  // bumpy surface (like hammered or hand-pressed clay): two sizes of smooth bumps + dents
-  const nA = createNoise2D(rng((dp.seed || 1) + 11)), nB = createNoise2D(rng((dp.seed || 1) + 23)), nC = createNoise2D(rng((dp.seed || 1) + 37));
-  const bump = (x: number, y: number) => dp.bumps * (0.55 * nA(x / 9, y / 9) + 0.3 * nB(x / 3.6, y / 3.6) + 0.15 * nC(x / 1.6, y / 1.6));
 
   // top surface, row by row (i) and column by column (j)
   const top = new Float64Array(NR * NT * 3);
@@ -113,8 +101,7 @@ export function buildDish(W: ManifoldToplevel, keep: <T extends { delete(): void
       const rho = rows[i];
       const s = rho <= rho1 ? 0 : (rho - rho1) / (1 - rho1); // 0 at the start of the ribs, 1 at the rim
       // columns turn with the swirl and wander a little (not enough to cross each other)
-      // (wander turns by at most ~0.46 per radian and uneven spacing by ~0.18, so columns never cross)
-      const th = t0 + swirl * s * s + wanderA * s * (0.6 * Math.sin(3 * t0 + 2.2 * Math.PI * s + ph[0]) + 0.4 * Math.sin(5 * t0 - 1.6 * Math.PI * s + ph[1])) + spaceA * Math.sin(kSp * t0 + ph[4]);
+      const th = t0 + swirl * s * s + wob * step * 0.3 * s * (0.6 * Math.sin(3 * t0 + 2.2 * Math.PI * s + ph[0]) + 0.4 * Math.sin(5 * t0 - 1.6 * Math.PI * s + ph[1]));
       const r = rho * R0 * (1 - dp.scallop * v * s * s);
       let z: number;
       if (rho <= w) z = floorZ;
@@ -122,19 +109,12 @@ export function buildDish(W: ManifoldToplevel, keep: <T extends { delete(): void
       else {
         z = floorZ + wd + (H - floorZ - wd) * Math.pow(s, 1.6);
         // hollows fade in from the well, deepest at the rim; never below the well step
-        const along = 1 + 0.35 * wob * nA(t0 * 2.5 + 40, s * 3);
-        const d = dp.depth * dMul * along * smooth(s / 0.35) * (0.45 + 0.55 * s);
+        const d = dp.depth * dMul * smooth(s / 0.35) * (0.45 + 0.55 * s);
         z = Math.max(floorZ + wd * 0.5, z - d * v);
       }
       const k = (i * NT + j) * 3;
-      const x = r * Math.cos(th), y = r * Math.sin(th);
-      // bumps everywhere on the bowl (a little less on the crests so they stay crisp), fading in from the well
-      if (dp.bumps > 0) {
-        const f = rho <= w ? (dp.bumpWell ? 0.6 * smooth((rho / w - 0.15) / 0.3) : 0) : rho <= rho1 ? (dp.bumpWell ? 0.6 : 0.3) : 0.45 + 0.55 * Math.max(0.35, v);
-        z += bump(x, y) * f;
-      }
-      top[k] = x;
-      top[k + 1] = y;
+      top[k] = r * Math.cos(th);
+      top[k + 1] = r * Math.sin(th);
       top[k + 2] = z;
     }
   }

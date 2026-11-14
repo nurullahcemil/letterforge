@@ -169,11 +169,6 @@ flatter than 45°, so NO supports (check: `npx tsx scripts/dish-check.ts`, must 
 Middle `dsCentre`: veins (seeded branching random walk, raised, merged into the dish), raised word
 (own part, colour B), cut-in word, plain. The word fills the well (capHeight ignored; size section
 hidden). Text steps (Words/Font) only show for the word middles (noText() is dynamic for dish).
-Organic (user: "we lost the organic texture… I need more bumpy texture"): `dsBumps` (mm, default
-0.9) = 3-octave simplex bumps on the top (a bit less on crests, also on the well floor for veins/plain;
-veins are sunk into the floor by the bump height so they never hang over a dent); ribs wander along
-their length, have uneven widths (angle warp, kept small enough that columns never cross) and
-uneven depth along their length (`dsWobble`, default 70).
 Paint tip shown as a note (user asked about painting: dry-brush black prints). Pictures: 3/4 view.
 
 ## Word stand (`Builder.standee`, user photo of a pink "THANK YOU FOR BEING YOU" desk piece; own design)

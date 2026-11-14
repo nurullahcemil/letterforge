@@ -156,7 +156,6 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
     { kind: 'range', key: 'dsScallop', label: 'Pointed edge', min: 0, max: 12, step: 0.5, unit: '%', hint: 'How much the rim pulls in between the ribs.' },
     { kind: 'range', key: 'dsSwirl', label: 'Swirl', min: -90, max: 90, step: 5, unit: '°', hint: 'Turns the ribs as they go out.' },
     { kind: 'range', key: 'dsWobble', label: 'Hand-made look', min: 0, max: 100, step: 5, unit: '%', hint: 'Lets the ribs wander a little.' },
-    { kind: 'range', key: 'dsBumps', label: 'Bumpy surface', min: 0, max: 2.5, step: 0.1, unit: 'mm', hint: 'A hand-worked, hammered look. Catches dry-brush paint.' },
     { kind: 'range', key: 'dsSeed', label: 'Variation', min: 1, max: 99, step: 1, hint: 'Shuffles the wobble and the veins.' },
     { kind: 'heading', key: 'style', label: 'Middle' },
     { kind: 'select', key: 'dsCentre', label: 'Middle', options: [['veins', 'Veins'], ['raised', 'Raised word'], ['cut', 'Cut-in word'], ['plain', 'Plain']], hint: 'A word goes in the middle, as big as fits. Type it in the Words step.' },

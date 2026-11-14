@@ -14,7 +14,7 @@ const cases = process.argv[2] ? [JSON.parse(process.argv[2])] : [{}, { dsHeight:
 let bad = 0;
 for (const c of cases) {
   const r = b.build(font, { ...DEFAULTS, style: 'dish', text: 'KEYS', ...c } as any);
-  let worst = 0, n = 0, area = 0;
+  let worst = 0, n = 0;
   for (const p of r.parts) {
     const P = p.positions, I = p.indices;
     for (let t = 0; t < I.length; t += 3) {
@@ -26,12 +26,11 @@ for (const c of cases) {
       const zMin = Math.min(P[a + 2], P[q + 2], P[w + 2]);
       if (zMin < 0.05) continue;
       const cz = nz / L; // −1 = facing straight down
-      if (cz < -Math.SQRT1_2 - 0.02) { n++; area += L / 2; worst = Math.min(worst, cz); if (process.env.WHERE) console.log(P[a], P[a + 1], P[a + 2], P[q + 2], P[w + 2], L / 2); }
+      if (cz < -Math.SQRT1_2 - 0.02) { n++; worst = Math.min(worst, cz); if (process.env.WHERE) console.log(P[a], P[a + 1], P[a + 2], P[q + 2], P[w + 2], L / 2); }
     }
   }
-  // a few specks (under 1 mm² in all) print fine
-  const ok = r.parts.length > 0 && area < 1;
+  const ok = r.parts.length > 0 && n === 0;
   if (!ok) bad++;
-  console.log(ok ? 'ok ' : 'BAD', JSON.stringify(c), `parts ${r.parts.length}`, n ? `${n} faces (${area.toFixed(2)} mm²) flatter than 45° (worst ${(Math.acos(-worst) * 180 / Math.PI).toFixed(1)}° from straight down)` : 'no overhangs');
+  console.log(ok ? 'ok ' : 'BAD', JSON.stringify(c), `parts ${r.parts.length}`, n ? `${n} faces flatter than 45° (worst ${(Math.acos(-worst) * 180 / Math.PI).toFixed(1)}° from straight down)` : 'no overhangs');
 }
 console.log(bad ? `${bad} problem(s)` : 'all clean');
