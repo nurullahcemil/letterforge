@@ -9,7 +9,6 @@ import { DEFAULTS } from './defaults';
 import { MOLD_SHAPE_DEFAULTS } from './mold';
 import { PRESETS, SAMPLES } from './presets';
 import { OPTION_ICONS } from './optionIcons';
-import { liveLook, STYLE_CAT, CATS } from './livetype';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
@@ -1482,11 +1481,6 @@ function applyIdea(i: number) {
 
 /** Picture of an idea (made by scripts/render-ideas.mjs); 'start' = the style's starting design. */
 const ideaThumb = (style: Style, i: number | 'start') => `${import.meta.env.BASE_URL}ideas/${style}-${i}.webp`;
-/** Very light letter colours need an outline to read on the light theme's cards. */
-const pale = (hex: string) => {
-  const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
-  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 > 0.72;
-};
 
 /** Ready-made ideas for the current style: real words that fit the bed. */
 function renderIdeas() {
@@ -1494,13 +1488,7 @@ function renderIdeas() {
   $('#ideas-wrap').hidden = !list.length;
   $('#ideas').innerHTML = list
     .map((d, i) => {
-      const patch = { ...PRESETS[params.style].patch, ...d.patch } as Partial<Params>;
-      const text = (d.text ?? PRESETS[params.style].text).split('\n')[0];
-      const live = !NO_TEXT_STYLES.has(params.style) && text !== '';
-      const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[params.style].font))?.css ?? 'Archivo Black';
-      const pic = live
-        ? `<span class="live-box live-wrap"><span class="live${pale(patch.colorA ?? DEFAULTS.colorA) ? ' pale' : ''}" style="${liveLook(params.style, text, font, patch.colorA ?? DEFAULTS.colorA, patch.colorB ?? DEFAULTS.colorB, 120)}">${escapeHtml(text)}</span></span>`
-        : `<img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()">`;
+      const pic = `<img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()">`;
       return `<button type="button" class="idea" data-i="${i}">${pic}<span>${escapeHtml(d.name)}</span></button>`;
     })
     .join('');
@@ -2355,40 +2343,19 @@ async function openDesign(id: string) {
 
 const STYLE_ORDER = Object.keys(PRESETS) as Style[];
 
-// ---------- home: type first, catalog of ideas that redraw with your words ----------
-let homeCat = 'All';
+// ---------- home: ideas ready to print (real pictures) + start something new ----------
+// (user tried the live-word catalog and asked for the real style pictures back)
 const NO_TEXT_STYLES = new Set<Style>(['lamp', 'mold', 'tile', 'terrace']);
-const heroEl = $('#hero-word') as HTMLInputElement;
-heroEl.addEventListener('input', () => {
-  $('#hero-count').textContent = `${heroEl.value.length} / 16`;
-  renderHomeIdeas();
-});
 function renderHomeIdeas() {
-  const word = heroEl.value.trim();
-  const all = STYLE_ORDER.flatMap((s) => (SAMPLES[s] ?? []).map((d, i) => ({ s, d, i })));
-  $('#cats').innerHTML = CATS.map((c) => {
-    const n = c === 'All' ? all.length : all.filter((x) => STYLE_CAT[x.s] === c).length;
-    return `<button type="button" data-c="${c}" class="${c === homeCat ? 'on' : ''}" aria-pressed="${c === homeCat}">${c}<small>${n}</small></button>`;
-  }).join('');
-  $('#cats').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.addEventListener('click', () => { homeCat = b.dataset.c!; renderHomeIdeas(); }));
-  $('#fits-text').textContent = `All fit your ${params.bedSize || 256} mm bed`;
-  const q = word ? `?w=${encodeURIComponent(word)}` : '';
-  $('#home-ideas').innerHTML = all
-    .filter((x) => homeCat === 'All' || STYLE_CAT[x.s] === homeCat)
-    .map(({ s, d, i }) => {
+  // the first two ideas of every style, each with its real picture
+  $('#home-ideas').innerHTML = STYLE_ORDER.flatMap((s) =>
+    (SAMPLES[s] ?? []).slice(0, 2).map((d, i) => {
       const patch = { ...PRESETS[s].patch, ...d.patch } as Partial<Params>;
       const a = patch.colorA ?? DEFAULTS.colorA, b = patch.colorB ?? DEFAULTS.colorB;
-      const text = d.text ?? PRESETS[s].text;
-      const live = !NO_TEXT_STYLES.has(s) && text !== '';
-      const shown = (word || text).split('\n')[0];
-      const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[s].font))?.css ?? 'Archivo Black';
       const twoColour = !['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(s);
-      const pic = live
-        ? `<span class="live${pale(s === 'keychain' ? b : a) ? ' pale' : ''}" style="${liveLook(s, shown, font, a, b, 220)}">${escapeHtml(shown)}</span>`
-        : `<img src="${ideaThumb(s, i)}" alt="" loading="lazy">`;
-      return `<a class="idea-card" href="#/new/${s}/${i}${live ? q : ''}"><span class="th"><span class="kind">${escapeHtml(PRESETS[s].label)}</span>${pic}</span><span class="meta"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></span><span class="dots" aria-label="${twoColour ? 2 : 1} colours"><i style="background:${a}"></i>${twoColour ? `<i style="background:${b}"></i>` : ''}</span></span></a>`;
-    })
-    .join('');
+      return `<a class="idea-card" href="#/new/${s}/${i}"><span class="th"><span class="kind">${escapeHtml(PRESETS[s].label)}</span><img src="${ideaThumb(s, i)}" alt="" loading="lazy"></span><span class="meta"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></span><span class="dots" aria-label="${twoColour ? 2 : 1} colours"><i style="background:${a}"></i>${twoColour ? `<i style="background:${b}"></i>` : ''}</span></span></a>`;
+    }),
+  ).join('');
 }
 
 async function renderHome() {

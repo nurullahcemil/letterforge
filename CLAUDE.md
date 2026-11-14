@@ -93,9 +93,10 @@ Regression check used so far: run smoke before and after a change and diff the
   #F4F4F2…#8E8E93, mint accent #5FD3A0, brand tile #2F6B4F, glass HUD). Geist + Geist Mono (mono
   uppercase labels). White pill = main button; mint only for current step + final Download.
   The "Flow redesign" block at the end of style.css overrides the older rules above it.
-- Home: "What should it say?" input (`#hero-word`, 16 max) redraws every idea card live in its own
-  font (`src/livetype.ts` `liveLook`: CSS fake-extrusion per style; no-text styles show the webp).
-  Category chips (`STYLE_CAT`/`CATS`), card link `#/new/<style>/<i>?w=<word>` puts the word in.
+- Home: "Ideas ready to print" (first two ideas per style, REAL rendered pictures in the Flow card
+  look) + "Start something new" (every style) + My designs. The live-word catalog ("What should it
+  say?" box, CSS fake-3D words, category chips) was tried and REMOVED (user didn't like it); the
+  editor Idea step also uses the real pictures. `#/new/<style>/<i>?w=<word>` still works.
 - Editor steps: Words = count + suggestion chips + artwork; Font = font cards showing the word
   (≤5 letters) + Tight/Normal/Loose spacing; Size = width ruler (`renderRuler`) + size card + bed
   bar; Finish = filament swatches per colour role (`FILAMENTS`, `renderSwatches`; real colour
@@ -112,9 +113,8 @@ Regression check used so far: run smoke before and after a change and diff the
   on a ShapeGeometry top; dark/light versions. No logos or branding.
 - Idea pictures (`__letterforge.thumb`) hide the plate (`viewer.showBed(false)`), trim to the
   object and centre it on a clear background, so picture cards match the live word cards in both
-  themes (user: "something is not matching"). Only no-text styles use them:
-  `ONLY=lamp,mold,tile,terrace node scripts/render-ideas.mjs`. Colour dots have a thin ring
-  (white dots vanished on light); very light letter colours get `.live.pale` outline on light.
+  themes. Every style uses them: re-run `node scripts/render-ideas.mjs` (dev server up) after
+  changing SAMPLES or the viewer look (`ONLY=a,b` limits styles). Colour dots have a thin ring.
 
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
