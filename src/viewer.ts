@@ -207,15 +207,15 @@ export class Viewer {
     this.bed.clear();
     const plate = new THREE.Mesh(
       new THREE.BoxGeometry(size, 2, size),
-      new THREE.MeshStandardMaterial({ color: 0x9a9d97, roughness: 0.8, metalness: 0.0, envMapIntensity: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.9, metalness: 0.0, envMapIntensity: 0.25 }),
     );
     plate.position.y = -1.01;
     plate.receiveShadow = true;
-    const grid = new THREE.GridHelper(size, Math.max(2, Math.round(size / 20)), 0x7f837d, 0x8e918b);
+    const grid = new THREE.GridHelper(size, Math.max(2, Math.round(size / 20)), 0x3a3a40, 0x2c2c31);
     grid.position.y = 0.02;
     const shadowCatcher = new THREE.Mesh(
       new THREE.PlaneGeometry(size * 8, size * 8),
-      new THREE.ShadowMaterial({ opacity: 0.12 }),
+      new THREE.ShadowMaterial({ opacity: 0.35 }),
     );
     shadowCatcher.rotation.x = -Math.PI / 2;
     shadowCatcher.position.y = -2.05;

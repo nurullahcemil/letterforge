@@ -85,6 +85,20 @@ Regression check used so far: run smoke before and after a change and diff the
 - Empty text no longer crashes (manifold can't take an empty polygon list); pins waves/ripples
   build with no text.
 
+## Look: "The Flow" redesign (user's Design canvas, LfD_Home / LfD_Editor)
+- Dark, type-first. Tokens on `:root` in style.css (bg #0A0A0B, panel #0F0F11, card #141416, ink
+  #F4F4F2…#8E8E93, mint accent #5FD3A0, brand tile #2F6B4F, glass HUD). Geist + Geist Mono (mono
+  uppercase labels). White pill = main button; mint only for current step + final Download.
+  The "Flow redesign" block at the end of style.css overrides the older rules above it.
+- Home: "What should it say?" input (`#hero-word`, 16 max) redraws every idea card live in its own
+  font (`src/livetype.ts` `liveLook`: CSS fake-extrusion per style; no-text styles show the webp).
+  Category chips (`STYLE_CAT`/`CATS`), card link `#/new/<style>/<i>?w=<word>` puts the word in.
+- Editor steps: Words = count + suggestion chips + artwork; Font = font cards showing the word
+  (≤5 letters) + Tight/Normal/Loose spacing; Size = width ruler (`renderRuler`) + size card + bed
+  bar; Finish = filament swatches per colour role (`FILAMENTS`, `renderSwatches`; real colour
+  inputs kept hidden) + print-check card. Viewer bed is dark (re-run render-ideas after changes).
+- Phone width: HUD dims/summary/parts legend hidden; bed-fit pill and actions stay.
+
 ## Styles (Params.style)
 sign (table sign + QR), planter, topo, facet, keychain, duo (two-text sign/vase),
 stack (bold stack), stepped, ramp (ramp relief), book (book sleeve), lamp (no text: shade + base, `src/lamp.ts`),

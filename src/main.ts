@@ -9,6 +9,7 @@ import { DEFAULTS } from './defaults';
 import { MOLD_SHAPE_DEFAULTS } from './mold';
 import { PRESETS, SAMPLES } from './presets';
 import { OPTION_ICONS } from './optionIcons';
+import { liveLook, STYLE_CAT, CATS } from './livetype';
 import { listDesigns, getDesign, putDesign, deleteDesign, newId, exportAll, importAll } from './store';
 
 // ---------- state ----------
@@ -458,6 +459,7 @@ async function run() {
       showWarnings(res.warnings);
       renderParts(printable);
       updateBedFit(printable, res.warnings, `${fmt(x)} × ${fmt(y)} mm`);
+      renderRuler();
       $('#drag-hint').hidden = !printable.some((p: Part) => p.drag);
     }
   } finally {
@@ -1253,12 +1255,17 @@ function googleHasItalic(id: string): boolean {
   return !!gfCatalog?.find((m) => m.id === id)?.styles.includes('italic');
 }
 
+/** Font cards show your word when it is short, else "Aa". */
+const fontSample = () => {
+  const w = params.text.split('\n')[0].trim();
+  return w && [...w].length <= 5 ? w : 'Aa';
+};
 function renderFonts() {
   renderAxes();
   const host = $('#fonts');
   const all = [...FONTS.map((f) => ({ key: f.key, label: f.label, css: f.css })), ...[...googleFonts.values()], ...[...customFonts.keys()].map((k) => ({ key: k, label: k.replace(/^custom:/, ''), css: 'custom-' + k }))];
   host.innerHTML = all
-    .map((f) => `<button type="button" class="font ${f.key === fontKey ? 'on' : ''}" data-k="${f.key}" title="${escapeHtml(f.label)}"><span style="font-family:'${f.css}'">Ag</span><small>${escapeHtml(f.label.replace(' (script)', ''))}</small></button>`)
+    .map((f) => `<button type="button" class="font ${f.key === fontKey ? 'on' : ''}" data-k="${f.key}" title="${escapeHtml(f.label)}"><span style="font-family:'${f.css}'">${escapeHtml(fontSample())}</span><small>${escapeHtml(f.label.replace(' (script)', ''))}</small></button>`)
     .join('');
   host.querySelectorAll<HTMLButtonElement>('button.font').forEach((b) =>
     b.addEventListener('click', () => {
@@ -1269,6 +1276,99 @@ function renderFonts() {
     }),
   );
 }
+
+// ---------- Flow step helpers: suggestions, spacing, size ruler, colour swatches ----------
+function renderWordsExtras() {
+  $('#text-count').textContent = `${[...params.text].length} / ${noText() ? 0 : 60}`;
+  const ideas = (SAMPLES[params.style] ?? []).map((d) => d.text).filter((t): t is string => !!t);
+  const sugg = [...new Set([...ideas, 'HOME', 'HELLO', 'Mr & Mrs'])].slice(0, 5);
+  $('#suggest').innerHTML = sugg.map((t) => `<button type="button" class="chip" data-t="${escapeHtml(t)}">${escapeHtml(t.replace(/\n/g, ' '))}</button>`).join('');
+  $('#suggest').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+    b.addEventListener('click', () => {
+      params.text = b.dataset.t!;
+      ($('#text') as HTMLTextAreaElement).value = params.text;
+      textTouched = true;
+      pruneLetters();
+      renderWordsExtras();
+      schedule(true);
+    }),
+  );
+  // letter spacing: the closest of tight / normal / loose is lit
+  const opts = [...document.querySelectorAll<HTMLButtonElement>('#spacing button')];
+  let best = opts[0];
+  for (const o of opts) if (Math.abs(Number(o.dataset.t) - params.tracking) < Math.abs(Number(best.dataset.t) - params.tracking)) best = o;
+  opts.forEach((o) => o.classList.toggle('on', o === best));
+}
+document.querySelectorAll<HTMLButtonElement>('#spacing button').forEach((b) =>
+  b.addEventListener('click', () => {
+    params.tracking = Number(b.dataset.t);
+    renderWordsExtras();
+    renderGeneral();
+    schedule();
+  }),
+);
+
+/** Size step: a ruler of widths that fit the bed, and the size card with the bed bar. */
+function renderRuler() {
+  const keys = sizeKeys();
+  ($('#ruler-section') as HTMLElement).hidden = !keys.length;
+  const [w, h, d] = lastSize;
+  const bed = params.bedSize;
+  $('#ruler-mm').textContent = String(Math.round(w));
+  $('#sz-w').textContent = `${w.toFixed(1)} MM`;
+  $('#sz-h').textContent = `${h.toFixed(1)} MM`;
+  $('#sz-d').textContent = `${d.toFixed(1)} MM`;
+  const used = Math.max(w, h);
+  ($('#bedbar').firstElementChild as HTMLElement).style.width = `${Math.min(100, (used / bed) * 100)}%`;
+  $('#bedbar').classList.toggle('over', used > bed - 10);
+  $('#bedline').textContent = `${Math.round(used)} of ${bed} mm bed`;
+  const lo = Math.max(20, Math.round((bed * 0.3) / 10) * 10), hi = Math.floor((bed - 16) / 10) * 10;
+  const ticks: number[] = [];
+  for (let i = 0; i < 9; i++) ticks.push(Math.round((lo + ((hi - lo) * i) / 8) / 5) * 5);
+  const near = ticks.reduce((a, t) => (Math.abs(t - w) < Math.abs(a - w) ? t : a), ticks[0]);
+  $('#ruler').innerHTML = ticks
+    .map((t, i) => `<button type="button" data-w="${t}" aria-label="${t} millimetres wide" class="${i % 2 === 0 ? 'major' : ''} ${t === near && Math.abs(t - w) < 6 ? 'on' : ''}"><i></i><span>${t}</span></button>`)
+    .join('');
+  $('#ruler').querySelectorAll<HTMLButtonElement>('button').forEach((b) =>
+    b.addEventListener('click', () => {
+      if (!lastSize[0]) return;
+      const f = Number(b.dataset.w) / lastSize[0];
+      sizeKeys().forEach((k) => ((params as any)[k] = Math.round(Number(params[k]) * f * 2) / 2));
+      renderGeneral();
+      renderStyleControls();
+      schedule(true);
+    }),
+  );
+}
+
+/** Finish step: filament swatches for each colour this style uses (plus any colour). */
+const FILAMENTS: [string, string][] = [
+  ['Black', '#1E1E20'], ['White', '#F4F4F2'], ['Charcoal', '#5A5A60'], ['Bone', '#EDE8DE'], ['Forest', '#4F9A6E'],
+  ['Coral', '#EF6E66'], ['Sun', '#F6CE6B'], ['Blue', '#4D86E6'], ['Mint', '#5CC79C'], ['Lime', '#E1EE8A'],
+];
+function renderSwatches() {
+  const roles: ['colorA' | 'colorB' | 'colorC', string][] = [['colorA', $('#colorA-label').textContent || 'Colour']];
+  if ($('#colorB-wrap').style.display !== 'none') roles.push(['colorB', $('#colorB-label').textContent || 'Second colour']);
+  if (params.style === 'arrow') roles.push(['colorC', 'Letters']);
+  $('#swatch-host').innerHTML = roles
+    .map(([k, label]) => {
+      const cur = String(params[k] ?? '').toLowerCase();
+      const name = FILAMENTS.find(([, h]) => h.toLowerCase() === cur)?.[0] ?? cur.toUpperCase();
+      return `<div class="swatch-group"><div class="swatch-head"><b>${escapeHtml(label)}</b><span>${escapeHtml(name)}</span></div><div class="swatches">${FILAMENTS.map(
+        ([n, h]) => `<button type="button" data-k="${k}" data-h="${h}" aria-label="${n}" aria-pressed="${h.toLowerCase() === cur}" class="${h.toLowerCase() === cur ? 'on' : ''}" style="background:${h}"></button>`,
+      ).join('')}<label class="more" title="Any colour">+<input type="color" data-k="${k}" value="${cur || '#ffffff'}" aria-label="Any colour for ${escapeHtml(label)}"></label></div></div>`;
+    })
+    .join('');
+  const setC = (k: string, h: string) => {
+    (params as any)[k] = h;
+    ($('#' + k) as HTMLInputElement).value = h;
+    renderSwatches();
+    schedule();
+  };
+  $('#swatch-host').querySelectorAll<HTMLButtonElement>('button[data-h]').forEach((b) => b.addEventListener('click', () => setC(b.dataset.k!, b.dataset.h!)));
+  $('#swatch-host').querySelectorAll<HTMLInputElement>('input[type=color]').forEach((i) => i.addEventListener('input', () => setC(i.dataset.k!, i.value)));
+}
+$('#run-check').addEventListener('click', () => ($('#check') as HTMLButtonElement).click());
 
 // ---------- sidebar tabs: Design / Font / Colours / Print ----------
 // ---------- step-by-step configurator: Idea → Words → Font → Shape → Size → Colours & print ----------
@@ -1286,7 +1386,7 @@ let currentStep: StepId = 'idea';
 function liveSteps() {
   return STEPS.filter((st) => {
     if ((st.id === 'words' || st.id === 'font') && noText()) return false;
-    if (st.id === 'size' && ($('#size-section') as HTMLElement).hidden) return false;
+    if (st.id === 'size' && ($('#size-section') as HTMLElement).hidden && !sizeKeys().length) return false;
     return true;
   });
 }
@@ -1305,9 +1405,10 @@ function renderStepbar() {
   document.querySelectorAll<HTMLElement>('.panel section[data-step]').forEach((sec) => sec.classList.toggle('tab-off', sec.dataset.step !== currentStep));
   const back = $('#step-back') as HTMLButtonElement;
   const next = $('#step-next') as HTMLButtonElement;
-  back.hidden = at === 0;
-  back.textContent = at > 0 ? `Back: ${steps[at - 1].label}` : 'Back';
+  back.hidden = false;
+  back.textContent = at > 0 ? `Back: ${steps[at - 1].label}` : 'Cancel';
   next.textContent = at < steps.length - 1 ? `Next: ${steps[at + 1].label}` : 'Download 3MF';
+  next.classList.toggle('last', at === steps.length - 1);
 }
 function showStep(id: StepId, moveCamera = true) {
   const changed = id !== currentStep;
@@ -1321,6 +1422,7 @@ $('#step-back').addEventListener('click', () => {
   const steps = liveSteps();
   const at = steps.findIndex((st) => st.id === currentStep);
   if (at > 0) showStep(steps[at - 1].id);
+  else location.hash = '#/';
 });
 $('#step-next').addEventListener('click', () => {
   const steps = liveSteps();
@@ -1361,7 +1463,16 @@ function renderIdeas() {
   const list = SAMPLES[params.style] ?? [];
   $('#ideas-wrap').hidden = !list.length;
   $('#ideas').innerHTML = list
-    .map((d, i) => `<button type="button" class="idea" data-i="${i}"><img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()"><span>${escapeHtml(d.name)}</span></button>`)
+    .map((d, i) => {
+      const patch = { ...PRESETS[params.style].patch, ...d.patch } as Partial<Params>;
+      const text = (d.text ?? PRESETS[params.style].text).split('\n')[0];
+      const live = !NO_TEXT_STYLES.has(params.style) && text !== '';
+      const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[params.style].font))?.css ?? 'Archivo Black';
+      const pic = live
+        ? `<span class="live-box live-wrap"><span class="live" style="${liveLook(params.style, text, font, patch.colorA ?? DEFAULTS.colorA, patch.colorB ?? DEFAULTS.colorB, 120)}">${escapeHtml(text)}</span></span>`
+        : `<img src="${ideaThumb(params.style, i)}" alt="" loading="lazy" onerror="this.remove()">`;
+      return `<button type="button" class="idea" data-i="${i}">${pic}<span>${escapeHtml(d.name)}</span></button>`;
+    })
     .join('');
   $('#ideas').querySelectorAll<HTMLButtonElement>('button.idea').forEach((b) =>
     b.addEventListener('click', () => {
@@ -1419,6 +1530,7 @@ function refreshUI() {
   renderBacking();
   renderArt();
   renderPrinter();
+  renderWordsExtras();
   updateSaveState();
 }
 
@@ -1453,6 +1565,7 @@ function syncColors() {
   ($('#colorC') as HTMLInputElement).value = params.colorC ?? '#f6efe4';
   $('#colorC-wrap').style.display = params.style === 'arrow' ? '' : 'none';
   $('#colorB-wrap').style.display = ['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(params.style) || (params.style === 'stepped' && !params.spBase) ? 'none' : '';
+  renderSwatches();
 }
 
 const ICONS: Record<Style, string> = {
@@ -1485,6 +1598,7 @@ textEl.value = params.text;
 textEl.addEventListener('input', () => {
   params.text = textEl.value;
   textTouched = true;
+  renderWordsExtras();
   renderGeneral();
   pruneLetters();
   if (selLetter !== null) renderLetterPop();
@@ -1825,6 +1939,13 @@ $('#fit').addEventListener('click', () => viewer.fit());
 // ---------- print check (three-mesh-bvh) ----------
 let checkOn = false;
 viewer.onCheck = (r: CheckResult | null) => {
+  // the Finish step's print-check card
+  const pctT = (x: number) => (x <= 0 ? 'NONE' : x < 0.001 ? '<0.1%' : `${(x * 100).toFixed(1)}%`);
+  $('#ck-over').textContent = r ? pctT(r.overhang) : '—';
+  $('#ck-thin').textContent = r ? (r.thinChecked ? pctT(r.thin) : 'TOO BIG TO CHECK') : '—';
+  $('#ck-over-i').className = r ? (r.overhang < 0.01 ? 'ok' : 'warnc') : '';
+  $('#ck-thin-i').className = r ? (!r.thinChecked || r.thin < 0.01 ? 'ok' : 'warnc') : '';
+  $('#run-check').textContent = r ? 'Hide check' : 'Run check';
   const el = $('#check-legend');
   el.hidden = !r;
   if (!r) return;
@@ -1878,6 +1999,10 @@ function updateBedFit(printable: Part[], warnings: string[], sizeText = '') {
         ? `<i></i>Prints on ${plates} plates of your ${bed} mm bed (the 3MF lays them out)`
         : `<i></i>Fits your ${bed} mm bed`;
   renderSummary(sizeText, tooBig || tall ? 'too big' : plates > 1 ? `${plates} plates` : '1 plate');
+  const ok = !tooBig && !tall;
+  $('#ck-bed').textContent = ok ? (plates > 1 ? `${plates} PLATES` : 'YES') : 'NO';
+  $('#ck-bed').className = ok ? 'ok' : '';
+  $('#ck-bed-i').className = ok ? 'ok' : 'warnc';
 }
 
 /** The preview shows the book sleeve front-up; the file is turned to print standing. */
@@ -2151,7 +2276,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function newDesign(style: Style, idea?: number) {
+function newDesign(style: Style, idea?: number, word?: string) {
   currentId = null;
   currentCreated = 0;
   textTouched = false;
@@ -2164,6 +2289,11 @@ function newDesign(style: Style, idea?: number) {
     // opened from an idea in the home gallery: load it and go straight to the words
     applyIdea(idea);
     currentStep = noText() ? 'shape' : 'words';
+  }
+  // words typed on the home page carry into the design
+  if (word && !noText()) {
+    params.text = word;
+    textTouched = true;
   }
   nameEl.value = 'Untitled design';
   lastSaved = '';
@@ -2195,18 +2325,49 @@ async function openDesign(id: string) {
 
 const STYLE_ORDER = Object.keys(PRESETS) as Style[];
 
+// ---------- home: type first, catalog of ideas that redraw with your words ----------
+let homeCat = 'All';
+const NO_TEXT_STYLES = new Set<Style>(['lamp', 'mold', 'tile', 'terrace']);
+const heroEl = $('#hero-word') as HTMLInputElement;
+heroEl.addEventListener('input', () => {
+  $('#hero-count').textContent = `${heroEl.value.length} / 16`;
+  renderHomeIdeas();
+});
+function renderHomeIdeas() {
+  const word = heroEl.value.trim();
+  const all = STYLE_ORDER.flatMap((s) => (SAMPLES[s] ?? []).map((d, i) => ({ s, d, i })));
+  $('#cats').innerHTML = CATS.map((c) => {
+    const n = c === 'All' ? all.length : all.filter((x) => STYLE_CAT[x.s] === c).length;
+    return `<button type="button" data-c="${c}" class="${c === homeCat ? 'on' : ''}" aria-pressed="${c === homeCat}">${c}<small>${n}</small></button>`;
+  }).join('');
+  $('#cats').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.addEventListener('click', () => { homeCat = b.dataset.c!; renderHomeIdeas(); }));
+  $('#fits-text').textContent = `All fit your ${params.bedSize || 256} mm bed`;
+  const q = word ? `?w=${encodeURIComponent(word)}` : '';
+  $('#home-ideas').innerHTML = all
+    .filter((x) => homeCat === 'All' || STYLE_CAT[x.s] === homeCat)
+    .map(({ s, d, i }) => {
+      const patch = { ...PRESETS[s].patch, ...d.patch } as Partial<Params>;
+      const a = patch.colorA ?? DEFAULTS.colorA, b = patch.colorB ?? DEFAULTS.colorB;
+      const text = d.text ?? PRESETS[s].text;
+      const live = !NO_TEXT_STYLES.has(s) && text !== '';
+      const shown = (word || text).split('\n')[0];
+      const font = FONTS.find((f) => f.key === (d.font ?? PRESETS[s].font))?.css ?? 'Archivo Black';
+      const twoColour = !['facet', 'stack', 'flower', 'pyramid', 'concrete', 'terrace'].includes(s);
+      const pic = live
+        ? `<span class="live" style="${liveLook(s, shown, font, a, b, 220)}">${escapeHtml(shown)}</span>`
+        : `<img src="${ideaThumb(s, i)}" alt="" loading="lazy">`;
+      return `<a class="idea-card" href="#/new/${s}/${i}${live ? q : ''}"><span class="th"><span class="kind">${escapeHtml(PRESETS[s].label)}</span>${pic}</span><span class="meta"><span><b>${escapeHtml(d.name)}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></span><span class="dots" aria-label="${twoColour ? 2 : 1} colours"><i style="background:${a}"></i>${twoColour ? `<i style="background:${b}"></i>` : ''}</span></span></a>`;
+    })
+    .join('');
+}
+
 async function renderHome() {
   $('#home-styles').innerHTML = STYLE_ORDER.map(
     (s) => `<a class="start" href="#/new/${s}"><span class="ico" aria-hidden="true">${ICONS[s]}</span><b>${PRESETS[s].label}</b><small>${escapeHtml(PRESETS[s].blurb.split('. ')[0])}</small></a>`,
   ).join('');
-  // ideas gallery: the first two ideas of every style, each with its picture
-  $('#home-ideas').innerHTML = STYLE_ORDER.flatMap((s) =>
-    (SAMPLES[s] ?? []).slice(0, 2).map(
-      (d, i) => `<a class="idea-card" href="#/new/${s}/${i}"><span class="th"><img src="${ideaThumb(s, i)}" alt="" loading="lazy" onerror="this.parentElement.classList.add('none')"></span><b>${escapeHtml(d.name)}</b><small>${PRESETS[s].label}</small></a>`,
-    ),
-  ).join('');
+  renderHomeIdeas();
   const designs = await listDesigns();
-  $('#design-count').textContent = designs.length ? `(${designs.length})` : '';
+  $('#design-count').textContent = designs.length ? String(designs.length) : '';
   const gallery = $('#gallery');
   if (!designs.length) {
     gallery.innerHTML = `<div class="empty"><b>No saved designs yet.</b><span>Pick a style above, then press <b>Save</b> in the editor. Your designs will appear here.</span></div>`;
@@ -2279,7 +2440,8 @@ async function route() {
     if (!m) {
       await renderHome();
     } else if (m[1] === 'new') {
-      newDesign((STYLE_ORDER.includes(m[2] as Style) ? m[2] : 'sign') as Style, m[3] !== undefined ? Number(m[3]) : undefined);
+      const w = new URLSearchParams(h.split('?')[1] ?? '').get('w') ?? undefined;
+      newDesign((STYLE_ORDER.includes(m[2] as Style) ? m[2] : 'sign') as Style, m[3] !== undefined ? Number(m[3]) : undefined, w);
     } else if (m[2] !== currentId) {
       await openDesign(m[2]);
     }
