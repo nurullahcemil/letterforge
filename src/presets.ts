@@ -212,6 +212,7 @@ export const SAMPLES: Record<Style, Sample[]> = {
     { name: 'ALOHA', text: 'ALOHA', font: 'archivo', patch: { flCount: 10 } },
     { name: 'LOVE', text: 'LOVE', font: 'archivo', patch: { flCount: 12 } },
     { name: 'Small (120 mm)', text: 'SUN', font: 'archivo', patch: { flCount: 9, flSize: 120 } },
+    { name: 'Wall art: three words', text: 'LOVE HOPE JOY', font: 'archivo', patch: { flLayout: 'row', flCount: 10, flSize: 150, flGap: 20, flDepth: 20 } },
   ],
   arrow: [
     { name: 'Exit', text: 'EXIT', font: 'archivo', patch: { arShape: 'arrow', arDir: 'right', capHeight: 30 } },

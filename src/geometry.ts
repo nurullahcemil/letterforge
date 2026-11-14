@@ -22,6 +22,10 @@ export interface Params extends LampParams, MoldParams, TileParams, TerraceParam
   flMiddle?: number;
   /** Letter flower diameter (mm). */
   flSize?: number;
+  /** Letter flower: 'one' = all text in one flower, 'row' = one flower per word, side by side (wall art). */
+  flLayout?: 'one' | 'row';
+  /** Letter flower row: gap between the flowers (mm). */
+  flGap?: number;
   /** Arrow sign: shaped board, block-shadow letters. */
   arShape?: 'turn' | 'arrow' | 'rect' | 'circle';
   arDir?: 'right' | 'left' | 'up' | 'down';
@@ -407,7 +411,9 @@ export class Builder {
           break;
         case 'flower':
           this.spots = [];
-          parts = this.flower(layout.glyphs, layout.glyphLetter, p, warnings);
+          parts = p.flLayout === 'row'
+            ? this.flowerRow(layout.glyphs, layout.glyphLetter, p, warnings)
+            : this.flower(layout.glyphs, layout.glyphLetter, p, warnings);
           break;
         case 'arrow':
           parts = this.arrowSign(cs, p, warnings);
@@ -1035,6 +1041,39 @@ export class Builder {
     pieces.forEach((c) => this.k(c));
     if (pieces.length > 1) warnings.push('Some letter parts float free (like the dot of an i). Use capital letters or glue them on.');
     return [{ name: 'Flower', color: p.colorA, m: this.extrude(all, clampN(p.flDepth ?? 50, 2, 300)) }];
+  }
+
+  /**
+   * Letter flower wall art (user: "3 different words next to each other"): every word (split at
+   * spaces and line breaks) becomes its own flower, all the same size, in a row with `flGap`
+   * between them. Each flower is its own part, so a long row spreads over plates without cuts.
+   */
+  private flowerRow(glyphs: Vec2[][][], glyphLetter: number[], p: Params, warnings: string[]): WorkPart[] {
+    // word number of every letter (letters are counted without spaces, like letterMove keys)
+    const wordOf: number[] = [];
+    let w = -1, inWord = false;
+    for (const ch of p.text) {
+      if (/\s/.test(ch)) { inWord = false; continue; }
+      if (!inWord) { w++; inWord = true; }
+      wordOf.push(w);
+    }
+    const words = w + 1;
+    if (words <= 1) return this.flower(glyphs, glyphLetter, p, warnings);
+    const D = clampN(p.flSize ?? 180, 30, 1000);
+    const gap = clampN(p.flGap ?? 20, 0, 500);
+    const out: WorkPart[] = [];
+    const notes = new Set<string>();
+    for (let k = 0; k < words; k++) {
+      const gl = glyphLetter.map((l) => (l >= 0 && wordOf[l] === k ? l : -1));
+      if (!gl.some((l) => l >= 0)) continue;
+      const ws: string[] = [];
+      const parts = this.flower(glyphs, gl, p, ws);
+      ws.forEach((x) => notes.add(x));
+      const dx = (k - (words - 1) / 2) * (D + gap);
+      parts.forEach((pt) => out.push({ ...pt, name: `Flower ${k + 1}`, m: pt.m && this.k(pt.m.translate([dx, 0, 0])) }));
+    }
+    notes.forEach((x) => warnings.push(x));
+    return out;
   }
 
   /** Arrow sign: a shaped board, a block "shadow" of the letters, and the letters on top. */

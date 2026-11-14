@@ -149,6 +149,8 @@ export const DEFAULTS: Params = {
   flBend: 75,
   flMiddle: 35,
   flSize: 180,
+  flLayout: 'one',
+  flGap: 20,
   arShape: 'turn',
   arDir: 'right',
   arMargin: 14,

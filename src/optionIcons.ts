@@ -8,6 +8,10 @@ const fl = 'fill="currentColor"';
 const soft = 'fill="currentColor" opacity=".25"';
 
 export const OPTION_ICONS: Record<string, Record<string, string>> = {
+  flLayout: {
+    one: S(`<circle cx="20" cy="14" r="10" ${soft}/><circle cx="20" cy="14" r="10" ${st}/><circle cx="20" cy="14" r="3.0" ${fl}/>`),
+    row: S(`<circle cx="7" cy="14" r="5.5" ${soft}/><circle cx="7" cy="14" r="5.5" ${st}/><circle cx="7" cy="14" r="1.6" ${fl}/><circle cx="20" cy="14" r="5.5" ${soft}/><circle cx="20" cy="14" r="5.5" ${st}/><circle cx="20" cy="14" r="1.6" ${fl}/><circle cx="33" cy="14" r="5.5" ${soft}/><circle cx="33" cy="14" r="5.5" ${st}/><circle cx="33" cy="14" r="1.6" ${fl}/>`),
+  },
   base: {
     bar: S(`<path d="M7 6h5v14H7zM14 6h5v14h-5zM21 6h5v14h-5z" ${fl}/><rect x="4" y="19" width="32" height="4" rx="1" ${soft}/><rect x="4" y="19" width="32" height="4" rx="1" ${st}/>`),
     plate: S(`<rect x="3" y="4" width="34" height="20" rx="2" ${soft}/><path d="M9 9h4v10H9zM15 9h4v10h-4zM21 9h4v10h-4z" ${fl}/>`),

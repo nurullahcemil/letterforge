@@ -242,6 +242,10 @@ no overlap between halves and candle; must end "all clean").
   slice ∝ letter width; letters auto-narrowed/widened (cN) so the feet land at `flMiddle` % of the
   radius (k·len = ln(1/m)), like the condensed letters in the user's photo; scaled to `flSize`.
   Check from the top: `npx tsx scripts/flower-svg.ts out.svg '{"text":"BLOOM","flCount":12}'`.
+  `flLayout: 'row'` (user: "3 different words next to each other as wall art"): `flowerRow` splits
+  the text at spaces/line breaks, builds one flower per word (same size, same settings) and puts
+  them side by side with `flGap`; each flower is its own part ("Flower n") so a long row goes onto
+  several plates without cuts. Idea "Wall art: three words" (LOVE HOPE JOY, 150 mm, 20 deep).
 - pins (`Builder.pins`, "Pin art"): grid of cylinders on a plate (colour B) + frame; height level
   from waves (sine along `pinAngle`), ripples, or text (signed distance to the outline, eased over
   `pinSoft`); `pinGrow` makes tall pins wider. `pinText` up/down puts the (centred) text into the

@@ -125,6 +125,8 @@ const STYLE_CONTROLS: Record<Style, Control[]> = {
   ],
   lamp: [],
   flower: [
+    { kind: 'select', key: 'flLayout', label: 'Layout', options: [['one', 'One flower'], ['row', 'Words side by side']], hint: 'Side by side: every word becomes its own flower, for wall art. Type the words with spaces or on new lines.' },
+    { kind: 'range', key: 'flGap', label: 'Gap between flowers', min: 0, max: 150, step: 1, unit: 'mm' },
     { kind: 'heading', key: 'style', label: 'Petals' },
     { kind: 'range', key: 'flCount', label: 'Petals', min: 0, max: 40, step: 1, hint: 'How many letters around the circle. 0 = the word once; more repeats it.' },
     { kind: 'range', key: 'flSize', label: 'Size', min: 50, max: 400, step: 1, unit: 'mm', hint: 'Across the whole flower.' },
@@ -651,7 +653,7 @@ function controlEl(c: Control): HTMLElement {
     const cb = row.querySelector('input')!;
     cb.addEventListener('change', () => {
       (params as any)[c.key] = cb.checked;
-      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
+      if (c.key === 'rPlate' || c.key === 'vHoles' || c.key === 'bookFit' || c.key === 'bookStretch' || c.key === 'lineMode' || c.key === 'spBase' || c.key === 'shSides' || c.key === 'lampTex' || c.key === 'lampShow' || c.key === 'lampTier' || c.key === 'backOn' || c.key === 'pinSeparate' || c.key === 'ccHoles' || c.key === 'flLayout') { renderBacking(); renderStyleControls(); renderGeneral(); syncColors(); }
       schedule();
     });
     return row;
@@ -726,6 +728,7 @@ function renderStyleControls() {
   if (params.style === 'pins' && !params.pinSeparate) list = list.filter((c) => c.key !== 'pinSocket' && c.key !== 'pinFit');
   if (params.style === 'pins') list = list.filter((c) => (params.pinMode === 'letters' ? !['pinW', 'pinH', 'pinWaves', 'pinAngle', 'pinText'].includes(c.key) : !['pinPad'].includes(c.key) && (c.key !== 'pinSoft' || params.pinText !== 'none')) && !((params.pinMode === 'ripple' || params.pinMode === 'halo') && (c.key === 'pinAngle' || (params.pinMode === 'halo' && c.key === 'pinWaves'))) && !(params.pinMode === 'letters' && c.key === 'pinHole'));
   if (params.style === 'arrow') list = list.filter((c) => c.key !== 'arDir' || params.arShape === 'turn' || params.arShape === 'arrow');
+  if (params.style === 'flower') list = list.filter((c) => c.key !== 'flGap' || params.flLayout === 'row');
   if (params.style === 'tile') list = list.filter((c) => !(params.tlMake === 'cutter' && (c.key === 'tlDraft' || c.key === 'tlWall')));
   if (params.style === 'mold') {
     list = list.filter((c) => {
