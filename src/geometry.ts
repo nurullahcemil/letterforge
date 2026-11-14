@@ -1743,8 +1743,8 @@ export class Builder {
       thick: clampN(p.scThick ?? 2.4, 0.8, 10), halfTwists: clampN(p.scTwist ?? 1, 0, 12), depth: clampN(p.scDepth ?? 35, 0, 100) / 100,
     }, warnings);
     const bb = band.boundingBox();
-    // feet: one under each low part (both loops of the infinity), each into its own slot in the
-    // base; the base is centred under the whole sculpture
+    // foot: under the lowest part, into a slot in the base; the base is centred under the whole
+    // sculpture (woodBase can take several slots, but one foot is what the user wants)
     const mesh = band.getMesh();
     const vp = mesh.vertProperties, np = mesh.numProp;
     let zmin = Infinity;
@@ -1760,9 +1760,9 @@ export class Builder {
       const g = groups[groups.length - 1];
       if (g && q[0] - g[g.length - 1][0] < 15) g.push(q); else groups.push([q]);
     }
-    // the (at most) two lowest groups get a foot each
+    // one foot, under the lowest group (user tried two feet on the infinity and went back to one)
     const lowest = (g: [number, number, number][]) => g.reduce((m, q) => (q[2] < m[2] ? q : m), g[0]);
-    const chosen = groups.sort((g1, g2) => lowest(g1)[2] - lowest(g2)[2]).slice(0, 2);
+    const chosen = groups.sort((g1, g2) => lowest(g1)[2] - lowest(g2)[2]).slice(0, 1);
     const slotD = 8;
     const reach = Math.max(3, bandW * 0.35);
     const fd0 = Math.max(6, clampN(p.scThick ?? 2.4, 0.8, 10) * 3);
